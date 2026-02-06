@@ -8,11 +8,12 @@ The biggest bottlenecks are not in the plumbing (which is solid) but in: (1) the
 
 ---
 
-## 1. Thinker's `maxSteps: 2` Cripples Multi-Tool Tasks
+## 1. Thinker's `maxSteps: 2` Cripples Multi-Tool Tasks — RESOLVED
 
 **File:** `Thinker/src/agent/loop.ts:309`
+**Status:** Fixed on Feb 5, 2026. Increased to `maxSteps: 8` for both primary and retry paths.
 
-**Problem:** The agent is limited to 2 steps (1 tool call + 1 response). This means it literally cannot:
+**Problem:** The agent was limited to 2 steps (1 tool call + 1 response). This means it literally could not:
 - Search the web AND THEN summarize findings
 - Check calendar AND THEN send a Telegram message about a conflict
 - List emails AND THEN read one AND THEN reply
@@ -100,11 +101,12 @@ The Thinker's system prompt says "proactively store important details" which mea
 
 ---
 
-## 5. Thinker's System Prompt Lacks Date/Time and User Context
+## 5. Thinker's System Prompt Lacks Date/Time and User Context — RESOLVED
 
 **File:** `Thinker/src/agent/loop.ts:17-81`
+**Status:** Fixed on Feb 5, 2026. Added dynamic date/time injection in `buildContext()` using `Intl.DateTimeFormat` with configurable timezone (`USER_TIMEZONE` env var, defaults to `Europe/Warsaw`).
 
-**Problem:** The system prompt never tells the agent:
+**Problem:** The system prompt never told the agent:
 - What today's date and time is
 - What timezone the user is in
 - Who the user is (beyond what memories say)
@@ -130,27 +132,19 @@ Also pull the user's name and key preferences from the profile at prompt-build t
 
 ---
 
-## 6. Tool Descriptions Are Inconsistent Across MCPs
+## 6. Tool Descriptions Are Inconsistent Across MCPs — RESOLVED
 
-**Worst offenders:**
-- Telegram MCP tools have good descriptions individually but lose context through the Orchestrator's prefixing
-- Gmail calendar tools exist but aren't in the README (invisible to humans reviewing)
-- `trigger_type` enum in skills references `TRIGGER_TYPES` but descriptions don't list valid values
-- Orchestrator's `get_status` is the only custom tool — no help/guidance tools
+**Status:** Fixed on Feb 5, 2026.
 
-**Specific issues:**
-- `store_fact` description says "Store a discrete fact" but doesn't explain what makes a good fact vs. a bad one
-- `search_conversations` doesn't explain what fields are searched
-- `retrieve_memories` vs `search_conversations` vs `list_facts` — three overlapping tools with no guidance on when to use which
-- `send_message` (Telegram) vs `send_email` (Gmail) — no disambiguation help for "send a message" type requests
+**Changes made across 7 MCPs:**
 
-**Fix:** For each MCP, enhance tool descriptions with:
-1. **When to use** — "Use this when the user wants to recall something from a previous conversation"
-2. **When NOT to use** — "Don't use this for general knowledge questions"
-3. **Examples** — "Example query: 'meetings last week'"
-4. **Disambiguation** — "For searching facts use list_facts. For searching past chat transcripts use search_conversations. For a combined search use retrieve_memories."
-
-**Impact:** Better tool descriptions = fewer wrong tool calls = better assistant accuracy. This is the cheapest improvement per unit of quality gained.
+- **Memorizer-MCP:** Added disambiguation between `retrieve_memories` (primary keyword search across facts + conversations), `list_facts` (browse all facts by category), and `search_conversations` (search chat transcripts with date filters). Improved `store_fact` with category guidance and examples. Added workflow hints to `get_profile`, `update_profile`, `store_conversation`, and skill tools with trigger_type documentation.
+- **Searcher-MCP:** Added freshness filter examples, "when to use" guidance, and disambiguation between `web_search` (general) and `news_search` (current events). Updated in both stdio server.ts and HTTP index.ts.
+- **Filer-MCP:** Clarified workspace vs granted path behavior on every tool. Added guidance on when `check_grant` is needed, what `search_files` search_type and search_in options do, and what `get_audit_log` can filter on.
+- **Telegram-MCP:** Added disambiguation with Gmail (`send_message` = Telegram, `send_email` = email). Added cross-references between `get_messages` (recent history) and `search_messages` (keyword search).
+- **Gmail-MCP:** Added search syntax examples to `list_emails`, workflow hints (list → get → reply), and disambiguation with Telegram tools. Clarified `reply_email` vs `send_email`.
+- **Orchestrator:** Clarified `execute_task` is HTTP-mode keyword matching only, directing users to use specific tools directly.
+- **1Password-MCP:** Already had excellent descriptions — no changes needed.
 
 ---
 
@@ -232,18 +226,18 @@ This means if the agent calls `list_events` or `list_facts` and the LLM doesn't 
 
 ## Priority Order for Implementation
 
-| # | Improvement | Effort | Impact |
-|---|-------------|--------|--------|
-| 1 | Increase maxSteps from 2 to 6-8 | 5 min | Transformative |
-| 5 | Add date/time/timezone to system prompt | 15 min | High |
-| 8 | Increase conversation history window | 5 min | High |
-| 6 | Improve tool descriptions across all MCPs | 2-3 hrs | High |
-| 2 | Wire Guardian security scanning in stdio mode | 1-2 hrs | Critical (security) |
-| 10 | Fix tool result fallback in Thinker | 1 hr | Medium |
-| 4 | Add memory deduplication and consolidation | 2-3 hrs | High (long-term) |
-| 3 | Wire skills to Inngest cron scheduler | 3-4 hrs | High (unlocks proactivity) |
-| 9 | Add MCP health monitoring and auto-restart | 2 hrs | Medium (reliability) |
-| 7 | Clean up dead HTTP-mode execute() code | 30 min | Low (code quality) |
+| # | Improvement | Effort | Impact | Status |
+|---|-------------|--------|--------|--------|
+| 1 | Increase maxSteps from 2 to 8 | 5 min | Transformative | DONE |
+| 5 | Add date/time/timezone to system prompt | 15 min | High | DONE |
+| 6 | Improve tool descriptions across all MCPs | 2-3 hrs | High | DONE |
+| 8 | Increase conversation history window | 5 min | High | |
+| 2 | Wire Guardian security scanning in stdio mode | 1-2 hrs | Critical (security) | |
+| 10 | Fix tool result fallback in Thinker | 1 hr | Medium | |
+| 4 | Add memory deduplication and consolidation | 2-3 hrs | High (long-term) | |
+| 3 | Wire skills to Inngest cron scheduler | 3-4 hrs | High (unlocks proactivity) | |
+| 9 | Add MCP health monitoring and auto-restart | 2 hrs | Medium (reliability) | |
+| 7 | Clean up dead HTTP-mode execute() code | 30 min | Low (code quality) | |
 
 ## Verification
 
