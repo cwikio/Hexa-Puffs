@@ -5,6 +5,7 @@ import { logger } from '../../../Shared/Utils/logger.js';
 import { JobDefinition, TaskDefinition } from './types.js';
 import { TelegramMCPClient } from '../mcp-clients/telegram.js';
 import { getConfig } from '../config/index.js';
+import Cron from 'croner';
 
 const storage = new JobStorage();
 
@@ -182,6 +183,101 @@ export const cronJobFunction = inngest.createFunction(
 
       throw error;
     }
+  }
+);
+
+// Cron job poller - checks all saved cron jobs and executes those that are due
+export const cronJobPollerFunction = inngest.createFunction(
+  {
+    id: 'cron-job-poller',
+    name: 'Poll and Execute Due Cron Jobs',
+    concurrency: { limit: 1 },
+    retries: 1,
+  },
+  { cron: '* * * * *' }, // Every minute
+  async ({ step }) => {
+    const jobs = await step.run('load-cron-jobs', async () => {
+      const allJobs = await storage.listJobs();
+      return allJobs.filter(
+        (j) => j.type === 'cron' && j.enabled && j.cronExpression
+      );
+    });
+
+    if (jobs.length === 0) {
+      return { checked: 0, executed: 0 };
+    }
+
+    let executed = 0;
+    const now = new Date();
+
+    for (const job of jobs) {
+      // Check if this cron expression matches the current minute
+      let isDue = false;
+      try {
+        const cron = new Cron(job.cronExpression!, { timezone: job.timezone || 'UTC' });
+        const prev = cron.previousRun(now);
+        if (!prev) continue;
+
+        // The job is due if its previous scheduled time falls within the current minute
+        // and it hasn't already been run for this occurrence
+        const prevTime = prev.getTime();
+        const minuteStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0).getTime();
+        const minuteEnd = minuteStart + 60000;
+
+        isDue = prevTime >= minuteStart && prevTime < minuteEnd;
+
+        // Skip if already run within the last minute (prevent double execution)
+        if (isDue && job.lastRunAt) {
+          const lastRun = new Date(job.lastRunAt).getTime();
+          if (lastRun >= minuteStart) {
+            isDue = false;
+          }
+        }
+      } catch (error) {
+        logger.error('Invalid cron expression', { jobId: job.id, cronExpression: job.cronExpression, error });
+        continue;
+      }
+
+      if (!isDue) continue;
+
+      await step.run(`execute-cron-${job.id}`, async () => {
+        const startTime = Date.now();
+        try {
+          logger.info('Cron poller executing job', { jobId: job.id, name: job.name });
+          const result = await executeAction(job.action);
+
+          job.lastRunAt = new Date().toISOString();
+          await storage.saveJob(job);
+
+          const duration = Date.now() - startTime;
+          logger.info('Cron job completed', { jobId: job.id, duration });
+          return { success: true, result };
+        } catch (error) {
+          const duration = Date.now() - startTime;
+          logger.error('Cron job failed', { jobId: job.id, error });
+
+          // Update lastRunAt even on failure to prevent retry storm
+          job.lastRunAt = new Date().toISOString();
+          await storage.saveJob(job);
+
+          // Send failure notification via Telegram
+          try {
+            const { handleTelegram } = await import('../tools/telegram.js');
+            await handleTelegram({
+              message: `❌ Cron job "${job.name}" failed after ${duration}ms: ${error instanceof Error ? error.message : String(error)}`,
+            });
+          } catch (notifyError) {
+            logger.error('Failed to send failure notification', { error: notifyError });
+          }
+
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
+      executed++;
+    }
+
+    return { checked: jobs.length, executed };
   }
 );
 
@@ -381,4 +477,4 @@ export const skillSchedulerFunction = inngest.createFunction(
   }
 );
 
-export const jobFunctions = [backgroundJobFunction, cronJobFunction, telegramMessagePollerFunction, skillSchedulerFunction];
+export const jobFunctions = [backgroundJobFunction, cronJobFunction, cronJobPollerFunction, telegramMessagePollerFunction, skillSchedulerFunction];
