@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "MCP server for online search using Brave Search API",
   "type": "module",
-  "main": "dist/Searcher-MCP/src/index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/Searcher-MCP/src/index.js",
+    "start": "node dist/index.js",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",

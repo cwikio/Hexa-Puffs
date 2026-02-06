@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "MCP server for scanning content for prompt injection attacks using Granite Guardian",
   "type": "module",
-  "main": "dist/Guardian/src/index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/Guardian/src/index.js",
+    "start": "node dist/index.js",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",

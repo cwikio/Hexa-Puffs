@@ -3,11 +3,17 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Shared types and utilities for MCP services",
+  "exports": {
+    "./*": "./dist/*"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": ">=1.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.10.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "typescript": "^5.7.0"
   }
