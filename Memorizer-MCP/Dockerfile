@@ -1,6 +1,8 @@
-FROM node:20-slim
+# Memorizer MCP Server Dockerfile
+# Build from monorepo root: docker build -f Memorizer-MCP/Dockerfile .
 
-WORKDIR /app
+FROM node:20-slim
+WORKDIR /monorepo/Memorizer-MCP
 
 # Install build dependencies for better-sqlite3
 RUN apt-get update && apt-get install -y \
@@ -9,17 +11,17 @@ RUN apt-get update && apt-get install -y \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy package files
-COPY package*.json ./
+# Copy base tsconfig and Shared (file: dependency)
+COPY tsconfig.base.json /monorepo/tsconfig.base.json
+COPY Shared /monorepo/Shared
 
-# Install dependencies
+# Copy package files and install
+COPY Memorizer-MCP/package*.json ./
 RUN npm ci
 
-# Copy source code
-COPY tsconfig.json ./
-COPY src ./src
-
-# Build TypeScript
+# Copy source and build
+COPY Memorizer-MCP/tsconfig.json ./
+COPY Memorizer-MCP/src ./src
 RUN npm run build
 
 # Create data directories

@@ -1,21 +1,22 @@
-# Build stage
+# Telegram MCP Server Dockerfile
+# Build from monorepo root: docker build -f Telegram-MCP/Dockerfile .
+
 FROM node:22-alpine AS builder
-WORKDIR /app
+WORKDIR /monorepo/Telegram-MCP
 
 # Install build dependencies for native modules
 RUN apk add --no-cache python3 make g++
 
-# Copy package files
-COPY package*.json ./
+# Copy base tsconfig
+COPY tsconfig.base.json /monorepo/tsconfig.base.json
 
-# Install all dependencies (including devDependencies for build)
+# Copy package files and install
+COPY Telegram-MCP/package*.json ./
 RUN npm ci
 
-# Copy source code
-COPY tsconfig.json ./
-COPY src ./src
-
-# Build TypeScript
+# Copy source and build
+COPY Telegram-MCP/tsconfig.json ./
+COPY Telegram-MCP/src ./src
 RUN npm run build
 
 # Production stage
@@ -23,9 +24,9 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Copy built files and production dependencies
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY package*.json ./
+COPY --from=builder /monorepo/Telegram-MCP/dist ./dist
+COPY --from=builder /monorepo/Telegram-MCP/node_modules ./node_modules
+COPY Telegram-MCP/package*.json ./
 
 # Set environment
 ENV NODE_ENV=production
