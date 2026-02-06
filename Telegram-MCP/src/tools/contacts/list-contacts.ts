@@ -1,4 +1,7 @@
+import { z } from "zod";
 import { listContacts } from "../../telegram/client.js";
+
+export const listContactsSchema = z.object({});
 
 export async function handleListContacts() {
   const contacts = await listContacts();

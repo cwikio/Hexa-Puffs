@@ -6,7 +6,7 @@ import {
   clearSubscriptions,
 } from "../../telegram/events.js";
 
-const subscribeChatSchema = z.object({
+export const subscribeChatSchema = z.object({
   chat_id: z.string().optional().describe("Chat ID to subscribe/unsubscribe"),
   action: z
     .enum(["subscribe", "unsubscribe", "list", "clear"])

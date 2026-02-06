@@ -5,7 +5,7 @@ import {
   getQueueSize,
 } from "../../telegram/events.js";
 
-const getNewMessagesSchema = z.object({
+export const getNewMessagesSchema = z.object({
   peek: z
     .boolean()
     .optional()
