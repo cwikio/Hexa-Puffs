@@ -24,7 +24,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "web_search",
     description:
-      "Search the web for current information, facts, documentation, or any topic. Returns titles, URLs, and descriptions. Use freshness to filter by recency: '24h' for today's info, 'week' for this week, 'month' for this month. Do NOT use this for questions you can answer from your own knowledge.",
+      "Search the web for current information, documentation, or any topic. Do NOT use for questions answerable from your own knowledge.\n\nArgs:\n  - query (string): Search query\n  - count (number, optional): Number of results, 1-20 (default: 10)\n  - freshness (string, optional): Recency filter — '24h', 'week', 'month', or 'year'\n  - safesearch (string, optional): 'off', 'moderate', or 'strict' (default: 'moderate')\n\nReturns: { results: [{ title, url, description, age? }], total_count, query }",
     inputSchema: webSearchSchema,
     annotations: {
       readOnlyHint: true,
@@ -41,7 +41,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "news_search",
     description:
-      "Search recent news articles. Use this instead of web_search when the user asks about current events, breaking news, or recent developments. Returns headlines, sources, and publication dates.",
+      "Search recent news articles. Use instead of web_search for current events, breaking news, or recent developments.\n\nArgs:\n  - query (string): Search query\n  - count (number, optional): Number of results, 1-20 (default: 10)\n  - freshness (string, optional): Recency filter — '24h', 'week', 'month'\n\nReturns: { results: [{ title, url, description, age?, source? }], total_count, query }",
     inputSchema: newsSearchSchema,
     annotations: {
       readOnlyHint: true,

@@ -24,7 +24,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "list_vaults",
     description:
-      "List all accessible 1Password vaults. Use this as the first step to discover available vaults before listing items or retrieving secrets. Returns vault IDs and names.",
+      "List all accessible 1Password vaults. Use this first to discover vault IDs before listing items or reading secrets.\n\nReturns: [{ id, name }]",
     inputSchema: listVaultsSchema,
     annotations: {
       readOnlyHint: true,
@@ -38,7 +38,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "list_items",
     description:
-      "List items in a 1Password vault with optional category filtering. Use this to discover passwords, API keys, credit cards, and other items stored in a vault. Returns item IDs, titles, categories, and last updated timestamps.",
+      "List items in a 1Password vault. Use to discover passwords, API keys, credit cards, and other stored items.\n\nArgs:\n  - vault (string): Vault name or ID\n  - categories (string[], optional): Filter by category (e.g., ['LOGIN', 'API_CREDENTIAL', 'CREDIT_CARD'])\n\nReturns: [{ id, title, category, last_edited_by, updated_at, version }]",
     inputSchema: listItemsSchema,
     annotations: {
       readOnlyHint: true,
@@ -52,7 +52,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "get_item",
     description:
-      "Get complete details of a 1Password item including all fields (username, password, URLs, notes, custom fields). Each field includes its value and secret reference for use with read_secret. Use this when you need full item details beyond just the list metadata.",
+      "Get full details of a 1Password item including all fields. Returns field values and secret references (op:// URIs) for use with read_secret.\n\nArgs:\n  - item (string): Item name or ID\n  - vault (string, optional): Vault name or ID (searches all vaults if omitted)\n\nReturns: { id, title, category, fields: [{ id, type, label, value, reference }], urls, tags, updated_at }",
     inputSchema: getItemSchema,
     annotations: {
       readOnlyHint: true,
@@ -66,7 +66,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "read_secret",
     description:
-      "Read a secret value using a 1Password secret reference URI (format: op://vault/item/field). Use this to retrieve passwords, API keys, tokens, and other sensitive data. The reference can be obtained from the get_item response. Example: op://Private/GitHub/password",
+      "Read a secret value using a 1Password secret reference URI. Use to retrieve passwords, API keys, and tokens. Get references from get_item response.\n\nArgs:\n  - reference (string): Secret reference URI (e.g., 'op://Private/GitHub/password')\n\nReturns: The secret value as a string",
     inputSchema: readSecretSchema,
     annotations: {
       readOnlyHint: true,

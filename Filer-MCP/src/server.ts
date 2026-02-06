@@ -33,7 +33,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "create_file",
     description:
-      "Create a new file in the AI workspace. Use relative paths only (e.g., 'reports/analysis.md'). Set overwrite=true to replace an existing file.",
+      "Create a new file in the AI workspace.\n\nArgs:\n  - path (string): Relative path (e.g., 'reports/analysis.md')\n  - content (string): File contents\n  - overwrite (boolean, optional): Replace existing file (default: false)\n\nReturns: { path, size, created }",
     inputSchema: createFileSchema,
     annotations: {
       readOnlyHint: false,
@@ -50,7 +50,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "read_file",
     description:
-      "Read a file's contents. Use relative paths for workspace files. For files outside the workspace, use absolute paths (requires an active grant — check with check_grant first).",
+      "Read a file's contents. Workspace files use relative paths. External files require absolute paths and an active grant (check with check_grant first).\n\nArgs:\n  - path (string): Relative workspace path or absolute granted path\n\nReturns: { path, content, size, modified }",
     inputSchema: readFileSchema,
     annotations: {
       readOnlyHint: true,
@@ -67,7 +67,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "list_files",
     description:
-      "List files and folders in a directory. Defaults to workspace root. Use recursive=true to include all subdirectories.",
+      "List files and folders in a directory. Defaults to workspace root.\n\nArgs:\n  - path (string, optional): Directory to list (default: workspace root)\n  - recursive (boolean, optional): Include all subdirectories (default: false)\n\nReturns: { path, entries: [{ name, type, size, modified }] }",
     inputSchema: listFilesSchema,
     annotations: {
       readOnlyHint: true,
@@ -84,7 +84,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "update_file",
     description:
-      "Replace the contents of an existing file. A .bak backup is created by default. Works with workspace files and granted external paths.",
+      "Replace the contents of an existing file. Creates a .bak backup by default. Works with workspace files and granted external paths.\n\nArgs:\n  - path (string): File path (relative or granted absolute)\n  - content (string): New file contents\n  - create_backup (boolean, optional): Create .bak backup (default: true)\n\nReturns: { path, size, modified, backup_path? }",
     inputSchema: updateFileSchema,
     annotations: {
       readOnlyHint: false,
@@ -101,7 +101,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "delete_file",
     description:
-      "Delete a file from the workspace. Only works with workspace files — cannot delete external/granted files.",
+      "Delete a file from the workspace. Only works with workspace files — cannot delete external/granted files.\n\nArgs:\n  - path (string): Relative workspace path\n\nReturns: { path, deleted }",
     inputSchema: deleteFileSchema,
     annotations: {
       readOnlyHint: false,
@@ -118,7 +118,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "move_file",
     description:
-      "Move or rename a file within the workspace. Both source and destination must be relative workspace paths.",
+      "Move or rename a file within the workspace. Both paths must be relative workspace paths.\n\nArgs:\n  - source (string): Current relative path\n  - destination (string): New relative path\n\nReturns: { source, destination, moved }",
     inputSchema: moveFileSchema,
     annotations: {
       readOnlyHint: false,
@@ -135,7 +135,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "copy_file",
     description:
-      "Copy a file. Source can be a granted external path (absolute) or workspace path (relative). Destination must be a relative workspace path.",
+      "Copy a file. Source can be a granted external path (absolute) or workspace path (relative). Destination must be a relative workspace path.\n\nArgs:\n  - source (string): Source path (relative or granted absolute)\n  - destination (string): Destination relative workspace path\n\nReturns: { source, destination, copied }",
     inputSchema: copyFileSchema,
     annotations: {
       readOnlyHint: false,
@@ -152,7 +152,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "search_files",
     description:
-      "Search for files by filename pattern or content text. Set search_type='content' to search inside files, 'filename' (default) to match file names. Set search_in='all' to include granted paths.",
+      "Search for files by name pattern or content text.\n\nArgs:\n  - query (string): Search pattern or text\n  - search_type (string, optional): 'filename' (default) or 'content'\n  - search_in (string, optional): 'workspace' (default), 'granted', or 'all'\n  - file_types (string[], optional): Filter by file extensions\n\nReturns: { query, matches: [{ path, type?, line?, context? }] }",
     inputSchema: searchFilesSchema,
     annotations: {
       readOnlyHint: true,
@@ -171,7 +171,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "check_grant",
     description:
-      "Check if the AI has read or write access to a path outside the workspace. Use this before attempting to read/write external files.",
+      "Check if the AI has access to a path outside the workspace. Call before attempting external file operations.\n\nArgs:\n  - path (string): Absolute path to check\n\nReturns: { path, granted, permission, grant_details? }",
     inputSchema: checkGrantSchema,
     annotations: {
       readOnlyHint: true,
@@ -188,7 +188,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "request_grant",
     description:
-      "Request access to a path outside the workspace. Currently returns instructions for manual grant configuration.",
+      "Request access to a path outside the workspace. Returns instructions for manual grant configuration.\n\nArgs:\n  - path (string): Absolute path to request access to\n  - permission (string): 'read' or 'read-write'\n  - reason (string): Why access is needed\n\nReturns: { path, instructions }",
     inputSchema: requestGrantSchema,
     annotations: {
       readOnlyHint: false,
@@ -205,7 +205,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "list_grants",
     description:
-      "List all active file access grants showing which external paths the AI can access and with what permissions.",
+      "List all active file access grants showing which external paths the AI can access and with what permissions.\n\nReturns: { grants: [{ path, permission, created }] }",
     inputSchema: listGrantsSchema,
     annotations: {
       readOnlyHint: true,
@@ -224,7 +224,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "get_workspace_info",
     description:
-      "Get the workspace root path, total file count, and disk usage statistics.",
+      "Get workspace root path, total file count, and disk usage statistics.\n\nReturns: { workspace_path, file_count, total_size, free_space }",
     inputSchema: getWorkspaceInfoSchema,
     annotations: {
       readOnlyHint: true,
@@ -241,7 +241,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "get_audit_log",
     description:
-      "Get the audit log of all file operations. Filter by path prefix, operation type (e.g., 'read_file', 'create_file'), or date range.",
+      "Get the audit log of file operations. Filter by path, operation type, or date range.\n\nArgs:\n  - path_filter (string, optional): Filter by path prefix\n  - operation_filter (string, optional): Filter by operation (e.g., 'read_file', 'create_file')\n  - date_from (string, optional): ISO date — only entries after this date\n  - limit (number, optional): Max entries to return (default: 100)\n\nReturns: { entries: [{ timestamp, operation, path, details }], total }",
     inputSchema: getAuditLogSchema,
     annotations: {
       readOnlyHint: true,

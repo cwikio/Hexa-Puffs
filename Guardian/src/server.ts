@@ -24,7 +24,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "scan_content",
     description:
-      "Scans content for prompt injection attacks using Granite Guardian. Accepts strings, objects, or arrays - recursively scans all text fields.",
+      "Scan content for prompt injection attacks using Granite Guardian. Accepts strings, objects, or arrays — recursively scans all text fields.\n\nArgs:\n  - content (string | object | array): The content to scan\n  - source (string, optional): Origin label for audit log (e.g., 'telegram', 'email')\n  - context (string, optional): Additional context about the content's origin\n\nReturns: { safe: boolean, confidence: number, threats: string[], explanation: string, scan_id: string }",
     inputSchema: scanContentSchema,
     annotations: {
       readOnlyHint: true,
@@ -42,7 +42,7 @@ export function createServer(): McpServer {
   registerTool(server, {
     name: "get_scan_log",
     description:
-      "Retrieve audit log of past security scans. Can filter by scan ID or show only threats.",
+      "Retrieve the audit log of past security scans. Returns results in reverse chronological order.\n\nArgs:\n  - scan_id (string, optional): Get a specific scan by ID\n  - limit (number, optional): Max entries to return (default: 50)\n  - threats_only (boolean, optional): Only return scans that detected threats\n\nReturns: { scans: ScanLogEntry[], total: number }",
     inputSchema: getScanLogSchema,
     annotations: {
       readOnlyHint: true,
