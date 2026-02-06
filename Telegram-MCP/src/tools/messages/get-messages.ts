@@ -27,7 +27,7 @@ export async function handleGetMessages(input: GetMessagesInput) {
 
 export const getMessagesTool = {
   name: "get_messages",
-  description: "Get message history from a Telegram chat",
+  description: "Get recent message history from a specific Telegram chat. Returns messages in reverse chronological order. Use search_messages instead if you need to find messages matching specific text.",
   inputSchema: {
     type: "object" as const,
     properties: {

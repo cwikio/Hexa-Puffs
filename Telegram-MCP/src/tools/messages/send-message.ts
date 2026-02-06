@@ -26,7 +26,7 @@ export async function handleSendMessage(input: SendMessageInput) {
 
 export const sendMessageTool = {
   name: "send_message",
-  description: "Send a text message to a Telegram chat, user, or channel",
+  description: "Send a text message via Telegram. Use this for Telegram messaging — for email use send_email instead. Accepts chat_id as '@username' or numeric ID. Use list_chats first if you need to find the right chat.",
   inputSchema: {
     type: "object" as const,
     properties: {

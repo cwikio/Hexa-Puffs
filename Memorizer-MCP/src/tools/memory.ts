@@ -12,7 +12,7 @@ import {
 // Tool definitions
 export const retrieveMemoriesToolDefinition = {
   name: 'retrieve_memories',
-  description: 'Search for relevant facts and conversations based on a query',
+  description: 'Search across both facts and past conversations by keyword. This is the primary memory lookup tool — use it when the user asks "do you remember", "what do you know about", or when you need context before responding. For browsing all facts by category use list_facts. For searching only past chat transcripts with date filters use search_conversations.',
   inputSchema: {
     type: 'object' as const,
     properties: {

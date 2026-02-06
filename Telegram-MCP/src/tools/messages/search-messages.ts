@@ -28,7 +28,7 @@ export async function handleSearchMessages(input: SearchMessagesInput) {
 
 export const searchMessagesTool = {
   name: "search_messages",
-  description: "Search messages in a specific chat or globally across all chats",
+  description: "Search Telegram messages by text query. Provide chat_id to search within one chat, or omit it to search globally across all chats. Use get_messages instead if you just want recent history without a search query.",
   inputSchema: {
     type: "object" as const,
     properties: {

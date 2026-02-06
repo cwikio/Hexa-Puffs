@@ -22,7 +22,7 @@ import type { EmailMessage, ListEmailsResult } from "../types/gmail.js";
 export const listEmailsTool = {
   name: "list_emails",
   description:
-    "List emails from Gmail with optional search query. Use Gmail search syntax (from:, to:, subject:, is:unread, etc.)",
+    "List emails from Gmail with optional search query. Supports Gmail search syntax: 'from:john@example.com', 'is:unread', 'subject:meeting', 'newer_than:2d', 'has:attachment'. Returns email IDs, subjects, and snippets. Use get_email with a message_id to read the full content.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -88,7 +88,7 @@ export async function handleListEmails(
 
 export const getEmailTool = {
   name: "get_email",
-  description: "Get full content of a specific email by ID",
+  description: "Get the full content of a specific email by its message ID (obtained from list_emails). Returns subject, body, sender, recipients, and attachments info.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -129,7 +129,7 @@ export async function handleGetEmail(
 
 export const sendEmailTool = {
   name: "send_email",
-  description: "Send a new email",
+  description: "Send a new email via Gmail. Use this for email — for Telegram messages use send_message instead. To reply to an existing thread, use reply_email instead of this.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -205,7 +205,7 @@ export async function handleSendEmail(
 
 export const replyEmailTool = {
   name: "reply_email",
-  description: "Reply to an existing email thread",
+  description: "Reply to an existing email within the same thread. Use this instead of send_email when responding to a conversation. Requires the message_id from get_email or list_emails.",
   inputSchema: {
     type: "object" as const,
     properties: {

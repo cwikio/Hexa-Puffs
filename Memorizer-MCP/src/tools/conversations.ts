@@ -14,7 +14,7 @@ import {
 // Tool definitions
 export const storeConversationToolDefinition = {
   name: 'store_conversation',
-  description: 'Log a conversation turn. Automatically triggers fact extraction.',
+  description: 'Log a conversation exchange (user message + agent response). Automatically extracts and stores facts from the conversation. Called internally after each chat interaction — rarely needs to be called manually.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -47,7 +47,7 @@ export const storeConversationToolDefinition = {
 
 export const searchConversationsToolDefinition = {
   name: 'search_conversations',
-  description: 'Search conversation history by keyword with optional date filters',
+  description: 'Search past chat transcripts by keyword with optional date range. Searches both user messages and agent responses. Use this when the user asks "what did we talk about last week" or to find a specific past discussion. For searching stored facts instead, use list_facts or retrieve_memories.',
   inputSchema: {
     type: 'object' as const,
     properties: {

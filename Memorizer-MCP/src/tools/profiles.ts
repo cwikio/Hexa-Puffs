@@ -13,7 +13,7 @@ import {
 // Tool definitions
 export const getProfileToolDefinition = {
   name: 'get_profile',
-  description: "Get agent's user profile",
+  description: "Get the user's profile including name, background, preferences, current projects, and learned patterns. Use this to personalize responses or check what structured information is stored about the user.",
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -28,7 +28,7 @@ export const getProfileToolDefinition = {
 
 export const updateProfileToolDefinition = {
   name: 'update_profile',
-  description: 'Update user profile fields. Supports dot notation for nested fields.',
+  description: 'Update user profile fields. Supports dot notation for nested fields (e.g., "user_info.name", "preferences.communication"). Use this for structured, long-lived user attributes. For individual facts or learnings, use store_fact instead.',
   inputSchema: {
     type: 'object' as const,
     properties: {

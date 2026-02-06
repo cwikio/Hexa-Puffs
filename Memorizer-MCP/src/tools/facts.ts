@@ -15,7 +15,7 @@ import {
 // Tool definitions
 export const storeFactToolDefinition = {
   name: 'store_fact',
-  description: 'Store a discrete fact or learning about the user',
+  description: 'Store a single fact about the user. Use category: "preference" for likes/dislikes/settings, "background" for personal details (location, job, age), "contact" for people they mention, "project" for things they\'re working on, "decision" for choices made, "pattern" for recurring behaviors. Before storing, consider if an existing fact should be deleted first to avoid duplicates.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -26,11 +26,11 @@ export const storeFactToolDefinition = {
       },
       fact: {
         type: 'string',
-        description: 'The fact to store',
+        description: 'A concise, self-contained statement (e.g., "Prefers dark mode", "Lives in Krakow", "Manager is Anna")',
       },
       category: {
         type: 'string',
-        description: 'Category of the fact',
+        description: 'Fact category: preference, background, contact, project, decision, or pattern',
         enum: FACT_CATEGORIES,
       },
       source: {
@@ -44,7 +44,7 @@ export const storeFactToolDefinition = {
 
 export const listFactsToolDefinition = {
   name: 'list_facts',
-  description: 'List all facts with optional filtering by category',
+  description: 'List all stored facts, optionally filtered by category. Use this to review what is known about the user or to find a specific fact ID for deletion. For searching by keyword, use retrieve_memories instead.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -69,7 +69,7 @@ export const listFactsToolDefinition = {
 
 export const deleteFactToolDefinition = {
   name: 'delete_fact',
-  description: 'Delete a specific fact by ID',
+  description: 'Delete a fact by its ID. Use list_facts first to find the ID. Use this to remove outdated or incorrect facts before storing a corrected version.',
   inputSchema: {
     type: 'object' as const,
     properties: {

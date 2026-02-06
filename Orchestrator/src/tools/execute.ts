@@ -4,14 +4,7 @@ import type { StandardResponse } from '../../../Shared/Types/StandardResponse.js
 
 export const executeToolDefinition = {
   name: 'execute_task',
-  description: `Execute a task through the orchestrator. It will coordinate security scanning, use relevant tools (Telegram, 1Password), and return the result.
-
-Examples:
-- "Send 'Hello!' to Telegram"
-- "Get my GitHub API key from 1Password"
-- "Send the current time to Telegram"
-
-Available tools depend on which MCP servers are running. Use get_status to check availability.`,
+  description: `Execute a simple task via keyword matching (HTTP mode only). Supports basic Telegram sends and 1Password lookups. For precise control, call specific tools directly (e.g., send_message, get_item) instead of this. Use get_status to check which MCP servers are available.`,
   inputSchema: {
     type: 'object' as const,
     properties: {

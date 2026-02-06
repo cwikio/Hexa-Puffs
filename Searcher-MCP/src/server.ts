@@ -82,14 +82,14 @@ export function createServer(): McpServer {
   // Register search tools
   registerTool(
     "web_search",
-    "Search the web using Brave Search. Returns titles, URLs, and descriptions.",
+    "Search the web for current information, facts, documentation, or any topic. Returns titles, URLs, and descriptions. Use freshness to filter by recency: '24h' for today's info, 'week' for this week, 'month' for this month. Do NOT use this for questions you can answer from your own knowledge.",
     webSearchSchema,
     handleWebSearch
   );
 
   registerTool(
     "news_search",
-    "Search news articles using Brave Search. Returns recent news with sources.",
+    "Search recent news articles. Use this instead of web_search when the user asks about current events, breaking news, or recent developments. Returns headlines, sources, and publication dates.",
     newsSearchSchema,
     handleNewsSearch
   );

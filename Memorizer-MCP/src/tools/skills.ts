@@ -43,7 +43,7 @@ function formatSkill(row: SkillRow) {
 
 export const storeSkillToolDefinition = {
   name: 'store_skill',
-  description: 'Create a new autonomous skill (scheduled or manual behavior)',
+  description: 'Create a new autonomous skill — a scheduled or manually triggered behavior the assistant performs independently. trigger_type: "cron" for recurring schedules (e.g., daily email digest), "manual" for on-demand execution, "event" for event-driven triggers. Instructions should be natural language describing what the LLM should do step by step.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -95,7 +95,7 @@ export const storeSkillToolDefinition = {
 
 export const listSkillsToolDefinition = {
   name: 'list_skills',
-  description: 'List all skills with optional filtering',
+  description: 'List all registered skills with optional filtering by enabled status or trigger type. Returns skill IDs, names, schedules, and last run information.',
   inputSchema: {
     type: 'object' as const,
     properties: {
