@@ -230,6 +230,21 @@ export class Agent {
 
     // Note: tool schemas are passed to the LLM via Vercel AI SDK, no need to list them in the prompt
 
+    // Add current date/time context
+    const now = new Date();
+    const tz = this.config.userTimezone;
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    systemPrompt += `\n\n## Current Date & Time\n${formatter.format(now)} (${tz})`;
+
     // Add context to system prompt
     if (memories.facts.length > 0) {
       const factsText = memories.facts

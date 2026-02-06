@@ -54,6 +54,9 @@ export const ConfigSchema = z.object({
   proactiveTasksEnabled: z.boolean().default(true),
   defaultNotifyChatId: z.string().optional(),
 
+  // User context
+  userTimezone: z.string().default('Europe/Warsaw'),
+
   // Logging
   logLevel: LogLevelSchema.default('info'),
   traceLogPath: z.string().default('~/.annabelle/logs/traces.jsonl'),
@@ -99,6 +102,7 @@ export function loadConfig(): Config {
     thinkerAgentId: process.env.THINKER_AGENT_ID || 'thinker',
     proactiveTasksEnabled: parseBoolean(process.env.PROACTIVE_TASKS_ENABLED, true),
     defaultNotifyChatId: process.env.DEFAULT_NOTIFY_CHAT_ID || undefined,
+    userTimezone: process.env.USER_TIMEZONE || 'Europe/Warsaw',
     logLevel: process.env.LOG_LEVEL || 'info',
     traceLogPath: process.env.TRACE_LOG_PATH || '~/.annabelle/logs/traces.jsonl',
   };
