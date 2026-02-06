@@ -1,21 +1,21 @@
 # Guardian MCP Server Dockerfile
 # Note: Requires Ollama running on host (not in this container)
+# Build from monorepo root: docker build -f Guardian/Dockerfile .
 
 FROM node:22-alpine AS builder
 
-WORKDIR /app
+WORKDIR /monorepo/Guardian
 
-# Copy package files
-COPY package*.json ./
+# Copy base tsconfig
+COPY tsconfig.base.json /monorepo/tsconfig.base.json
 
-# Install dependencies
+# Copy package files and install
+COPY Guardian/package*.json ./
 RUN npm ci
 
-# Copy source
-COPY tsconfig.json ./
-COPY src ./src
-
-# Build TypeScript
+# Copy source and build
+COPY Guardian/tsconfig.json ./
+COPY Guardian/src ./src
 RUN npm run build
 
 # Production stage
@@ -30,9 +30,9 @@ ENV OLLAMA_HOST=http://host.docker.internal:11434
 ENV MODEL_NAME=guardian
 
 # Copy built files
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./
+COPY --from=builder /monorepo/Guardian/dist ./dist
+COPY --from=builder /monorepo/Guardian/node_modules ./node_modules
+COPY --from=builder /monorepo/Guardian/package.json ./
 
 # Create logs directory
 RUN mkdir -p logs

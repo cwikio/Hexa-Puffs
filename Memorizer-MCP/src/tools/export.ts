@@ -4,7 +4,7 @@ import { join, dirname } from 'path';
 import { getDatabase, type FactRow, type ConversationRow, type ProfileRow } from '../db/index.js';
 import { getConfig } from '../config/index.js';
 import { ExportError } from '../utils/errors.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
   type ExportMemoryData,

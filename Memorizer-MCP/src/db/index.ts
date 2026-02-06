@@ -3,7 +3,7 @@ import { mkdirSync, existsSync } from 'fs';
 import { dirname } from 'path';
 import { getConfig } from '../config/index.js';
 import { DatabaseError } from '../utils/errors.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import { SCHEMA_SQL, MIGRATIONS_SQL } from './schema.js';
 
 let db: Database.Database | null = null;

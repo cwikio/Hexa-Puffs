@@ -1,5 +1,5 @@
 import { JobAction, WorkflowStep } from './types.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   handleTelegram,
   handleStoreFact,

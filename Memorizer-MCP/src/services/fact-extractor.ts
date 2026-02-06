@@ -3,7 +3,7 @@ import { type AIProvider, createAIProvider } from './ai-provider.js';
 import { isFactSafe } from './sanitizer.js';
 import { getConfig, type ExtractionConfig } from '../config/index.js';
 import { ExtractionError } from '../utils/errors.js';
-import { logger, Logger } from '../../../Shared/Utils/logger.js';
+import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 import { type FactCategory, FACT_CATEGORIES } from '../db/schema.js';
 
 // Schema for extracted facts

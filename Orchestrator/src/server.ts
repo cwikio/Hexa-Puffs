@@ -3,7 +3,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { logger } from '../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import { getOrchestrator } from './core/orchestrator.js';
 import { ToolRouter } from './core/tool-router.js';
 import {

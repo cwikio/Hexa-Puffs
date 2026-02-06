@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { getDatabase, generateId, type ConversationRow } from '../db/index.js';
 import { getFactExtractor } from '../services/fact-extractor.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
   type StoreConversationData,

@@ -26,12 +26,19 @@ import { SecurityCoordinator } from './security.js';
 import { SessionManager } from './sessions.js';
 import { ToolExecutor, type ToolRegistry } from './tools.js';
 import { ToolRouter } from './tool-router.js';
-import { logger, Logger } from '../../../Shared/Utils/logger.js';
+import { logger, Logger } from '@mcp/shared/Utils/logger.js';
+
+export interface MCPServerStatus {
+  available: boolean;
+  required: boolean;
+  type: 'stdio' | 'http';
+  port?: number;
+}
 
 export interface OrchestratorStatus {
   ready: boolean;
   uptime: number;
-  mcpServers: Record<string, { available: boolean; required: boolean }>;
+  mcpServers: Record<string, MCPServerStatus>;
   sessions: { activeSessions: number; totalTurns: number };
   security: { blockedCount: number };
 }
@@ -403,39 +410,80 @@ export class Orchestrator {
     return this.tools!.executePassword(itemName, vault);
   }
 
+  private extractPort(url: string): number | undefined {
+    try {
+      return new URL(url).port ? parseInt(new URL(url).port, 10) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   getStatus(): OrchestratorStatus {
     const uptime = Date.now() - this.startTime.getTime();
+    const httpConfigs = this.config.mcpServers;
 
-    // Build MCP servers status based on connection mode
-    let mcpServers: Record<string, { available: boolean; required: boolean }>;
+    const mcpServers: Record<string, MCPServerStatus> = {};
     let blockedCount = 0;
 
     if (this.connectionMode === 'stdio') {
-      // In stdio mode, get status from stdio clients
-      mcpServers = {};
+      // Stdio MCPs
       for (const [name, client] of this.stdioClients) {
         mcpServers[name] = {
           available: client.isAvailable,
           required: client.isRequired,
+          type: 'stdio',
+        };
+      }
+
+      // HTTP MCPs (searcher, gmail) — also active in stdio mode
+      if (this.searcher) {
+        mcpServers['searcher'] = {
+          available: this.searcher.isAvailable,
+          required: this.searcher.isRequired,
+          type: 'http',
+          port: httpConfigs?.searcher ? this.extractPort(httpConfigs.searcher.url) : undefined,
+        };
+      }
+      if (this.gmail) {
+        mcpServers['gmail'] = {
+          available: this.gmail.isAvailable,
+          required: this.gmail.isRequired,
+          type: 'http',
+          port: httpConfigs?.gmail ? this.extractPort(httpConfigs.gmail.url) : undefined,
         };
       }
     } else {
-      // In HTTP mode, use the original approach
-      mcpServers = {
-        guardian: {
-          available: this.guardian?.isAvailable ?? false,
-          required: this.guardian?.isRequired ?? false,
-        },
-        memory: {
-          available: this.memory?.isAvailable ?? false,
-          required: this.memory?.isRequired ?? false,
-        },
-        filer: {
-          available: this.filer?.isAvailable ?? false,
-          required: this.filer?.isRequired ?? false,
-        },
-        ...(this.tools?.getToolStatus() ?? {}),
+      // In HTTP mode, all MCPs have ports
+      mcpServers['guardian'] = {
+        available: this.guardian?.isAvailable ?? false,
+        required: this.guardian?.isRequired ?? false,
+        type: 'http',
+        port: httpConfigs?.guardian ? this.extractPort(httpConfigs.guardian.url) : undefined,
       };
+      mcpServers['memory'] = {
+        available: this.memory?.isAvailable ?? false,
+        required: this.memory?.isRequired ?? false,
+        type: 'http',
+        port: httpConfigs?.memory ? this.extractPort(httpConfigs.memory.url) : undefined,
+      };
+      mcpServers['filer'] = {
+        available: this.filer?.isAvailable ?? false,
+        required: this.filer?.isRequired ?? false,
+        type: 'http',
+        port: httpConfigs?.filer ? this.extractPort(httpConfigs.filer.url) : undefined,
+      };
+
+      // Include tool-based status (searcher, gmail, etc.)
+      const toolStatus = this.tools?.getToolStatus() ?? {};
+      for (const [name, info] of Object.entries(toolStatus)) {
+        const configEntry = httpConfigs?.[name as keyof typeof httpConfigs];
+        mcpServers[name] = {
+          ...info,
+          type: 'http',
+          port: configEntry ? this.extractPort(configEntry.url) : undefined,
+        };
+      }
+
       blockedCount = this.security?.getBlockedCount() ?? 0;
     }
 

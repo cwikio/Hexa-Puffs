@@ -1,6 +1,6 @@
 import { type MCPServerConfig } from '../config/index.js';
 import { MCPClientError, MCPUnavailableError } from '../utils/errors.js';
-import { Logger, logger } from '../../../Shared/Utils/logger.js';
+import { Logger, logger } from '@mcp/shared/Utils/logger.js';
 import type {
   IMCPClient,
   MCPToolCall,

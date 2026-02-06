@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getOrchestrator } from '../core/orchestrator.js';
-import type { StandardResponse } from '../../../Shared/Types/StandardResponse.js';
+import type { StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
 
 export const getMessagesToolDefinition = {
   name: 'get_telegram_messages',

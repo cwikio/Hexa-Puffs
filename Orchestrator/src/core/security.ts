@@ -1,6 +1,6 @@
 import { GuardianMCPClient, type ScanResult } from '../mcp-clients/guardian.js';
 import { SecurityError } from '../utils/errors.js';
-import { logger, Logger } from '../../../Shared/Utils/logger.js';
+import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export interface SecurityEvent {
   timestamp: Date;

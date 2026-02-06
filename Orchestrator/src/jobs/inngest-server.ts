@@ -3,7 +3,7 @@ import express from 'express';
 import { createServer as createHttpServer } from 'http';
 import { inngest } from './inngest-client.js';
 import { jobFunctions } from './functions.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 
 export function startInngestServer(port: number = 3000): void {
   const app = express();

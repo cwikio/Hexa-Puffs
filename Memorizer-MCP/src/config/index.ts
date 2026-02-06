@@ -1,13 +1,13 @@
 import { config as dotenvConfig } from 'dotenv';
 import { ConfigSchema, type Config } from './schema.js';
 import { ConfigurationError } from '../utils/errors.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   expandPath,
   getEnvString,
   getEnvFloat,
   getEnvBoolean,
-} from '../../../Shared/Utils/config.js';
+} from '@mcp/shared/Utils/config.js';
 
 // Load .env file
 dotenvConfig();

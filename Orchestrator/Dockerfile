@@ -1,18 +1,20 @@
+# Orchestrator Dockerfile
+# Build from monorepo root: docker build -f Orchestrator/Dockerfile .
+
 FROM node:20-slim
+WORKDIR /monorepo/Orchestrator
 
-WORKDIR /app
+# Copy base tsconfig and Shared (file: dependency)
+COPY tsconfig.base.json /monorepo/tsconfig.base.json
+COPY Shared /monorepo/Shared
 
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
+# Copy package files and install
+COPY Orchestrator/package*.json ./
 RUN npm install
 
-# Copy source code
-COPY tsconfig.json ./
-COPY src ./src
-
-# Build TypeScript
+# Copy source and build
+COPY Orchestrator/tsconfig.json ./
+COPY Orchestrator/src ./src
 RUN npm run build
 
 # Set environment variables

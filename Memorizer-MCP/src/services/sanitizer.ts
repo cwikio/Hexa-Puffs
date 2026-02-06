@@ -1,4 +1,4 @@
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 
 // Patterns for sensitive data that should never be stored
 const SENSITIVE_PATTERNS = [

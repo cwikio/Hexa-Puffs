@@ -1,5 +1,5 @@
 // Import the shared StandardResponse type
-import type { StandardResponse } from "../../../Shared/Types/StandardResponse.js";
+import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 
 // Vault list response
 export interface VaultListItem {

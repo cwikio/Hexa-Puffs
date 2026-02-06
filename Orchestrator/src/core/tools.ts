@@ -4,7 +4,7 @@ import { OnePasswordMCPClient } from '../mcp-clients/onepassword.js';
 import { FilerMCPClient } from '../mcp-clients/filer.js';
 import { SecurityCoordinator } from './security.js';
 import { ToolExecutionError } from '../utils/errors.js';
-import { logger, Logger } from '../../../Shared/Utils/logger.js';
+import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export interface ToolRegistry {
   telegram: TelegramMCPClient;

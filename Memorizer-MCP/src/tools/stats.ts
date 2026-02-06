@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { statSync } from 'fs';
 import { getDatabase } from '../db/index.js';
 import { getConfig } from '../config/index.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
   type MemoryStatsData,

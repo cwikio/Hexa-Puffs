@@ -1,7 +1,7 @@
 import { inngest } from './inngest-client.js';
 import { JobStorage } from './storage.js';
 import { executeAction } from './executor.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import { JobDefinition, TaskDefinition } from './types.js';
 import { TelegramMCPClient } from '../mcp-clients/telegram.js';
 import { getConfig } from '../config/index.js';

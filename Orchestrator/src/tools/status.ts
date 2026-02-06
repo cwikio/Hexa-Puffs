@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getOrchestrator } from '../core/orchestrator.js';
-import type { StandardResponse } from '../../../Shared/Types/StandardResponse.js';
+import type { StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
 
 export const statusToolDefinition = {
   name: 'get_status',
@@ -30,15 +30,7 @@ export async function handleStatus(): Promise<StandardResponse> {
       uptimeStr = `${uptimeSeconds}s`;
     }
 
-    const mcpStatus = Object.entries(status.mcpServers)
-      .map(([name, info]) => {
-        const statusIcon = info.available ? 'OK' : 'UNAVAILABLE';
-        const requiredTag = info.required ? ' (required)' : '';
-        return `  - ${name}: ${statusIcon}${requiredTag}`;
-      })
-      .join('\n');
-
-    const availableTools = orchestrator.getAvailableTools();
+    const toolCount = orchestrator.getAvailableTools().length;
 
     return {
       success: true,
@@ -46,7 +38,7 @@ export async function handleStatus(): Promise<StandardResponse> {
         status: status.ready ? 'ready' : 'initializing',
         uptime: uptimeStr,
         mcp_servers: status.mcpServers,
-        available_tools: availableTools,
+        tool_count: toolCount,
         sessions: status.sessions,
         security: status.security,
       },

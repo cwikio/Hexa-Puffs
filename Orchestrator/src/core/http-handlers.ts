@@ -1,6 +1,6 @@
 import type { ToolRouter } from './tool-router.js';
 import type { IncomingMessage, ServerResponse } from 'http';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   statusToolDefinition,
   handleStatus,

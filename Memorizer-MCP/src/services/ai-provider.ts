@@ -1,6 +1,6 @@
 import { type AIProviderConfig } from '../config/schema.js';
 import { AIProviderError } from '../utils/errors.js';
-import { logger, Logger } from '../../../Shared/Utils/logger.js';
+import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export interface AIProvider {
   complete(prompt: string): Promise<string>;
