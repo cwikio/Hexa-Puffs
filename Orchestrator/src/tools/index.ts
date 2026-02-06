@@ -54,7 +54,7 @@ export {
   handleClearTelegramSubscriptions,
 } from './telegram-realtime.js';
 
-export type { StandardResponse } from '../../../Shared/Types/StandardResponse.js';
+export type { StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
 
 import { statusToolDefinition } from './status.js';
 import { telegramToolDefinition } from './telegram.js';

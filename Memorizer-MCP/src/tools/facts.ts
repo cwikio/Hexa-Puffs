@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { getDatabase, type FactRow, FACT_CATEGORIES } from '../db/index.js';
 import { isFactSafe } from '../services/sanitizer.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
   type StoreFactData,

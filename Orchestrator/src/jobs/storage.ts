@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { JobDefinition, TaskDefinition } from './types.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 
 const JOBS_DIR = path.join(
   process.env.HOME || '~',

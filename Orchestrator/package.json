@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "Orchestration layer for Annabelle AI Assistant - coordinates all MCP servers",
   "type": "module",
-  "main": "dist/Orchestrator/src/index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/Orchestrator/src/index.js",
+    "start": "node dist/index.js",
     "dev": "concurrently --kill-others \"npm run inngest:dev\" \"INNGEST_DEV_SERVER_URL=http://localhost:8289 npm run dev:app\"",
     "dev:app": "tsx watch src/index.ts",
     "inngest:dev": "npx inngest-cli@latest dev -u http://localhost:3000/api/inngest --port 8289 --no-discovery",
@@ -27,6 +27,7 @@
     "test:skills": "vitest run tests/integration/workflow-skills.test.ts"
   },
   "dependencies": {
+    "@mcp/shared": "file:../Shared",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "croner": "^10.0.1",
     "dotenv": "^16.3.0",

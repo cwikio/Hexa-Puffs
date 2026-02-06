@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getDatabase, type FactRow, type ConversationRow } from '../db/index.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
   type RetrieveMemoriesData,

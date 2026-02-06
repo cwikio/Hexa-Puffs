@@ -1,6 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { Logger, logger } from '../../../Shared/Utils/logger.js';
+import { Logger, logger } from '@mcp/shared/Utils/logger.js';
 import type {
   IMCPClient,
   MCPToolCall,

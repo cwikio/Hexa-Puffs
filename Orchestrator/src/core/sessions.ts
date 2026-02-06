@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { logger, Logger } from '../../../Shared/Utils/logger.js';
+import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export interface SessionTurn {
   userMessage: string;

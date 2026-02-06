@@ -3,8 +3,8 @@ import { Cron } from 'croner';
 import { JobStorage } from '../jobs/storage.js';
 import { inngest } from '../jobs/inngest-client.js';
 import { JobDefinition, TaskDefinition } from '../jobs/types.js';
-import { logger } from '../../../Shared/Utils/logger.js';
-import type { StandardResponse } from '../../../Shared/Types/StandardResponse.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
+import type { StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
 
 function isValidCronExpression(expression: string): boolean {
   try {

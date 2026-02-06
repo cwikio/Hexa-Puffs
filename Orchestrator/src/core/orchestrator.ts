@@ -26,7 +26,7 @@ import { SecurityCoordinator } from './security.js';
 import { SessionManager } from './sessions.js';
 import { ToolExecutor, type ToolRegistry } from './tools.js';
 import { ToolRouter } from './tool-router.js';
-import { logger, Logger } from '../../../Shared/Utils/logger.js';
+import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export interface OrchestratorStatus {
   ready: boolean;

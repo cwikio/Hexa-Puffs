@@ -8,7 +8,7 @@
  */
 
 import type { IMCPClient, MCPToolDefinition, ToolCallResult } from '../mcp-clients/types.js';
-import { logger, Logger } from '../../../Shared/Utils/logger.js';
+import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export interface RoutedTool {
   name: string; // The name exposed to Claude (may be prefixed)

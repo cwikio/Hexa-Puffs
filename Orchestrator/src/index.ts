@@ -5,7 +5,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { createServer as createHttpServer } from 'http';
 import { initializeServer } from './server.js';
 import { getConfig } from './config/index.js';
-import { logger } from '../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import { startInngestServer } from './jobs/inngest-server.js';
 import { getOrchestrator } from './core/orchestrator.js';
 import { handleListTools, handleCallTool } from './core/http-handlers.js';

@@ -1,12 +1,12 @@
 import { config as dotenvConfig } from 'dotenv';
 import { ConfigSchema, type Config } from './schema.js';
 import { ConfigurationError } from '../utils/errors.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   getEnvString,
   getEnvNumber,
   getEnvBoolean,
-} from '../../../Shared/Utils/config.js';
+} from '@mcp/shared/Utils/config.js';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -16,15 +16,9 @@ dotenvConfig();
 // Get the MCPs root directory (parent of Orchestrator)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-// From dist/Orchestrator/src/config, go up to MCPs folder
-// In compiled form: dist/Orchestrator/src/config → ../../../../../ → MCPs
-// (config → src → Orchestrator → dist → Orchestrator → MCPs)
-// In source form: src/config → ../../../ → MCPs
-// We detect which by checking if path contains 'dist'
-const isCompiled = __dirname.includes('/dist/');
-const mcpsRoot = isCompiled
-  ? resolve(__dirname, '../../../../../')
-  : resolve(__dirname, '../../../');
+// Both compiled (dist/config/) and source (src/config/) are 3 levels from MCPs root:
+// config → dist/src → Orchestrator → MCPs
+const mcpsRoot = resolve(__dirname, '../../../');
 
 export function loadConfig(): Config {
   const mcpConnectionMode = getEnvString('MCP_CONNECTION_MODE', 'stdio') as 'stdio' | 'http';
@@ -38,7 +32,7 @@ export function loadConfig(): Config {
     mcpServersStdio: {
       guardian: {
         command: 'node',
-        args: [resolve(mcpsRoot, 'Guardian/dist/Guardian/src/index.js')],
+        args: [resolve(mcpsRoot, 'Guardian/dist/index.js')],
         cwd: resolve(mcpsRoot, 'Guardian'),
         timeout: getEnvNumber('GUARDIAN_MCP_TIMEOUT', 30000),
         required: false,
@@ -46,7 +40,7 @@ export function loadConfig(): Config {
       },
       telegram: {
         command: 'node',
-        args: [resolve(mcpsRoot, 'Telegram-MCP/dist/Telegram/src/index.js')],
+        args: [resolve(mcpsRoot, 'Telegram-MCP/dist/src/index.js')],
         cwd: resolve(mcpsRoot, 'Telegram-MCP'),
         timeout: getEnvNumber('TELEGRAM_MCP_TIMEOUT', 30000),
         required: false,

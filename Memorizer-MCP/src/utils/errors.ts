@@ -1,4 +1,4 @@
-import { BaseError } from '../../../Shared/Types/errors.js';
+import { BaseError } from '@mcp/shared/Types/errors.js';
 
 /**
  * Base error for all Memory MCP errors

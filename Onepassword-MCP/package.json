@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "MCP server for 1Password providing read-only vault access - list vaults, browse items, and retrieve secrets securely",
   "type": "module",
-  "main": "dist/Onepassword/src/index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/Onepassword/src/index.js",
+    "start": "node dist/index.js",
     "dev": "tsc --watch"
   },
   "keywords": [
@@ -17,6 +17,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@mcp/shared": "file:../Shared",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.24.0"
   },

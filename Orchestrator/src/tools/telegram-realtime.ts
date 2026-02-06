@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { TelegramMCPClient, NewMessagesResult, SubscriptionResult } from '../mcp-clients/telegram.js';
 import { getConfig } from '../config/index.js';
-import { logger } from '../../../Shared/Utils/logger.js';
+import { logger } from '@mcp/shared/Utils/logger.js';
 
 const getNewMessagesSchema = z.object({
   peek: z.boolean().optional().describe('If true, return without clearing queue'),
