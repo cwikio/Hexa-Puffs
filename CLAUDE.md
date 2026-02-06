@@ -1,0 +1,27 @@
+# Annabelle MCPs Monorepo
+
+## Structure
+Each subdirectory is an independent package with its own package.json.
+There is no root package.json. Run npm commands inside each package directory.
+
+## MCP Tool Pattern
+All MCP tools follow this pattern:
+- Define zod schema for input validation
+- Register via `server.tool()` from `@modelcontextprotocol/sdk`
+- Return structured objects using `StandardResponse` from `@mcp/shared`
+
+## Testing
+- Full suite: `./test-all.sh`
+- Single package: `cd <Package> && npx vitest run`
+- Quick health check: `./test-all.sh --quick`
+
+## Scripts
+- `./start-all.sh` — launch full Annabelle stack (Inngest → MCPs → Orchestrator → Thinker)
+- `./test-all.sh` — health checks + curl tests + vitest
+
+## Architecture Rules
+- Guardian MCP scans inputs for prompt injection — never bypass it
+- 1Password MCP is read-only by design — never add write operations
+- Memorizer-MCP uses SQLite via better-sqlite3
+- Orchestrator passthrough tools must stay in sync with downstream MCPs
+- Each MCP should expose a `/health` endpoint (HTTP) or respond to health tool calls (stdio)

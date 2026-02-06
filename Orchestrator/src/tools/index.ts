@@ -3,7 +3,6 @@ export { telegramToolDefinition, handleTelegram } from './telegram.js';
 export { listChatsToolDefinition, handleListChats } from './telegram-list-chats.js';
 export { getMessagesToolDefinition, handleGetMessages } from './telegram-get-messages.js';
 export { passwordToolDefinition, handlePassword } from './password.js';
-export { executeToolDefinition, handleExecute } from './execute.js';
 export {
   memoryToolDefinitions,
   handleStoreFact,
@@ -62,7 +61,6 @@ import { telegramToolDefinition } from './telegram.js';
 import { listChatsToolDefinition } from './telegram-list-chats.js';
 import { getMessagesToolDefinition } from './telegram-get-messages.js';
 import { passwordToolDefinition } from './password.js';
-import { executeToolDefinition } from './execute.js';
 import { memoryToolDefinitions } from './memory.js';
 import { filerToolDefinitions } from './filer.js';
 import { jobToolDefinitions } from './jobs.js';
@@ -80,7 +78,6 @@ export const allToolDefinitions = [
   listChatsToolDefinition,
   getMessagesToolDefinition,
   passwordToolDefinition,
-  executeToolDefinition,
   ...memoryToolDefinitions,
   ...filerToolDefinitions,
   ...jobToolDefinitions,

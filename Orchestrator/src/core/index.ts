@@ -4,6 +4,5 @@ export { ToolExecutor, type ToolRegistry, type ToolExecution } from './tools.js'
 export {
   Orchestrator,
   getOrchestrator,
-  type ExecuteResult,
   type OrchestratorStatus,
 } from './orchestrator.js';

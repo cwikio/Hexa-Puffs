@@ -28,13 +28,6 @@ import { ToolExecutor, type ToolRegistry } from './tools.js';
 import { ToolRouter } from './tool-router.js';
 import { logger, Logger } from '../../../Shared/Utils/logger.js';
 
-export interface ExecuteResult {
-  success: boolean;
-  result?: string;
-  toolsUsed: string[];
-  error?: string;
-}
-
 export interface OrchestratorStatus {
   ready: boolean;
   uptime: number;
@@ -68,6 +61,8 @@ export class Orchestrator {
 
   private initialized: boolean = false;
   private connectionMode: 'stdio' | 'http';
+  private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly HEALTH_CHECK_INTERVAL_MS = 60_000; // 60 seconds
 
   constructor() {
     this.config = getConfig();
@@ -195,6 +190,11 @@ export class Orchestrator {
 
     this.initialized = true;
     this.logger.info('Orchestrator initialized successfully');
+
+    // Start health monitoring for stdio clients
+    if (this.connectionMode === 'stdio') {
+      this.startHealthMonitoring();
+    }
   }
 
   private async initializeStdioMode(): Promise<void> {
@@ -288,6 +288,79 @@ export class Orchestrator {
   }
 
   /**
+   * Start periodic health monitoring for stdio MCP clients.
+   * Checks every 60 seconds and auto-restarts crashed processes.
+   */
+  private startHealthMonitoring(): void {
+    if (this.healthCheckTimer) return;
+
+    this.logger.info(
+      `Starting MCP health monitoring (every ${Orchestrator.HEALTH_CHECK_INTERVAL_MS / 1000}s)`
+    );
+
+    this.healthCheckTimer = setInterval(async () => {
+      await this.runHealthChecks();
+    }, Orchestrator.HEALTH_CHECK_INTERVAL_MS);
+
+    // Don't keep the process alive just for health checks
+    if (this.healthCheckTimer.unref) {
+      this.healthCheckTimer.unref();
+    }
+  }
+
+  /**
+   * Stop the health monitoring loop.
+   */
+  stopHealthMonitoring(): void {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+      this.logger.info('MCP health monitoring stopped');
+    }
+  }
+
+  /**
+   * Run health checks on all stdio clients and restart any that have crashed.
+   */
+  private async runHealthChecks(): Promise<void> {
+    let needsRediscovery = false;
+
+    for (const [name, client] of this.stdioClients) {
+      // Skip guardian (not registered with tool router)
+      if (name === 'guardian') continue;
+
+      const healthy = await client.healthCheck();
+
+      if (!healthy && client.isAvailable) {
+        // Was available but now failing — likely crashed
+        this.logger.warn(`MCP ${name} health check failed — attempting restart...`);
+
+        const restarted = await client.restart();
+        if (restarted) {
+          this.logger.info(`MCP ${name} restarted successfully`);
+          needsRediscovery = true;
+        } else {
+          this.logger.error(`MCP ${name} restart failed — service unavailable`);
+        }
+      } else if (!healthy && !client.isAvailable) {
+        // Was already down, try to bring it up
+        this.logger.info(`MCP ${name} is down — attempting restart...`);
+        const restarted = await client.restart();
+        if (restarted) {
+          this.logger.info(`MCP ${name} recovered`);
+          this.toolRouter.registerMCP(name, client);
+          needsRediscovery = true;
+        }
+      }
+    }
+
+    if (needsRediscovery) {
+      this.logger.info('Re-discovering tools after MCP restart...');
+      await this.toolRouter.discoverTools();
+    }
+  }
+
+  /**
    * Helper to assert we're in HTTP mode for methods that require direct MCP client access.
    * In stdio mode, use the tool router instead.
    */
@@ -296,66 +369,6 @@ export class Orchestrator {
       throw new Error(
         `Operation '${operation}' requires HTTP mode. In stdio mode, use the tool router for all tool calls.`
       );
-    }
-  }
-
-  async execute(task: string, context?: string): Promise<ExecuteResult> {
-    this.assertHttpMode('execute');
-    const toolsUsed: string[] = [];
-
-    try {
-      // Step 1: Security scan input
-      const scanResult = await this.security!.scanInput(task);
-      this.security!.assertAllowed(scanResult, 'execute');
-
-      // Step 2: Parse task and identify tools needed
-      // For now, simple keyword matching. Future: LLM-based parsing
-      const lowerTask = task.toLowerCase();
-
-      // Step 3: Execute identified tools
-      if (lowerTask.includes('telegram') || lowerTask.includes('message') || lowerTask.includes('send')) {
-        // Extract message content (simple approach)
-        const message = this.extractMessageContent(task);
-        if (message) {
-          const result = await this.tools!.executeTelegram(message);
-          toolsUsed.push('telegram');
-          if (!result.success) {
-            return {
-              success: false,
-              error: result.error,
-              toolsUsed,
-            };
-          }
-        }
-      }
-
-      if (lowerTask.includes('password') || lowerTask.includes('credential') || lowerTask.includes('1password')) {
-        const itemName = this.extractItemName(task);
-        if (itemName) {
-          const result = await this.tools!.executePassword(itemName);
-          toolsUsed.push('onepassword');
-          if (!result.found) {
-            return {
-              success: false,
-              error: result.error || 'Item not found',
-              toolsUsed,
-            };
-          }
-        }
-      }
-
-      return {
-        success: true,
-        result: `Task executed successfully. Tools used: ${toolsUsed.join(', ') || 'none'}`,
-        toolsUsed,
-      };
-    } catch (error) {
-      this.logger.error('Execute failed', { error });
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        toolsUsed,
-      };
     }
   }
 
@@ -654,38 +667,6 @@ export class Orchestrator {
     return this.tools!.executeFiler('get_audit_log', args);
   }
 
-  // Helper methods for task parsing (simple implementation)
-  private extractMessageContent(task: string): string | null {
-    // Look for quoted content
-    const quotedMatch = task.match(/"([^"]+)"/);
-    if (quotedMatch) {
-      return quotedMatch[1];
-    }
-
-    // Look for content after "send" or "message"
-    const sendMatch = task.match(/(?:send|message)[:\s]+(.+)/i);
-    if (sendMatch) {
-      return sendMatch[1].trim();
-    }
-
-    return null;
-  }
-
-  private extractItemName(task: string): string | null {
-    // Look for quoted content
-    const quotedMatch = task.match(/"([^"]+)"/);
-    if (quotedMatch) {
-      return quotedMatch[1];
-    }
-
-    // Look for content after "get" or "password" or "credential"
-    const getMatch = task.match(/(?:get|password|credential)[:\s]+(.+)/i);
-    if (getMatch) {
-      return getMatch[1].trim().split(/\s+/)[0]; // Take first word
-    }
-
-    return null;
-  }
 }
 
 // Singleton instance

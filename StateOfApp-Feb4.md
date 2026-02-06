@@ -154,17 +154,20 @@ Also pull the user's name and key preferences from the profile at prompt-build t
 
 ---
 
-## 7. Orchestrator's HTTP-Mode `execute()` Uses Naive Keyword Parsing
+## 7. Orchestrator's HTTP-Mode `execute()` Uses Naive Keyword Parsing — RESOLVED
 
-**File:** `Orchestrator/src/core/orchestrator.ts:302-360`
+**File:** `Orchestrator/src/core/orchestrator.ts` (formerly lines 302-360)
+**Status:** Fixed on Feb 5, 2026. Removed all dead HTTP-mode code.
 
-**Problem:** The `execute()` method does `task.toLowerCase().includes('telegram')` to decide which tools to invoke. This is brittle and unused in stdio mode (which is the primary mode). However, it's still reachable via the HTTP REST API and represents dead code / incomplete feature.
+**What was removed:**
 
-**Fix:** Either:
-- Remove it entirely (since stdio mode with the ToolRouter handles everything)
-- Or replace it with proper LLM-based routing if HTTP mode is still used
+- `execute()` method with naive keyword parsing (`task.toLowerCase().includes('telegram')`)
+- `extractMessageContent()` and `extractItemName()` helper methods
+- `ExecuteResult` interface and its re-export from `core/index.ts`
+- `execute.ts` tool file (`execute_task` tool definition and handler)
+- All references from `tools/index.ts`
 
-**Impact:** Medium — mostly a code quality issue, but it could mislead anyone trying to use the HTTP API.
+**Rationale:** stdio mode with ToolRouter is the primary mode — this dead code path was never used and would mislead anyone reading the codebase.
 
 ---
 
@@ -181,27 +184,24 @@ Combined with `maxSteps: 2`, each exchange uses 2+ messages (user + assistant + 
 
 ---
 
-## 9. No Error Recovery for Failed MCP Connections
+## 9. No Error Recovery for Failed MCP Connections — RESOLVED
 
 **Files:**
-- `Orchestrator/src/core/orchestrator.ts:200-218` — parallel init, no retry
-- `Orchestrator/src/mcp-clients/stdio-client.ts` — spawns child, no restart on crash
 
-**Problem:** If a child MCP process crashes after startup:
-- No automatic restart
-- No health monitoring loop
-- Tools from that MCP silently fail
-- User gets opaque errors with no guidance
+- `Orchestrator/src/mcp-clients/stdio-client.ts`
+- `Orchestrator/src/core/orchestrator.ts`
 
-The `start-all.sh` script does one-time health checks but no ongoing monitoring.
+**Status:** Fixed on Feb 5, 2026. Added health monitoring and auto-restart.
 
-**Fix:**
-- Add a periodic health check loop in the Orchestrator (every 60s)
-- Auto-restart crashed stdio children
-- Return clear error messages when a downstream MCP is unavailable: "Gmail is currently unavailable, please try again in a moment"
-- Log MCP availability changes
+**What was added:**
 
-**Impact:** Reliability. A personal assistant that silently breaks when one component crashes is frustrating.
+- `StdioMCPClient.healthCheck()` — pings the MCP process via `listTools()` to verify it's alive
+- `StdioMCPClient.restart()` — closes the connection and reinitializes the process
+- `StdioMCPClient.callTool()` — now detects process crashes (EPIPE, closed, not connected) and marks the client unavailable with clear error messages
+- `Orchestrator.startHealthMonitoring()` — runs every 60s, checks all stdio clients, auto-restarts crashed ones
+- `Orchestrator.stopHealthMonitoring()` — cleanup method
+- `Orchestrator.runHealthChecks()` — iterates stdio clients, restarts failed ones, re-discovers tools when MCPs recover
+- Uses `timer.unref()` so health checks don't keep the process alive during shutdown
 
 ---
 
@@ -235,8 +235,8 @@ The `start-all.sh` script does one-time health checks but no ongoing monitoring.
 | 10 | Fix tool result fallback in Thinker | 1 hr | Medium | DONE |
 | 4 | Add memory deduplication and consolidation | 2-3 hrs | High (long-term) | DONE |
 | 3 | Wire skills to Inngest cron scheduler | 3-4 hrs | High (unlocks proactivity) | DONE |
-| 9 | Add MCP health monitoring and auto-restart | 2 hrs | Medium (reliability) | |
-| 7 | Clean up dead HTTP-mode execute() code | 30 min | Low (code quality) | |
+| 9 | Add MCP health monitoring and auto-restart | 2 hrs | Medium (reliability) | DONE |
+| 7 | Clean up dead HTTP-mode execute() code | 30 min | Low (code quality) | DONE |
 
 ## Verification
 

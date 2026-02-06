@@ -154,11 +154,57 @@ export class StdioMCPClient implements IMCPClient {
         content: result,
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error('Tool call failed', { tool: toolCall.name, error });
+
+      // If the error suggests the process died, mark as unavailable
+      if (message.includes('EPIPE') || message.includes('closed') || message.includes('not connected')) {
+        this.available = false;
+        this.logger.warn(`MCP ${this.name} appears to have crashed — marked unavailable`);
+      }
+
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: `[${this.name}] ${message}. The service may be temporarily unavailable — it will auto-restart shortly.`,
       };
+    }
+  }
+
+  /**
+   * Check if the MCP server process is healthy by listing tools.
+   * Returns true if the server responds, false otherwise.
+   */
+  async healthCheck(): Promise<boolean> {
+    if (!this.client || !this.available) {
+      return false;
+    }
+
+    try {
+      await this.client.listTools();
+      return true;
+    } catch {
+      this.logger.warn(`Health check failed for ${this.name}`);
+      return false;
+    }
+  }
+
+  /**
+   * Restart the MCP server by closing and reinitializing.
+   */
+  async restart(): Promise<boolean> {
+    this.logger.info(`Restarting MCP server ${this.name}...`);
+    await this.close();
+
+    try {
+      await this.initialize();
+      if (this.available) {
+        this.logger.info(`MCP server ${this.name} restarted successfully`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      this.logger.error(`Failed to restart MCP server ${this.name}`, { error });
+      return false;
     }
   }
 
