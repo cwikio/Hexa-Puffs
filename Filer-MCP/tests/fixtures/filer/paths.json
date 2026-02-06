@@ -1,0 +1,38 @@
+{
+  "traversal_attempts": [
+    "../../../etc/passwd",
+    "../../.ssh/id_rsa",
+    "foo/../../../bar",
+    "test/../../secret"
+  ],
+  "forbidden_paths": [
+    "~/.ssh/id_rsa",
+    "~/.gnupg/private-keys-v1.d",
+    "~/.aws/credentials",
+    "~/.config/something",
+    "/etc/passwd",
+    "/var/log/syslog"
+  ],
+  "forbidden_extensions": [
+    "virus.exe",
+    "script.bat",
+    "malware.ps1"
+  ],
+  "special_characters": [
+    "file with spaces.txt",
+    "file-with-dashes.txt",
+    "file_with_underscores.txt",
+    "file.multiple.dots.txt"
+  ],
+  "unicode_names": [
+    "日本語ファイル.txt",
+    "Ümlauts.txt",
+    "emoji_🎉.txt",
+    "中文文件.txt"
+  ],
+  "edge_cases": {
+    "empty_filename": "",
+    "dot_file": ".hidden",
+    "very_long_name": "this_is_a_very_long_filename_that_might_cause_issues_with_some_file_systems_but_should_still_work_correctly_in_most_cases.txt"
+  }
+}

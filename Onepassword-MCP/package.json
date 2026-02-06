@@ -1,0 +1,30 @@
+{
+  "name": "onepassword-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for 1Password providing read-only vault access - list vaults, browse items, and retrieve secrets securely",
+  "type": "module",
+  "main": "dist/Onepassword/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/Onepassword/src/index.js",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "1password",
+    "secrets",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

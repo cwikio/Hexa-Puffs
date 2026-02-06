@@ -1,0 +1,15 @@
+services:
+  onepassword-mcp:
+    build: .
+    image: onepassword-mcp
+    env_file:
+      - .env
+    environment:
+      - TRANSPORT=${TRANSPORT:-stdio}
+      - PORT=${PORT:-3000}
+    ports:
+      - "${PORT:-3000}:3000"
+    # For stdio mode, use: docker compose run -i onepassword-mcp
+    # For HTTP mode, use: TRANSPORT=http docker compose up
+    stdin_open: true
+    tty: true

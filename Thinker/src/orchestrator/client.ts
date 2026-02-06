@@ -1,0 +1,331 @@
+import type { Config } from '../config.js';
+import type { TraceContext } from '../tracing/types.js';
+import { createTraceHeaders } from '../tracing/context.js';
+import type {
+  OrchestratorTool,
+  ToolExecutionResponse,
+  TelegramMessage,
+  MemoryFact,
+  AgentProfile,
+  ConversationEntry,
+  MCPToolCallResponse,
+  MCPToolsListResponse,
+} from './types.js';
+
+/**
+ * HTTP client for Orchestrator MCP
+ */
+export class OrchestratorClient {
+  private baseUrl: string;
+  private tools: Map<string, OrchestratorTool> = new Map();
+
+  constructor(config: Config) {
+    this.baseUrl = config.orchestratorUrl;
+  }
+
+  /**
+   * Make an HTTP request to the Orchestrator
+   */
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    trace?: TraceContext
+  ): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(trace ? createTraceHeaders(trace) : {}),
+    };
+
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Orchestrator request failed: ${response.status} - ${error}`);
+    }
+
+    return response.json() as Promise<T>;
+  }
+
+  /**
+   * Check if Orchestrator is healthy
+   */
+  async healthCheck(): Promise<boolean> {
+    try {
+      const response = await this.request<{ status: string }>('GET', '/health');
+      return response.status === 'ok';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Discover available tools from Orchestrator
+   */
+  async discoverTools(): Promise<OrchestratorTool[]> {
+    try {
+      const response = await this.request<MCPToolsListResponse>('GET', '/tools/list');
+      const tools = response.tools;
+
+      // Cache tools
+      this.tools.clear();
+      for (const tool of tools) {
+        this.tools.set(tool.name, tool);
+      }
+
+      return tools;
+    } catch (error) {
+      console.error('Failed to discover tools:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get cached tools
+   */
+  getCachedTools(): OrchestratorTool[] {
+    return Array.from(this.tools.values());
+  }
+
+  /**
+   * Get a specific tool definition
+   */
+  getTool(name: string): OrchestratorTool | undefined {
+    return this.tools.get(name);
+  }
+
+  /**
+   * Parse MCP response format to ToolExecutionResponse
+   */
+  private parseMCPResponse(mcpResponse: MCPToolCallResponse): ToolExecutionResponse {
+    if (!mcpResponse.content || mcpResponse.content.length === 0) {
+      return { success: false, error: 'Empty response from Orchestrator' };
+    }
+
+    const textContent = mcpResponse.content[0];
+    if (textContent.type !== 'text') {
+      return { success: false, error: 'Unexpected response type from Orchestrator' };
+    }
+
+    try {
+      const parsed = JSON.parse(textContent.text) as {
+        success: boolean;
+        data?: unknown;
+        error?: string;
+      };
+      return {
+        success: parsed.success,
+        result: parsed.data,
+        error: parsed.error,
+      };
+    } catch {
+      // If parsing fails, treat the text as the result
+      return { success: true, result: textContent.text };
+    }
+  }
+
+  /**
+   * Execute a tool via Orchestrator
+   */
+  async executeTool(
+    toolName: string,
+    args: Record<string, unknown>,
+    trace?: TraceContext
+  ): Promise<ToolExecutionResponse> {
+    const request = {
+      name: toolName,
+      arguments: args,
+    };
+
+    try {
+      const mcpResponse = await this.request<MCPToolCallResponse>(
+        'POST',
+        '/tools/call',
+        request,
+        trace
+      );
+      return this.parseMCPResponse(mcpResponse);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * Get new Telegram messages from queue
+   */
+  async getNewTelegramMessages(
+    peek: boolean = false,
+    trace?: TraceContext
+  ): Promise<TelegramMessage[]> {
+    const response = await this.executeTool(
+      'get_new_messages',
+      { peek },
+      trace
+    );
+
+    if (!response.success || !response.result) {
+      return [];
+    }
+
+    // Response is double-wrapped: Orchestrator wraps the Telegram MCP response
+    // Need to unwrap: { content: [{ text: "{ success, data: { messages } }" }] }
+    try {
+      const outerResult = response.result as { content?: Array<{ type: string; text: string }> };
+      if (outerResult.content && outerResult.content[0]?.type === 'text') {
+        const innerJson = JSON.parse(outerResult.content[0].text) as {
+          success: boolean;
+          data?: { messages?: TelegramMessage[] };
+        };
+        if (innerJson.success && innerJson.data?.messages) {
+          return innerJson.data.messages;
+        }
+      }
+      return [];
+    } catch {
+      // Fallback: maybe it's already unwrapped
+      const result = response.result as { messages?: TelegramMessage[] };
+      return result.messages || [];
+    }
+  }
+
+  /**
+   * Send a Telegram message
+   */
+  async sendTelegramMessage(
+    chatId: string,
+    message: string,
+    replyTo?: number,
+    trace?: TraceContext
+  ): Promise<boolean> {
+    const args: Record<string, unknown> = {
+      chat_id: chatId,
+      message,
+    };
+
+    if (replyTo) {
+      args.reply_to = replyTo;
+    }
+
+    const response = await this.executeTool('send_message', args, trace);
+    return response.success;
+  }
+
+  /**
+   * Store a fact in Memory MCP
+   */
+  async storeFact(
+    agentId: string,
+    fact: string,
+    category: string,
+    trace?: TraceContext
+  ): Promise<boolean> {
+    const response = await this.executeTool(
+      'store_fact',
+      { agent_id: agentId, fact, category },
+      trace
+    );
+    return response.success;
+  }
+
+  /**
+   * Retrieve memories from Memory MCP
+   */
+  async retrieveMemories(
+    agentId: string,
+    query: string,
+    limit: number = 5,
+    trace?: TraceContext
+  ): Promise<{ facts: MemoryFact[]; conversations: ConversationEntry[] }> {
+    const response = await this.executeTool(
+      'retrieve_memories',
+      { agent_id: agentId, query, limit, include_conversations: true },
+      trace
+    );
+
+    if (!response.success || !response.result) {
+      return { facts: [], conversations: [] };
+    }
+
+    const result = response.result as {
+      facts?: MemoryFact[];
+      conversations?: ConversationEntry[];
+    };
+
+    return {
+      facts: result.facts || [],
+      conversations: result.conversations || [],
+    };
+  }
+
+  /**
+   * Get agent profile from Memory MCP
+   */
+  async getProfile(agentId: string, trace?: TraceContext): Promise<AgentProfile | null> {
+    const response = await this.executeTool(
+      'get_profile',
+      { agent_id: agentId },
+      trace
+    );
+
+    if (!response.success || !response.result) {
+      return null;
+    }
+
+    return response.result as AgentProfile;
+  }
+
+  /**
+   * Store a conversation in Memory MCP
+   */
+  async storeConversation(
+    agentId: string,
+    userMessage: string,
+    agentResponse: string,
+    sessionId?: string,
+    trace?: TraceContext
+  ): Promise<boolean> {
+    const args: Record<string, unknown> = {
+      agent_id: agentId,
+      user_message: userMessage,
+      agent_response: agentResponse,
+    };
+
+    if (sessionId) {
+      args.session_id = sessionId;
+    }
+
+    const response = await this.executeTool('store_conversation', args, trace);
+    return response.success;
+  }
+
+  /**
+   * Search conversations in Memory MCP
+   */
+  async searchConversations(
+    agentId: string,
+    query: string,
+    limit: number = 10,
+    trace?: TraceContext
+  ): Promise<ConversationEntry[]> {
+    const response = await this.executeTool(
+      'search_conversations',
+      { agent_id: agentId, query, limit },
+      trace
+    );
+
+    if (!response.success || !response.result) {
+      return [];
+    }
+
+    const result = response.result as { conversations?: ConversationEntry[] };
+    return result.conversations || [];
+  }
+}

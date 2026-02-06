@@ -1,0 +1,36 @@
+{
+  "name": "searcher-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for online search using Brave Search API",
+  "type": "module",
+  "main": "dist/Searcher-MCP/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/Searcher-MCP/src/index.js",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:web": "vitest run -t \"Web Search\"",
+    "test:news": "vitest run -t \"News Search\""
+  },
+  "keywords": [
+    "mcp",
+    "search",
+    "brave-search",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^17.2.3",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

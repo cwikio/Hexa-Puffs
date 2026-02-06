@@ -1,0 +1,46 @@
+{
+  "name": "annabelle-orchestrator",
+  "version": "1.0.0",
+  "description": "Orchestration layer for Annabelle AI Assistant - coordinates all MCP servers",
+  "type": "module",
+  "main": "dist/Orchestrator/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/Orchestrator/src/index.js",
+    "dev": "concurrently --kill-others \"npm run inngest:dev\" \"INNGEST_DEV_SERVER_URL=http://localhost:8289 npm run dev:app\"",
+    "dev:app": "tsx watch src/index.ts",
+    "inngest:dev": "npx inngest-cli@latest dev -u http://localhost:3000/api/inngest --port 8289 --no-discovery",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:telegram": "vitest run tests/integration/telegram.test.ts",
+    "test:filer": "vitest run tests/integration/filer.test.ts",
+    "test:memory": "vitest run tests/integration/memory.test.ts",
+    "test:searcher": "vitest run tests/integration/searcher.test.ts",
+    "test:orchestrator": "vitest run tests/integration/orchestrator.test.ts",
+    "test:workflows": "vitest run tests/integration/workflow-*.test.ts",
+    "test:workflow:guardian-telegram": "vitest run tests/integration/workflow-guardian-telegram.test.ts",
+    "test:workflow:filer-memory": "vitest run tests/integration/workflow-filer-memory.test.ts",
+    "test:workflow:onepassword-memory": "vitest run tests/integration/workflow-onepassword-memory.test.ts",
+    "test:workflow:jobs": "vitest run tests/integration/workflow-jobs.test.ts",
+    "test:stdio": "vitest run tests/integration/stdio-mode.test.ts",
+    "test:skills": "vitest run tests/integration/workflow-skills.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^16.3.0",
+    "inngest": "^3.50.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.0.0",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

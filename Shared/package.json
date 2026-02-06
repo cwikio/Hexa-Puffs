@@ -1,0 +1,14 @@
+{
+  "name": "@mcp/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Shared types and utilities for MCP services",
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  orchestrator:
+    build: .
+    container_name: annabelle-orchestrator
+    ports:
+      - "8010:8010"
+    environment:
+      - TRANSPORT=sse
+      - PORT=8010
+      - GUARDIAN_MCP_URL=http://guardian:8002
+      - TELEGRAM_MCP_URL=http://telegram:8001
+      - ONEPASSWORD_MCP_URL=http://onepassword:8000
+      - MEMORY_MCP_URL=http://memory:8005
+      - SCAN_ALL_INPUTS=true
+      - LOG_LEVEL=info
+    networks:
+      - annabelle
+    restart: unless-stopped
+    depends_on:
+      - guardian
+
+  # Reference to other MCP services (run separately or add here)
+  # guardian:
+  #   build: ../Guardian
+  #   container_name: annabelle-guardian
+  #   ports:
+  #     - "8002:8002"
+  #   networks:
+  #     - annabelle
+  #
+  # telegram:
+  #   build: ../Telegram
+  #   container_name: annabelle-telegram
+  #   ports:
+  #     - "8001:8001"
+  #   networks:
+  #     - annabelle
+  #
+  # onepassword:
+  #   build: ../OnePassword4Agents
+  #   container_name: annabelle-onepassword
+  #   ports:
+  #     - "8000:8000"
+  #   networks:
+  #     - annabelle
+  #
+  # memory:
+  #   build: ../Memorizer
+  #   container_name: annabelle-memory
+  #   ports:
+  #     - "8005:8005"
+  #   environment:
+  #     - TRANSPORT=sse
+  #     - PORT=8005
+  #   networks:
+  #     - annabelle
+
+networks:
+  annabelle:
+    driver: bridge

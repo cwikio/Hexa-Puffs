@@ -1,0 +1,32 @@
+services:
+  memory-mcp:
+    build: .
+    ports:
+      - "8005:8005"
+    environment:
+      - TRANSPORT=sse
+      - PORT=8005
+      - AI_PROVIDER=${AI_PROVIDER:-groq}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - LMSTUDIO_BASE_URL=${LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
+      - LMSTUDIO_MODEL=${LMSTUDIO_MODEL:-local-model}
+      - FACT_EXTRACTION_ENABLED=${FACT_EXTRACTION_ENABLED:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - memory-data:/data
+    networks:
+      - annabelle
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  memory-data:
+
+networks:
+  annabelle:
+    external: true

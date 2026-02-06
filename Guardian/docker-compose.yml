@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  guardian-mcp:
+    build: .
+    container_name: guardian-mcp
+    env_file: .env
+    volumes:
+      - ./logs:/app/logs  # Persist audit logs
+    environment:
+      - TRANSPORT=${TRANSPORT:-stdio}
+      - PORT=${PORT:-3000}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - MODEL_NAME=${MODEL_NAME:-guardian}
+    ports:
+      - "${PORT:-3000}:3000"
+    stdin_open: true  # For stdio transport
+    tty: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Linux compatibility
+    restart: unless-stopped
+
+# Usage:
+#
+# stdio mode (default, for Claude Desktop):
+#   docker-compose up -d
+#   docker attach guardian-mcp
+#
+# HTTP mode:
+#   TRANSPORT=http docker-compose up -d
+#   curl http://localhost:3000/health

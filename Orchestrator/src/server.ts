@@ -1,0 +1,159 @@
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+import { logger } from '../../Shared/Utils/logger.js';
+import { getOrchestrator } from './core/orchestrator.js';
+import { ToolRouter } from './core/tool-router.js';
+import {
+  statusToolDefinition,
+  handleStatus,
+  type StandardResponse,
+} from './tools/index.js';
+
+// Custom tools that are not passthrough (orchestrator-specific)
+const customToolDefinitions = [statusToolDefinition];
+
+// Custom tool handlers
+const customToolHandlers: Record<
+  string,
+  (args: unknown) => Promise<StandardResponse>
+> = {
+  get_status: handleStatus,
+};
+
+export function createServerWithRouter(toolRouter: ToolRouter): Server {
+  const server = new Server(
+    {
+      name: 'annabelle-orchestrator',
+      version: '1.0.0',
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
+    }
+  );
+
+  // List available tools - combine passthrough + custom tools
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    logger.debug('Listing tools');
+
+    // Get passthrough tools from MCPs
+    const passthroughTools = toolRouter.getToolDefinitions();
+
+    // Combine with custom tools
+    const allTools = [...passthroughTools, ...customToolDefinitions];
+
+    logger.info(`Exposing ${allTools.length} tools (${passthroughTools.length} passthrough, ${customToolDefinitions.length} custom)`);
+
+    return {
+      tools: allTools,
+    };
+  });
+
+  // Handle tool calls - try passthrough first, then custom handlers
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    logger.info('Tool called', { name });
+
+    try {
+      let result: StandardResponse;
+
+      // Check if it's a passthrough tool
+      if (toolRouter.hasRoute(name)) {
+        const routeInfo = toolRouter.getRouteInfo(name);
+        logger.debug(`Routing to ${routeInfo?.mcpName}.${routeInfo?.originalName}`);
+
+        const callResult = await toolRouter.routeToolCall(
+          name,
+          (args as Record<string, unknown>) || {}
+        );
+
+        if (callResult.success) {
+          // Child MCP returns { content: [{ type: "text", text: "..." }] }
+          // Pass through the inner text directly to avoid double-wrapping
+          const mcpResponse = callResult.content as {
+            content?: Array<{ type: string; text?: string }>;
+          };
+          const innerText = mcpResponse?.content?.[0]?.text;
+          if (innerText) {
+            return {
+              content: [{ type: 'text' as const, text: innerText }],
+            };
+          }
+          // Fallback for non-standard responses
+          result = {
+            success: true,
+            data: callResult.content,
+          };
+        } else {
+          result = {
+            success: false,
+            error: callResult.error || 'Tool call failed',
+          };
+        }
+      }
+      // Check if it's a custom tool
+      else if (customToolHandlers[name]) {
+        result = await customToolHandlers[name](args);
+      }
+      // Unknown tool
+      else {
+        logger.warn('Unknown tool called', { name });
+        const availableTools = [
+          ...toolRouter.getToolDefinitions().map((t) => t.name),
+          ...customToolDefinitions.map((t) => t.name),
+        ];
+        result = {
+          success: false,
+          error: `Unknown tool: ${name}. Available tools: ${availableTools.join(', ')}`,
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error('Tool call failed', { name, error });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  return server;
+}
+
+export async function initializeServer(): Promise<Server> {
+  // Initialize the orchestrator first
+  const orchestrator = await getOrchestrator();
+
+  // Get the tool router
+  const toolRouter = orchestrator.getToolRouter();
+
+  // Log discovered routes
+  const routes = toolRouter.getAllRoutes();
+  logger.info(`Tool router initialized with ${routes.length} routes:`);
+  for (const route of routes) {
+    logger.info(`  ${route.exposedName} → ${route.mcpName}.${route.originalName}`);
+  }
+
+  // Create and return the server with the router
+  return createServerWithRouter(toolRouter);
+}

@@ -1,0 +1,130 @@
+#!/usr/bin/env node
+
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { createServer as createHttpServer } from 'http';
+import { initializeServer } from './server.js';
+import { getConfig } from './config/index.js';
+import { logger } from '../../Shared/Utils/logger.js';
+import { startInngestServer } from './jobs/inngest-server.js';
+import { getOrchestrator } from './core/orchestrator.js';
+import { handleListTools, handleCallTool } from './core/http-handlers.js';
+
+async function main(): Promise<void> {
+  const config = getConfig();
+
+  logger.info('Starting Annabelle Orchestrator', {
+    transport: config.transport,
+    port: config.port,
+  });
+
+  try {
+    const server = await initializeServer();
+
+    // Start Inngest server if jobs are enabled
+    if (config.jobs?.enabled !== false) {
+      const jobsPort = config.jobs?.port || 3000;
+      const inngestDevUrl = process.env.INNGEST_DEV_SERVER_URL || 'http://localhost:8288';
+      logger.info('Starting Inngest HTTP endpoint', { port: jobsPort, devServer: inngestDevUrl });
+      startInngestServer(jobsPort);
+    }
+
+    if (config.transport === 'stdio') {
+      // Standard MCP transport via stdio
+      const transport = new StdioServerTransport();
+      await server.connect(transport);
+      logger.info('Orchestrator running on stdio transport');
+    } else {
+      // HTTP/SSE transport for testing
+      // Get orchestrator for HTTP handlers
+      const orchestrator = await getOrchestrator();
+      const toolRouter = orchestrator.getToolRouter();
+
+      const httpServer = createHttpServer(async (req, res) => {
+        // CORS headers
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        // Health check endpoint
+        if (req.url === '/health' && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok' }));
+          return;
+        }
+
+        // REST API: List tools
+        if (req.url === '/tools/list' && req.method === 'GET') {
+          await handleListTools(toolRouter, res);
+          return;
+        }
+
+        // REST API: Call tool
+        if (req.url === '/tools/call' && req.method === 'POST') {
+          await handleCallTool(toolRouter, req, res);
+          return;
+        }
+
+        // SSE endpoint
+        if (req.url === '/sse' && req.method === 'GET') {
+          logger.debug('SSE connection established');
+          const transport = new SSEServerTransport('/message', res);
+          await server.connect(transport);
+          return;
+        }
+
+        // Message endpoint for SSE (handled internally by SSEServerTransport)
+        if (req.url === '/message' && req.method === 'POST') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        // Not found
+        res.writeHead(404);
+        res.end('Not found');
+      });
+
+      httpServer.listen(config.port, () => {
+        logger.info(`Orchestrator running on http://localhost:${config.port}`);
+        logger.info('Endpoints:');
+        logger.info(`  GET  /health      - Health check`);
+        logger.info(`  GET  /tools/list  - List available tools (REST API)`);
+        logger.info(`  POST /tools/call  - Execute a tool (REST API)`);
+        logger.info(`  GET  /sse         - SSE connection`);
+        logger.info(`  POST /message     - SSE messages`);
+      });
+
+      // Graceful shutdown
+      process.on('SIGINT', () => {
+        logger.info('Shutting down...');
+        httpServer.close(() => {
+          logger.info('Server closed');
+          process.exit(0);
+        });
+      });
+
+      process.on('SIGTERM', () => {
+        logger.info('Shutting down...');
+        httpServer.close(() => {
+          logger.info('Server closed');
+          process.exit(0);
+        });
+      });
+    }
+  } catch (error) {
+    logger.error('Failed to start orchestrator', { error });
+    process.exit(1);
+  }
+}
+
+main().catch((error) => {
+  logger.error('Unhandled error', { error });
+  process.exit(1);
+});
