@@ -25,7 +25,7 @@ export const listAttachmentsTool = {
   },
 };
 
-const ListAttachmentsInputSchema = z.object({
+export const ListAttachmentsInputSchema = z.object({
   message_id: z.string().min(1),
 });
 
@@ -70,7 +70,7 @@ export const getAttachmentTool = {
   },
 };
 
-const GetAttachmentInputSchema = z.object({
+export const GetAttachmentInputSchema = z.object({
   message_id: z.string().min(1),
   attachment_id: z.string().min(1),
 });

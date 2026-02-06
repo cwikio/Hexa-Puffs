@@ -26,6 +26,8 @@ export const listDraftsTool = {
   },
 };
 
+export const ListDraftsInputSchema = z.object({});
+
 export async function handleListDrafts(): Promise<StandardResponse<Draft[]>> {
   try {
     const drafts = await listDrafts();
@@ -75,7 +77,7 @@ export const createDraftTool = {
   },
 };
 
-const CreateDraftInputSchema = z.object({
+export const CreateDraftInputSchema = z.object({
   to: z.string().min(1),
   subject: z.string(),
   body: z.string().min(1),
@@ -155,7 +157,7 @@ export const updateDraftTool = {
   },
 };
 
-const UpdateDraftInputSchema = z.object({
+export const UpdateDraftInputSchema = z.object({
   draft_id: z.string().min(1),
   to: z.string().min(1),
   subject: z.string(),
@@ -212,7 +214,7 @@ export const sendDraftTool = {
   },
 };
 
-const SendDraftInputSchema = z.object({
+export const SendDraftInputSchema = z.object({
   draft_id: z.string().min(1),
 });
 
@@ -253,7 +255,7 @@ export const deleteDraftTool = {
   },
 };
 
-const DeleteDraftInputSchema = z.object({
+export const DeleteDraftInputSchema = z.object({
   draft_id: z.string().min(1),
 });
 

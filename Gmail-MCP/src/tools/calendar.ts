@@ -35,6 +35,8 @@ export const listCalendarsTool = {
   },
 };
 
+export const ListCalendarsInputSchema = z.object({});
+
 export async function handleListCalendars(
   _args: unknown
 ): Promise<StandardResponse<CalendarInfo[]>> {
@@ -91,7 +93,7 @@ export const listEventsTool = {
   },
 };
 
-const ListEventsInputSchema = z.object({
+export const ListEventsInputSchema = z.object({
   calendar_id: z.string().optional(),
   time_min: z.string().optional(),
   time_max: z.string().optional(),
@@ -154,7 +156,7 @@ export const getEventTool = {
   },
 };
 
-const GetEventInputSchema = z.object({
+export const GetEventInputSchema = z.object({
   event_id: z.string().min(1),
   calendar_id: z.string().optional(),
 });
@@ -263,7 +265,7 @@ export const createEventTool = {
   },
 };
 
-const CreateEventInputSchema = z.object({
+export const CreateEventInputSchema = z.object({
   summary: z.string().min(1),
   description: z.string().optional(),
   location: z.string().optional(),
@@ -396,7 +398,7 @@ export const updateEventTool = {
   },
 };
 
-const UpdateEventInputSchema = z.object({
+export const UpdateEventInputSchema = z.object({
   event_id: z.string().min(1),
   summary: z.string().optional(),
   description: z.string().optional(),
@@ -473,7 +475,7 @@ export const deleteEventTool = {
   },
 };
 
-const DeleteEventInputSchema = z.object({
+export const DeleteEventInputSchema = z.object({
   event_id: z.string().min(1),
   calendar_id: z.string().optional(),
 });
@@ -523,7 +525,7 @@ export const quickAddEventTool = {
   },
 };
 
-const QuickAddEventInputSchema = z.object({
+export const QuickAddEventInputSchema = z.object({
   text: z.string().min(1),
   calendar_id: z.string().optional(),
 });
@@ -577,7 +579,7 @@ export const findFreeTimeTool = {
   },
 };
 
-const FindFreeTimeInputSchema = z.object({
+export const FindFreeTimeInputSchema = z.object({
   time_min: z.string().min(1),
   time_max: z.string().min(1),
   calendar_ids: z.array(z.string()).optional(),

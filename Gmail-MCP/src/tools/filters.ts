@@ -1,13 +1,19 @@
+import { z } from "zod";
 import {
   listFilters,
   getFilter,
   createFilter,
   deleteFilter,
 } from "../gmail/client.js";
+import { logger } from "../utils/logger.js";
+import {
+  type StandardResponse,
+  createSuccess,
+  createError,
+} from "../types/responses.js";
+import type { GmailFilter } from "../types/gmail.js";
 
-// ============================================================================
-// Tool Definitions
-// ============================================================================
+// ============ LIST FILTERS ============
 
 export const listFiltersTool = {
   name: "list_filters",
@@ -18,6 +24,24 @@ export const listFiltersTool = {
     required: [] as string[],
   },
 };
+
+export const ListFiltersInputSchema = z.object({});
+
+export async function handleListFilters(): Promise<
+  StandardResponse<{ filters: GmailFilter[] }>
+> {
+  try {
+    const filters = await listFilters();
+    return createSuccess({ filters });
+  } catch (error) {
+    logger.error("Failed to list filters", { error });
+    return createError(
+      `Failed to list filters: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+// ============ GET FILTER ============
 
 export const getFilterTool = {
   name: "get_filter",
@@ -33,6 +57,32 @@ export const getFilterTool = {
     required: ["filter_id"],
   },
 };
+
+export const GetFilterInputSchema = z.object({
+  filter_id: z.string().min(1),
+});
+
+export async function handleGetFilter(
+  args: unknown
+): Promise<StandardResponse<{ filter: GmailFilter }>> {
+  const parseResult = GetFilterInputSchema.safeParse(args);
+
+  if (!parseResult.success) {
+    return createError(`Invalid input: ${parseResult.error.message}`);
+  }
+
+  try {
+    const filter = await getFilter(parseResult.data.filter_id);
+    return createSuccess({ filter });
+  } catch (error) {
+    logger.error("Failed to get filter", { error });
+    return createError(
+      `Failed to get filter: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+// ============ CREATE FILTER ============
 
 export const createFilterTool = {
   name: "create_filter",
@@ -92,6 +142,63 @@ export const createFilterTool = {
   },
 };
 
+export const CreateFilterInputSchema = z.object({
+  criteria: z.object({
+    from: z.string().optional(),
+    to: z.string().optional(),
+    subject: z.string().optional(),
+    query: z.string().optional(),
+    has_attachment: z.boolean().optional(),
+    size: z.number().optional(),
+    size_comparison: z.enum(["larger", "smaller"]).optional(),
+  }),
+  action: z.object({
+    add_label_ids: z.array(z.string()).optional(),
+    remove_label_ids: z.array(z.string()).optional(),
+    forward: z.string().optional(),
+  }),
+});
+
+export async function handleCreateFilter(
+  args: unknown
+): Promise<StandardResponse<{ filter: GmailFilter }>> {
+  const parseResult = CreateFilterInputSchema.safeParse(args);
+
+  if (!parseResult.success) {
+    return createError(`Invalid input: ${parseResult.error.message}`);
+  }
+
+  const { criteria: c, action: a } = parseResult.data;
+
+  try {
+    const filter = await createFilter(
+      {
+        from: c.from,
+        to: c.to,
+        subject: c.subject,
+        query: c.query,
+        hasAttachment: c.has_attachment,
+        size: c.size,
+        sizeComparison: c.size_comparison,
+      },
+      {
+        addLabelIds: a.add_label_ids,
+        removeLabelIds: a.remove_label_ids,
+        forward: a.forward,
+      }
+    );
+
+    return createSuccess({ filter });
+  } catch (error) {
+    logger.error("Failed to create filter", { error });
+    return createError(
+      `Failed to create filter: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+// ============ DELETE FILTER ============
+
 export const deleteFilterTool = {
   name: "delete_filter",
   description: "Delete a Gmail filter by ID",
@@ -107,55 +214,26 @@ export const deleteFilterTool = {
   },
 };
 
-// ============================================================================
-// Handlers
-// ============================================================================
+export const DeleteFilterInputSchema = z.object({
+  filter_id: z.string().min(1),
+});
 
-export async function handleListFilters() {
-  const filters = await listFilters();
-  return { filters };
-}
+export async function handleDeleteFilter(
+  args: unknown
+): Promise<StandardResponse<{ deleted: boolean }>> {
+  const parseResult = DeleteFilterInputSchema.safeParse(args);
 
-export async function handleGetFilter(args: unknown) {
-  const { filter_id: filterId } = args as Record<string, unknown>;
-  if (typeof filterId !== 'string') throw new Error("filter_id is required");
-  const filter = await getFilter(filterId);
-  return { filter };
-}
-
-export async function handleCreateFilter(args: unknown) {
-  const { criteria, action } = args as Record<string, unknown>;
-
-  if (!criteria || !action) {
-    throw new Error("Both criteria and action are required");
+  if (!parseResult.success) {
+    return createError(`Invalid input: ${parseResult.error.message}`);
   }
 
-  const c = criteria as Record<string, unknown>;
-  const a = action as Record<string, unknown>;
-
-  const filter = await createFilter(
-    {
-      from: c.from as string | undefined,
-      to: c.to as string | undefined,
-      subject: c.subject as string | undefined,
-      query: c.query as string | undefined,
-      hasAttachment: c.has_attachment as boolean | undefined,
-      size: c.size as number | undefined,
-      sizeComparison: c.size_comparison as "larger" | "smaller" | undefined,
-    },
-    {
-      addLabelIds: a.add_label_ids as string[] | undefined,
-      removeLabelIds: a.remove_label_ids as string[] | undefined,
-      forward: a.forward as string | undefined,
-    }
-  );
-
-  return { filter };
-}
-
-export async function handleDeleteFilter(args: unknown) {
-  const { filter_id: filterId } = args as Record<string, unknown>;
-  if (typeof filterId !== 'string') throw new Error("filter_id is required");
-  await deleteFilter(filterId);
-  return { deleted: true };
+  try {
+    await deleteFilter(parseResult.data.filter_id);
+    return createSuccess({ deleted: true });
+  } catch (error) {
+    logger.error("Failed to delete filter", { error });
+    return createError(
+      `Failed to delete filter: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
 }
