@@ -165,15 +165,18 @@ Thinker uses these endpoints:
 
 ### Job Management (Inngest)
 
-The Orchestrator includes a production-ready job management system powered by [Inngest](https://www.inngest.com/):
+The Orchestrator includes a job management system powered by [Inngest](https://www.inngest.com/):
 
-- **Cron Jobs** - Schedule recurring tasks (`0 9 * * *` = daily at 9am)
-- **Background Tasks** - Queue tasks for async execution
-- **Workflows** - Multi-step workflows with dependencies
+- **Cron Jobs** - Schedule recurring tasks with validated cron expressions (`0 9 * * *` = daily at 9am)
+- **Timezone Support** - IANA timezone support (e.g., `Europe/Warsaw`, `America/New_York`)
+- **One-Time Scheduled Jobs** - Schedule a task for a specific future time
+- **Background Tasks** - Queue tasks for immediate async execution
+- **Workflows** - Multi-step workflows with step dependencies
 - **Automatic Retries** - 3 retries with exponential backoff
+- **Validation** - Cron expressions and timezones are validated at creation time using [croner](https://github.com/nicknisi/croner)
 - **Dashboard** - Real-time monitoring at http://localhost:8288
 
-See [JOBS_README.md](./JOBS_README.md) for full documentation.
+**How cron jobs work:** A `cronJobPollerFunction` runs every minute via Inngest. It loads all enabled cron jobs from storage, evaluates each cron expression against the current time (respecting timezones), and executes those that are due. The `lastRunAt` timestamp prevents double execution within the same minute.
 
 ### Real-Time Telegram Messages (GramJS)
 
@@ -284,15 +287,17 @@ No parameters required.
 
 #### create_job
 
-Schedule a cron job or one-time scheduled task.
+Schedule a cron job or one-time scheduled task. Cron expressions and timezones are validated at creation time.
 
 ```
 Parameters:
 - name (required): Job name
 - type (required): "cron" or "scheduled"
-- cronExpression (for cron): Cron expression (e.g., "0 9 * * *")
-- scheduledAt (for scheduled): ISO timestamp
+- cronExpression (for cron): Validated cron expression (e.g., "0 9 * * *", "*/5 * * * *")
+- timezone (optional): IANA timezone, validated (default: "UTC", e.g., "Europe/Warsaw")
+- scheduledAt (for scheduled): ISO timestamp (must be in the future)
 - action (required): Tool call or workflow to execute
+- enabled (optional): Whether the job is active (default: true)
 ```
 
 #### queue_task

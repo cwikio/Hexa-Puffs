@@ -409,15 +409,21 @@ Thinker (:8006) ──HTTP──→ Telegram MCP (:8002)    [direct: polling + s
 
 **Status:** ✅ Implemented (in Orchestrator)
 
-Production-ready job management for scheduled and background tasks.
+Job management for scheduled and background tasks.
 
 **Capabilities:**
 
-- Cron jobs (e.g., `0 9 * * *` = daily at 9am)
-- Background task queuing
-- Multi-step workflows with dependencies
+- Recurring cron jobs with validated cron expressions (e.g., `0 9 * * *` = daily at 9am)
+- IANA timezone support (e.g., `Europe/Warsaw`, `America/New_York`)
+- One-time scheduled jobs at a specific future timestamp
+- Background task queuing for immediate async execution
+- Multi-step workflows with step dependencies
 - Automatic retries (3x with exponential backoff)
 - Real-time dashboard at `:8288`
+
+**How cron execution works:**
+
+A `cronJobPollerFunction` runs every minute via Inngest. It loads all enabled cron jobs, evaluates each expression against the current time (respecting timezones) using the [croner](https://github.com/nicknisi/croner) library, and executes those that are due. The `lastRunAt` timestamp prevents double execution.
 
 **Documentation:** `Orchestrator/JOBS_README.md`
 

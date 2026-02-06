@@ -117,6 +117,8 @@ Orchestrator/tests/
 ├── helpers/
 │   ├── mcp-client.ts                       # MCPTestClient (HTTP), logging, factory functions
 │   └── workflow-helpers.ts                  # parseJsonContent, parseGuardianResult, testId, etc.
+├── unit/
+│   └── cron-validation.test.ts             # Cron expression validation, timezone validation, due-check logic
 ├── integration/
 │   ├── telegram.test.ts                    # Telegram MCP tools
 │   ├── filer.test.ts                       # Filer MCP tools
@@ -127,7 +129,7 @@ Orchestrator/tests/
 │   ├── workflow-guardian-telegram.test.ts   # Guardian scan → Telegram send
 │   ├── workflow-filer-memory.test.ts        # File ops → memory audit
 │   ├── workflow-onepassword-memory.test.ts  # 1Password → memory storage
-│   ├── workflow-jobs.test.ts                # Inngest job scheduling
+│   ├── workflow-jobs.test.ts                # Inngest job scheduling + cron validation
 │   └── workflow-skills.test.ts             # Skills pipeline (store → execute → update)
 │
 Memorizer-MCP/tests/

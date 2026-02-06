@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import Cron from 'croner'
+import { Cron } from 'croner'
 
 function isValidCronExpression(expression: string): boolean {
   try {
@@ -27,6 +27,9 @@ function isValidTimezone(tz: string): boolean {
 /**
  * Checks if a cron expression is due within a given minute.
  * This mirrors the logic in cronJobPollerFunction.
+ *
+ * Strategy: compute nextRun from the start of the previous minute.
+ * If that falls within the current minute, the job is due.
  */
 function isCronDueAt(
   cronExpression: string,
@@ -35,10 +38,6 @@ function isCronDueAt(
   lastRunAt: string | undefined
 ): boolean {
   const cron = new Cron(cronExpression, { timezone })
-  const prev = cron.previousRun(now)
-  if (!prev) return false
-
-  const prevTime = prev.getTime()
   const minuteStart = new Date(
     now.getFullYear(),
     now.getMonth(),
@@ -47,14 +46,19 @@ function isCronDueAt(
     now.getMinutes(),
     0,
     0
-  ).getTime()
-  const minuteEnd = minuteStart + 60000
+  )
+  const prevMinuteStart = new Date(minuteStart.getTime() - 60000)
+  const nextFromPrev = cron.nextRun(prevMinuteStart)
 
-  let isDue = prevTime >= minuteStart && prevTime < minuteEnd
+  if (!nextFromPrev) return false
+
+  let isDue =
+    nextFromPrev >= minuteStart &&
+    nextFromPrev < new Date(minuteStart.getTime() + 60000)
 
   if (isDue && lastRunAt) {
     const lastRun = new Date(lastRunAt).getTime()
-    if (lastRun >= minuteStart) {
+    if (lastRun >= minuteStart.getTime()) {
       isDue = false
     }
   }

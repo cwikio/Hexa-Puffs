@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS facts (
     source TEXT,
     confidence REAL DEFAULT 1.0,
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    last_accessed_at TEXT DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_facts_agent ON facts(agent_id);
@@ -96,7 +97,17 @@ export interface FactRow {
   confidence: number;
   created_at: string;
   updated_at: string;
+  last_accessed_at: string;
 }
+
+/**
+ * Migrations for existing databases that may not have newer columns.
+ * Each migration is idempotent (checks before altering).
+ */
+export const MIGRATIONS_SQL = `
+-- Add last_accessed_at column if missing (added in memory consolidation update)
+ALTER TABLE facts ADD COLUMN last_accessed_at TEXT DEFAULT (datetime('now'));
+`;
 
 export interface ConversationRow {
   id: string;
