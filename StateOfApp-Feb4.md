@@ -162,22 +162,14 @@ Also pull the user's name and key preferences from the profile at prompt-build t
 
 ---
 
-## 8. Conversation History Window is Too Small
+## 8. Conversation History Window is Too Small — RESOLVED
 
-**File:** `Thinker/src/agent/loop.ts:243`
-
-```typescript
-conversationHistory: state.messages.slice(-10), // Keep last 10 messages
-```
+**File:** `Thinker/src/agent/loop.ts:258`
+**Status:** Fixed on Feb 5, 2026. Increased from `slice(-10)` to `slice(-30)` (~15 exchanges).
 
 **Problem:** 10 messages = 5 exchanges. For any non-trivial conversation (planning a trip, debugging a problem, discussing a project), context is lost mid-conversation. The agent forgets what was discussed 6 messages ago.
 
 Combined with `maxSteps: 2`, each exchange uses 2+ messages (user + assistant + possibly tool results), so the effective window is even smaller.
-
-**Fix:**
-- Increase to 20-30 messages
-- Better: implement a sliding window with summarization — when history exceeds N messages, summarize older messages into a context block
-- Track token count rather than message count
 
 **Impact:** Directly affects conversation quality for anything beyond simple Q&A.
 
@@ -231,7 +223,7 @@ This means if the agent calls `list_events` or `list_facts` and the LLM doesn't 
 | 1 | Increase maxSteps from 2 to 8 | 5 min | Transformative | DONE |
 | 5 | Add date/time/timezone to system prompt | 15 min | High | DONE |
 | 6 | Improve tool descriptions across all MCPs | 2-3 hrs | High | DONE |
-| 8 | Increase conversation history window | 5 min | High | |
+| 8 | Increase conversation history window | 5 min | High | DONE |
 | 2 | Wire Guardian security scanning in stdio mode | 1-2 hrs | Critical (security) | |
 | 10 | Fix tool result fallback in Thinker | 1 hr | Medium | |
 | 4 | Add memory deduplication and consolidation | 2-3 hrs | High (long-term) | |

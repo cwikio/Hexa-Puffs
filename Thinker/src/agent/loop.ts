@@ -255,7 +255,7 @@ export class Agent {
 
     return {
       systemPrompt,
-      conversationHistory: state.messages.slice(-10), // Keep last 10 messages
+      conversationHistory: state.messages.slice(-30), // Keep last 30 messages (~15 exchanges)
       facts: memories.facts.map((f) => ({ fact: f.fact, category: f.category })),
       profile: profile?.profile_data?.persona
         ? {
