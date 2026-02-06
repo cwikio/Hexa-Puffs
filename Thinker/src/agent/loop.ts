@@ -306,7 +306,7 @@ export class Agent {
           system: context.systemPrompt,
           messages: [...context.conversationHistory, { role: 'user', content: message.text }],
           tools: this.tools,
-          maxSteps: 2, // Limit tool-call iterations to control costs
+          maxSteps: 8,
         });
       } catch (toolError) {
         // If function calling fails (malformed JSON from model), retry with tools once, then fallback
@@ -325,7 +325,7 @@ export class Agent {
               system: context.systemPrompt,
               messages: [...context.conversationHistory, { role: 'user', content: message.text }],
               tools: this.tools,
-              maxSteps: 2,
+              maxSteps: 8,
             });
           } catch (retryError) {
             // Second attempt also failed - fall back to text-only with modified prompt
