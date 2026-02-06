@@ -5,7 +5,7 @@ import { logger } from '../../../Shared/Utils/logger.js';
 import { JobDefinition, TaskDefinition } from './types.js';
 import { TelegramMCPClient } from '../mcp-clients/telegram.js';
 import { getConfig } from '../config/index.js';
-import Cron from 'croner';
+import { Cron } from 'croner';
 
 const storage = new JobStorage();
 
@@ -211,25 +211,24 @@ export const cronJobPollerFunction = inngest.createFunction(
     const now = new Date();
 
     for (const job of jobs) {
-      // Check if this cron expression matches the current minute
+      // Check if this cron expression is due for the current minute.
+      // Strategy: compute nextRun from the start of the previous minute.
+      // If that falls within the current minute, the job is due.
       let isDue = false;
       try {
         const cron = new Cron(job.cronExpression!, { timezone: job.timezone || 'UTC' });
-        const prev = cron.previousRun(now);
-        if (!prev) continue;
+        const minuteStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0);
+        const prevMinuteStart = new Date(minuteStart.getTime() - 60000);
+        const nextFromPrev = cron.nextRun(prevMinuteStart);
 
-        // The job is due if its previous scheduled time falls within the current minute
-        // and it hasn't already been run for this occurrence
-        const prevTime = prev.getTime();
-        const minuteStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0).getTime();
-        const minuteEnd = minuteStart + 60000;
+        if (!nextFromPrev) continue;
 
-        isDue = prevTime >= minuteStart && prevTime < minuteEnd;
+        isDue = nextFromPrev >= minuteStart && nextFromPrev < new Date(minuteStart.getTime() + 60000);
 
-        // Skip if already run within the last minute (prevent double execution)
+        // Skip if already run within the current minute (prevent double execution)
         if (isDue && job.lastRunAt) {
           const lastRun = new Date(job.lastRunAt).getTime();
-          if (lastRun >= minuteStart) {
+          if (lastRun >= minuteStart.getTime()) {
             isDue = false;
           }
         }

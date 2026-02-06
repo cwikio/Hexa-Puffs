@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import Cron from 'croner';
+import { Cron } from 'croner';
 import { JobStorage } from '../jobs/storage.js';
 import { inngest } from '../jobs/inngest-client.js';
 import { JobDefinition, TaskDefinition } from '../jobs/types.js';
