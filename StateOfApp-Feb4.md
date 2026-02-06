@@ -76,28 +76,32 @@ The user can create a skill like "Check my email every morning at 9am" — it ge
 
 ---
 
-## 4. Memory Accumulates But Never Consolidates
+## 4. Memory Accumulates But Never Consolidates — RESOLVED
 
 **Files:**
+
+- `Memorizer-MCP/src/db/schema.ts`
+- `Memorizer-MCP/src/db/index.ts`
 - `Memorizer-MCP/src/tools/facts.ts`
-- `Memorizer-MCP/src/tools/conversations.ts`
+- `Memorizer-MCP/src/tools/memory.ts`
+- `Memorizer-MCP/src/types/responses.ts`
+- `Memorizer-MCP/src/tools/index.ts`
+- `Memorizer-MCP/src/server.ts`
 
-**Problem:** Facts pile up indefinitely with no mechanism to:
-- **Deduplicate** — storing "User lives in Krakow" 5 times creates 5 entries
-- **Supersede** — if user moves to Warsaw, old "lives in Krakow" fact persists
-- **Consolidate** — 50 individual conversation facts never get summarized into higher-level understanding
-- **Decay** — outdated facts (like "working on project X" from 6 months ago) have equal weight to recent ones
-- **Prioritize** — `retrieve_memories` does text matching, not relevance scoring
+**Status:** Fixed on Feb 5, 2026. Added recency tracking, fuzzy deduplication, and an `update_fact` tool.
 
-The Thinker's system prompt says "proactively store important details" which means facts grow fast, but nothing prunes them.
+**Problem:** Facts piled up indefinitely with no mechanism to deduplicate, supersede, decay, or prioritize.
 
-**Fix:**
-- Add a `relevance_score` or `last_accessed_at` column to facts for recency weighting
-- Add a deduplication check in `store_fact` (fuzzy match against existing facts in same category)
-- Create a periodic "memory consolidation" skill that summarizes old conversations and prunes stale facts
-- Add `supersede_fact` or `update_fact` tool so the LLM can explicitly replace outdated information
+**Fix (implemented):**
 
-**Impact:** Without this, memory quality degrades over time. After a few months, `retrieve_memories` returns noise instead of signal.
+1. **`last_accessed_at` column** — Added to facts table (with migration for existing DBs). Updated every time `retrieve_memories` returns a fact. Facts that are never retrieved naturally decay in ranking.
+2. **Fuzzy deduplication in `store_fact`** — Before inserting, extracts keywords from the new fact and checks overlap against existing facts in the same category (60% threshold). If similar facts exist, the response includes `similar_existing` with their IDs and text, plus a message suggesting `update_fact` or `delete_fact`.
+3. **`update_fact` tool** — New tool that atomically supersedes an existing fact with new text (optionally changing category). The LLM can now say "update fact #42 from 'Lives in Krakow' to 'Lives in Warsaw'" in a single call instead of delete + store.
+4. **Recency-weighted retrieval** — `retrieve_memories` now sorts by `confidence DESC, last_accessed_at DESC, created_at DESC` instead of just `confidence DESC, created_at DESC`. Frequently-accessed facts rank higher.
+
+**Remaining (not in scope):** Periodic memory consolidation skill (summarizing old conversations + pruning stale facts) — this requires the skills scheduler (#3) to be wired first.
+
+**Impact:** Memory quality now degrades much more slowly. Duplicates are flagged, outdated facts can be superseded, and retrieval favors recently-relevant information.
 
 ---
 
@@ -227,7 +231,7 @@ The `start-all.sh` script does one-time health checks but no ongoing monitoring.
 | 8 | Increase conversation history window | 5 min | High | DONE |
 | 2 | Wire Guardian security scanning in stdio mode | 1-2 hrs | Critical (security) | |
 | 10 | Fix tool result fallback in Thinker | 1 hr | Medium | DONE |
-| 4 | Add memory deduplication and consolidation | 2-3 hrs | High (long-term) | |
+| 4 | Add memory deduplication and consolidation | 2-3 hrs | High (long-term) | DONE |
 | 3 | Wire skills to Inngest cron scheduler | 3-4 hrs | High (unlocks proactivity) | |
 | 9 | Add MCP health monitoring and auto-restart | 2 hrs | Medium (reliability) | |
 | 7 | Clean up dead HTTP-mode execute() code | 30 min | Low (code quality) | |

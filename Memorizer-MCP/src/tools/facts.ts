@@ -7,6 +7,7 @@ import {
   type StoreFactData,
   type ListFactsData,
   type DeleteFactData,
+  type UpdateFactData,
   createSuccess,
   createError,
   createErrorFromException,
@@ -82,6 +83,30 @@ export const deleteFactToolDefinition = {
   },
 };
 
+export const updateFactToolDefinition = {
+  name: 'update_fact',
+  description: 'Update an existing fact with new information. Use this to supersede outdated facts instead of delete + store. For example, if the user moved from Krakow to Warsaw, update the existing "Lives in Krakow" fact rather than creating a duplicate.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      fact_id: {
+        type: 'number',
+        description: 'The ID of the fact to update (use list_facts to find it)',
+      },
+      fact: {
+        type: 'string',
+        description: 'The new fact text to replace the old one',
+      },
+      category: {
+        type: 'string',
+        description: 'Optionally change the category',
+        enum: FACT_CATEGORIES,
+      },
+    },
+    required: ['fact_id', 'fact'],
+  },
+};
+
 // Input schemas for validation
 const StoreFactInputSchema = z.object({
   agent_id: z.string().default('main'),
@@ -99,6 +124,44 @@ const ListFactsInputSchema = z.object({
 const DeleteFactInputSchema = z.object({
   fact_id: z.number().positive(),
 });
+
+const UpdateFactInputSchema = z.object({
+  fact_id: z.number().positive(),
+  fact: z.string().min(1),
+  category: z.enum(FACT_CATEGORIES).optional(),
+});
+
+/**
+ * Extract meaningful keywords from a fact string for fuzzy matching.
+ * Filters out common stop words and short words.
+ */
+function extractKeywords(text: string): string[] {
+  const stopWords = new Set([
+    'the', 'is', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to',
+    'for', 'of', 'with', 'by', 'from', 'as', 'into', 'that', 'this',
+    'has', 'have', 'had', 'was', 'were', 'are', 'been', 'being',
+    'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may',
+    'can', 'not', 'no', 'so', 'up', 'out', 'if', 'about', 'who',
+    'which', 'their', 'them', 'then', 'than', 'its', 'his', 'her',
+    'likes', 'prefers', 'uses', 'wants', 'needs',
+  ]);
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !stopWords.has(w));
+}
+
+/**
+ * Calculate keyword overlap ratio between two sets of keywords.
+ * Returns 0-1 where 1 means perfect overlap.
+ */
+function keywordOverlap(a: string[], b: string[]): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  const setB = new Set(b);
+  const matches = a.filter(w => setB.has(w)).length;
+  return matches / Math.min(a.length, b.length);
+}
 
 // Handler functions
 export async function handleStoreFact(args: unknown): Promise<StandardResponse<StoreFactData>> {
@@ -118,7 +181,7 @@ export async function handleStoreFact(args: unknown): Promise<StandardResponse<S
   try {
     const db = getDatabase();
 
-    // Check for duplicate facts
+    // Check for exact duplicate facts
     const existing = db
       .prepare(
         `SELECT id FROM facts
@@ -129,7 +192,7 @@ export async function handleStoreFact(args: unknown): Promise<StandardResponse<S
     if (existing) {
       // Update the existing fact's timestamp
       db.prepare(
-        `UPDATE facts SET updated_at = datetime('now') WHERE id = ?`
+        `UPDATE facts SET updated_at = datetime('now'), last_accessed_at = datetime('now') WHERE id = ?`
       ).run(existing.id);
 
       return createSuccess({
@@ -137,6 +200,24 @@ export async function handleStoreFact(args: unknown): Promise<StandardResponse<S
         message: 'Fact already exists, updated timestamp',
         stored_at: new Date().toISOString(),
       });
+    }
+
+    // Fuzzy deduplication: check for similar facts in the same category
+    const sameCategoryFacts = db
+      .prepare(
+        `SELECT id, fact FROM facts WHERE agent_id = ? AND category = ?`
+      )
+      .all(agent_id, category) as Array<{ id: number; fact: string }>;
+
+    const newKeywords = extractKeywords(fact);
+    const similarFacts: Array<{ id: number; fact: string; overlap: number }> = [];
+
+    for (const existing of sameCategoryFacts) {
+      const existingKeywords = extractKeywords(existing.fact);
+      const overlap = keywordOverlap(newKeywords, existingKeywords);
+      if (overlap >= 0.6) {
+        similarFacts.push({ id: existing.id, fact: existing.fact, overlap });
+      }
     }
 
     // Insert new fact
@@ -149,10 +230,17 @@ export async function handleStoreFact(args: unknown): Promise<StandardResponse<S
 
     logger.info('Fact stored', { fact_id: result.lastInsertRowid, category });
 
-    return createSuccess({
+    const response: StoreFactData = {
       fact_id: Number(result.lastInsertRowid),
       stored_at: new Date().toISOString(),
-    });
+    };
+
+    if (similarFacts.length > 0) {
+      response.similar_existing = similarFacts.map(f => ({ id: f.id, fact: f.fact }));
+      response.message = `Stored, but ${similarFacts.length} similar fact(s) found in "${category}". Consider using update_fact to supersede the old one, or delete_fact to remove duplicates.`;
+    }
+
+    return createSuccess(response);
   } catch (error) {
     logger.error('Failed to store fact', { error });
     return createErrorFromException(error);
@@ -241,6 +329,50 @@ export async function handleDeleteFact(args: unknown): Promise<StandardResponse<
     });
   } catch (error) {
     logger.error('Failed to delete fact', { error });
+    return createErrorFromException(error);
+  }
+}
+
+export async function handleUpdateFact(args: unknown): Promise<StandardResponse<UpdateFactData>> {
+  const parseResult = UpdateFactInputSchema.safeParse(args);
+
+  if (!parseResult.success) {
+    return createError('Invalid input: ' + parseResult.error.message);
+  }
+
+  const { fact_id, fact, category } = parseResult.data;
+
+  if (!isFactSafe(fact)) {
+    return createError('Fact contains sensitive data and cannot be stored');
+  }
+
+  try {
+    const db = getDatabase();
+
+    const existing = db
+      .prepare(`SELECT * FROM facts WHERE id = ?`)
+      .get(fact_id) as FactRow | undefined;
+
+    if (!existing) {
+      return createError(`Fact with ID ${fact_id} not found`);
+    }
+
+    const newCategory = category ?? existing.category;
+
+    db.prepare(
+      `UPDATE facts SET fact = ?, category = ?, updated_at = datetime('now'), last_accessed_at = datetime('now') WHERE id = ?`
+    ).run(fact, newCategory, fact_id);
+
+    logger.info('Fact updated', { fact_id, old_fact: existing.fact, new_fact: fact });
+
+    return createSuccess({
+      fact_id,
+      old_fact: existing.fact,
+      new_fact: fact,
+      category: newCategory,
+    });
+  } catch (error) {
+    logger.error('Failed to update fact', { error });
     return createErrorFromException(error);
   }
 }

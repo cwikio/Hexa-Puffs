@@ -16,6 +16,14 @@ export interface StoreFactData {
   fact_id: number;
   stored_at: string;
   message?: string;
+  similar_existing?: Array<{ id: number; fact: string }>;
+}
+
+export interface UpdateFactData {
+  fact_id: number;
+  old_fact: string;
+  new_fact: string;
+  category: string;
 }
 
 export interface ListFactsData {

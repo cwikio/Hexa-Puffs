@@ -3,9 +3,11 @@ export {
   storeFactToolDefinition,
   listFactsToolDefinition,
   deleteFactToolDefinition,
+  updateFactToolDefinition,
   handleStoreFact,
   handleListFacts,
   handleDeleteFact,
+  handleUpdateFact,
 } from './facts.js';
 
 export {
@@ -53,7 +55,7 @@ export {
 } from './skills.js';
 
 // Import all definitions for convenience
-import { storeFactToolDefinition, listFactsToolDefinition, deleteFactToolDefinition } from './facts.js';
+import { storeFactToolDefinition, listFactsToolDefinition, deleteFactToolDefinition, updateFactToolDefinition } from './facts.js';
 import { storeConversationToolDefinition, searchConversationsToolDefinition } from './conversations.js';
 import { getProfileToolDefinition, updateProfileToolDefinition } from './profiles.js';
 import { retrieveMemoriesToolDefinition } from './memory.js';
@@ -72,6 +74,7 @@ export const allToolDefinitions = [
   storeFactToolDefinition,
   listFactsToolDefinition,
   deleteFactToolDefinition,
+  updateFactToolDefinition,
   // Conversations
   storeConversationToolDefinition,
   searchConversationsToolDefinition,

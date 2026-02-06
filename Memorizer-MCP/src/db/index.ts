@@ -4,7 +4,7 @@ import { dirname } from 'path';
 import { getConfig } from '../config/index.js';
 import { DatabaseError } from '../utils/errors.js';
 import { logger } from '../../../Shared/Utils/logger.js';
-import { SCHEMA_SQL } from './schema.js';
+import { SCHEMA_SQL, MIGRATIONS_SQL } from './schema.js';
 
 let db: Database.Database | null = null;
 
@@ -27,6 +27,15 @@ export function getDatabase(): Database.Database {
 
       // Initialize schema
       db.exec(SCHEMA_SQL);
+
+      // Run migrations for existing databases (idempotent)
+      for (const stmt of MIGRATIONS_SQL.split(';').map(s => s.trim()).filter(Boolean)) {
+        try {
+          db.exec(stmt);
+        } catch {
+          // Column likely already exists — safe to ignore
+        }
+      }
 
       logger.info('Database initialized', { path: dbPath });
     } catch (error) {

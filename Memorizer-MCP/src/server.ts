@@ -12,6 +12,7 @@ import {
   handleStoreFact,
   handleListFacts,
   handleDeleteFact,
+  handleUpdateFact,
   // Conversations
   handleStoreConversation,
   handleSearchConversations,
@@ -72,6 +73,9 @@ export function createServer(): Server {
           break;
         case 'delete_fact':
           result = await handleDeleteFact(args);
+          break;
+        case 'update_fact':
+          result = await handleUpdateFact(args);
           break;
 
         // Conversations

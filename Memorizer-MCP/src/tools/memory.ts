@@ -69,6 +69,7 @@ export async function handleRetrieveMemories(args: unknown): Promise<StandardRes
 
     // Search facts
     // Build a query that matches any of the keywords
+    // Rank by: confidence, then recency (last accessed or created), then creation date
     const factConditions = keywords.map(() => `fact LIKE ?`).join(' OR ');
     const factParams = keywords.map(k => `%${k}%`);
 
@@ -76,10 +77,21 @@ export async function handleRetrieveMemories(args: unknown): Promise<StandardRes
       .prepare(
         `SELECT * FROM facts
          WHERE agent_id = ? AND (${factConditions})
-         ORDER BY confidence DESC, created_at DESC
+         ORDER BY confidence DESC,
+                  COALESCE(last_accessed_at, created_at) DESC,
+                  created_at DESC
          LIMIT ?`
       )
       .all(agent_id, ...factParams, limit) as FactRow[];
+
+    // Update last_accessed_at for retrieved facts so recency stays current
+    if (facts.length > 0) {
+      const placeholders = facts.map(() => '?').join(',');
+      const ids = facts.map(f => f.id);
+      db.prepare(
+        `UPDATE facts SET last_accessed_at = datetime('now') WHERE id IN (${placeholders})`
+      ).run(...ids);
+    }
 
     // Search conversations if requested
     let conversations: ConversationRow[] = [];
