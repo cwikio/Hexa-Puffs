@@ -4,11 +4,15 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerTool } from "@mcp/shared/Utils/register-tool.js";
+import { createSuccess } from "@mcp/shared/Types/StandardResponse.js";
 import {
   scanContentSchema,
   handleScanContent,
+  type ScanContentInput,
   getScanLogSchema,
   handleGetScanLog,
+  type GetScanLogInput,
 } from "./tools/index.js";
 
 export function createServer(): McpServer {
@@ -17,98 +21,41 @@ export function createServer(): McpServer {
     version: "1.0.0",
   });
 
-  // scan_content - Main scanning tool
-  server.tool(
-    "scan_content",
-    "Scans content for prompt injection attacks using Granite Guardian. Accepts strings, objects, or arrays - recursively scans all text fields.",
-    scanContentSchema.shape,
-    async (params) => {
-      const result = scanContentSchema.safeParse(params);
-      if (!result.success) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: `Invalid parameters: ${result.error.message}`,
-              }),
-            },
-          ],
-        };
-      }
+  registerTool(server, {
+    name: "scan_content",
+    description:
+      "Scans content for prompt injection attacks using Granite Guardian. Accepts strings, objects, or arrays - recursively scans all text fields.",
+    inputSchema: scanContentSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    // SDK validates params against scanContentSchema before calling this handler
+    handler: async (params) => {
+      const scanResult = await handleScanContent(params as ScanContentInput);
+      return createSuccess(scanResult);
+    },
+  });
 
-      try {
-        const scanResult = await handleScanContent(result.data);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(scanResult, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error:
-                  error instanceof Error ? error.message : "Unknown error",
-                safe: false,
-              }),
-            },
-          ],
-        };
-      }
-    }
-  );
-
-  // get_scan_log - Audit log retrieval
-  server.tool(
-    "get_scan_log",
-    "Retrieve audit log of past security scans. Can filter by scan ID or show only threats.",
-    getScanLogSchema.shape,
-    async (params) => {
-      const result = getScanLogSchema.safeParse(params);
-      if (!result.success) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: `Invalid parameters: ${result.error.message}`,
-              }),
-            },
-          ],
-        };
-      }
-
-      try {
-        const logResult = await handleGetScanLog(result.data);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(logResult, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error:
-                  error instanceof Error ? error.message : "Unknown error",
-              }),
-            },
-          ],
-        };
-      }
-    }
-  );
+  registerTool(server, {
+    name: "get_scan_log",
+    description:
+      "Retrieve audit log of past security scans. Can filter by scan ID or show only threats.",
+    inputSchema: getScanLogSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    // SDK validates params against getScanLogSchema before calling this handler
+    handler: async (params) => {
+      const logResult = await handleGetScanLog(params as GetScanLogInput);
+      return createSuccess(logResult);
+    },
+  });
 
   return server;
 }

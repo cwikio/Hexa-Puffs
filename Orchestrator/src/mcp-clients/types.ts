@@ -22,6 +22,13 @@ export interface MCPToolDefinition {
     properties: Record<string, unknown>;
     required?: string[];
   };
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 /**

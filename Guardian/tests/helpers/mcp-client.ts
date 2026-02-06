@@ -48,6 +48,12 @@ export interface GetScanLogResult {
   total: number;
 }
 
+interface StandardResponse<T = unknown> {
+  success: boolean;
+  error?: string;
+  data?: T;
+}
+
 let client: Client | null = null;
 let transport: SSEClientTransport | null = null;
 
@@ -91,6 +97,22 @@ export async function checkHealth(): Promise<{
 }
 
 /**
+ * Parse MCP tool response, unwrapping StandardResponse
+ */
+function parseToolResponse<T>(result: { content: Array<{ type: string; text?: string }> }): T {
+  const textContent = result.content.find((c) => c.type === "text");
+  if (!textContent || textContent.type !== "text" || !("text" in textContent)) {
+    throw new Error("No text content in response");
+  }
+
+  const parsed = JSON.parse((textContent as { type: "text"; text: string }).text) as StandardResponse<T>;
+  if (!parsed.success) {
+    throw new Error(parsed.error || "Tool returned error");
+  }
+  return parsed.data as T;
+}
+
+/**
  * Call scan_content tool
  */
 export async function scanContent(
@@ -102,13 +124,7 @@ export async function scanContent(
     arguments: input,
   });
 
-  // MCP returns content array with text content
-  const textContent = result.content.find((c) => c.type === "text");
-  if (!textContent || textContent.type !== "text") {
-    throw new Error("No text content in response");
-  }
-
-  return JSON.parse(textContent.text) as ScanContentResult;
+  return parseToolResponse<ScanContentResult>(result);
 }
 
 /**
@@ -123,12 +139,7 @@ export async function getScanLog(
     arguments: input,
   });
 
-  const textContent = result.content.find((c) => c.type === "text");
-  if (!textContent || textContent.type !== "text") {
-    throw new Error("No text content in response");
-  }
-
-  return JSON.parse(textContent.text) as GetScanLogResult;
+  return parseToolResponse<GetScanLogResult>(result);
 }
 
 /**

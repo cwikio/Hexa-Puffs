@@ -99,20 +99,20 @@ run_mcp_tests() {
 
   if [ ! -d "$dir" ]; then
     echo -e "  ${YELLOW}⚠ $name directory not found - skipping${RESET}"
-    ((SKIPPED++))
+    ((SKIPPED++)) || true
     return
   fi
 
   if [ ! -f "$dir/package.json" ]; then
     echo -e "  ${YELLOW}⚠ $name has no package.json - skipping${RESET}"
-    ((SKIPPED++))
+    ((SKIPPED++)) || true
     return
   fi
 
   # Check if test script exists
   if ! grep -q '"test"' "$dir/package.json"; then
     echo -e "  ${YELLOW}⚠ $name has no test script - skipping${RESET}"
-    ((SKIPPED++))
+    ((SKIPPED++)) || true
     return
   fi
 
@@ -122,10 +122,10 @@ run_mcp_tests() {
 
   if npm test 2>&1; then
     echo -e "  ${GREEN}✓ $name tests passed${RESET}"
-    ((PASSED++))
+    ((PASSED++)) || true
   else
     echo -e "  ${RED}✗ $name tests failed${RESET}"
-    ((FAILED++))
+    ((FAILED++)) || true
   fi
 
   cd "$MCP_DIR"
@@ -145,10 +145,10 @@ test_curl() {
 
   if echo "$RESPONSE" | grep -q "$expected"; then
     echo -e "${GREEN}✓${RESET}"
-    ((CURL_PASSED++))
+    ((CURL_PASSED++)) || true
   else
     echo -e "${RED}✗${RESET}"
-    ((CURL_FAILED++))
+    ((CURL_FAILED++)) || true
   fi
 }
 
@@ -229,10 +229,10 @@ if [ "$RUN_CURL" = true ]; then
     THINKER_RESP=$(curl -s http://localhost:8006/health 2>/dev/null)
     if echo "$THINKER_RESP" | grep -q "llmProvider"; then
       echo -e "  Thinker config... ${GREEN}✓${RESET}"
-      ((CURL_PASSED++))
+      ((CURL_PASSED++)) || true
     else
       echo -e "  Thinker config... ${RED}✗${RESET}"
-      ((CURL_FAILED++))
+      ((CURL_FAILED++)) || true
     fi
   fi
 
@@ -283,11 +283,13 @@ if [ "$RUN_VITEST" = true ]; then
 
   echo -e "Running vitest for each MCP with tests...\n"
 
-  # Run tests for each MCP (legacy architecture)
-  run_mcp_tests "Filer" "$MCP_DIR/Filer"
-  run_mcp_tests "Memorizer" "$MCP_DIR/Memorizer"
-  run_mcp_tests "Telegram" "$MCP_DIR/Telegram"
+  # Run tests for each MCP
+  run_mcp_tests "Filer" "$MCP_DIR/Filer-MCP"
+  run_mcp_tests "Memorizer" "$MCP_DIR/Memorizer-MCP"
+  run_mcp_tests "Telegram" "$MCP_DIR/Telegram-MCP"
   run_mcp_tests "Guardian" "$MCP_DIR/Guardian"
+  run_mcp_tests "Searcher" "$MCP_DIR/Searcher-MCP"
+  run_mcp_tests "Gmail" "$MCP_DIR/Gmail-MCP"
 
   # Orchestrator tests (Level 2 + Level 3 workflows + stdio mode)
   print_section "Section 4: Orchestrator Tests"

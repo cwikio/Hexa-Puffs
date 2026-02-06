@@ -2,6 +2,8 @@
  * Shared tool definition types for MCP services
  */
 
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+
 /**
  * Standard MCP tool definition format
  */
@@ -13,6 +15,7 @@ export interface ToolDefinition {
     properties: Record<string, unknown>;
     required?: string[];
   };
+  annotations?: ToolAnnotations;
 }
 
 /**
