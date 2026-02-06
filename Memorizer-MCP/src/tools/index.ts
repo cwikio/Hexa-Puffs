@@ -1,9 +1,13 @@
-// Export all tool definitions and handlers
+// Export all tool definitions, handlers, and Zod input schemas
 export {
   storeFactToolDefinition,
   listFactsToolDefinition,
   deleteFactToolDefinition,
   updateFactToolDefinition,
+  StoreFactInputSchema,
+  ListFactsInputSchema,
+  DeleteFactInputSchema,
+  UpdateFactInputSchema,
   handleStoreFact,
   handleListFacts,
   handleDeleteFact,
@@ -13,6 +17,8 @@ export {
 export {
   storeConversationToolDefinition,
   searchConversationsToolDefinition,
+  StoreConversationInputSchema,
+  SearchConversationsInputSchema,
   handleStoreConversation,
   handleSearchConversations,
 } from './conversations.js';
@@ -20,23 +26,29 @@ export {
 export {
   getProfileToolDefinition,
   updateProfileToolDefinition,
+  GetProfileInputSchema,
+  UpdateProfileInputSchema,
   handleGetProfile,
   handleUpdateProfile,
 } from './profiles.js';
 
 export {
   retrieveMemoriesToolDefinition,
+  RetrieveMemoriesInputSchema,
   handleRetrieveMemories,
 } from './memory.js';
 
 export {
   getMemoryStatsToolDefinition,
+  GetMemoryStatsInputSchema,
   handleGetMemoryStats,
 } from './stats.js';
 
 export {
   exportMemoryToolDefinition,
   importMemoryToolDefinition,
+  ExportMemoryInputSchema,
+  ImportMemoryInputSchema,
   handleExportMemory,
   handleImportMemory,
 } from './export.js';
@@ -47,6 +59,11 @@ export {
   getSkillToolDefinition,
   updateSkillToolDefinition,
   deleteSkillToolDefinition,
+  StoreSkillInputSchema,
+  ListSkillsInputSchema,
+  GetSkillInputSchema,
+  UpdateSkillInputSchema,
+  DeleteSkillInputSchema,
   handleStoreSkill,
   handleListSkills,
   handleGetSkill,

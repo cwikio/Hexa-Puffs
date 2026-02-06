@@ -79,7 +79,7 @@ export const searchConversationsToolDefinition = {
 };
 
 // Input schemas for validation
-const StoreConversationInputSchema = z.object({
+export const StoreConversationInputSchema = z.object({
   agent_id: z.string().default('main'),
   session_id: z.string().optional(),
   user_message: z.string().min(1),
@@ -87,7 +87,7 @@ const StoreConversationInputSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-const SearchConversationsInputSchema = z.object({
+export const SearchConversationsInputSchema = z.object({
   agent_id: z.string().default('main'),
   query: z.string().min(1),
   limit: z.number().positive().default(10),

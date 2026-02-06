@@ -51,11 +51,11 @@ export const updateProfileToolDefinition = {
 };
 
 // Input schemas for validation
-const GetProfileInputSchema = z.object({
+export const GetProfileInputSchema = z.object({
   agent_id: z.string().default('main'),
 });
 
-const UpdateProfileInputSchema = z.object({
+export const UpdateProfileInputSchema = z.object({
   agent_id: z.string().default('main'),
   updates: z.record(z.unknown()),
   reason: z.string().optional(),
