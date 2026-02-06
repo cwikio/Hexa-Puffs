@@ -62,13 +62,13 @@ export const importMemoryToolDefinition = {
 };
 
 // Input schemas
-const ExportMemoryInputSchema = z.object({
+export const ExportMemoryInputSchema = z.object({
   agent_id: z.string().default('main'),
   format: z.enum(['markdown', 'json']).default('markdown'),
   include_conversations: z.boolean().default(true),
 });
 
-const ImportMemoryInputSchema = z.object({
+export const ImportMemoryInputSchema = z.object({
   agent_id: z.string().default('main'),
   file_path: z.string().min(1),
 });

@@ -108,24 +108,24 @@ export const updateFactToolDefinition = {
 };
 
 // Input schemas for validation
-const StoreFactInputSchema = z.object({
+export const StoreFactInputSchema = z.object({
   agent_id: z.string().default('main'),
   fact: z.string().min(1),
   category: z.enum(FACT_CATEGORIES),
   source: z.string().optional(),
 });
 
-const ListFactsInputSchema = z.object({
+export const ListFactsInputSchema = z.object({
   agent_id: z.string().default('main'),
   category: z.enum(FACT_CATEGORIES).optional(),
   limit: z.number().positive().default(50),
 });
 
-const DeleteFactInputSchema = z.object({
+export const DeleteFactInputSchema = z.object({
   fact_id: z.number().positive(),
 });
 
-const UpdateFactInputSchema = z.object({
+export const UpdateFactInputSchema = z.object({
   fact_id: z.number().positive(),
   fact: z.string().min(1),
   category: z.enum(FACT_CATEGORIES).optional(),

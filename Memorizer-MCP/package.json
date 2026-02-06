@@ -10,6 +10,7 @@
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config tests/vitest.config.ts",
+    "test:unit": "vitest run --config tests/vitest.unit.config.ts",
     "test:watch": "vitest --config tests/vitest.config.ts",
     "test:facts": "vitest run --config tests/vitest.config.ts tests/integration/facts.test.ts",
     "test:conversations": "vitest run --config tests/vitest.config.ts tests/integration/conversations.test.ts",

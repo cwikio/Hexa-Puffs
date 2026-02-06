@@ -178,7 +178,7 @@ export const deleteSkillToolDefinition = {
 // Input Schemas (Zod)
 // ============================================================================
 
-const StoreSkillInputSchema = z.object({
+export const StoreSkillInputSchema = z.object({
   agent_id: z.string().default('main'),
   name: z.string().min(1),
   description: z.string().optional(),
@@ -190,17 +190,17 @@ const StoreSkillInputSchema = z.object({
   notify_on_completion: z.boolean().default(true),
 });
 
-const ListSkillsInputSchema = z.object({
+export const ListSkillsInputSchema = z.object({
   agent_id: z.string().default('main'),
   enabled: z.boolean().optional(),
   trigger_type: z.enum(TRIGGER_TYPES).optional(),
 });
 
-const GetSkillInputSchema = z.object({
+export const GetSkillInputSchema = z.object({
   skill_id: z.number().positive(),
 });
 
-const UpdateSkillInputSchema = z.object({
+export const UpdateSkillInputSchema = z.object({
   skill_id: z.number().positive(),
   name: z.string().min(1).optional(),
   description: z.string().optional(),
@@ -216,7 +216,7 @@ const UpdateSkillInputSchema = z.object({
   last_run_summary: z.string().optional(),
 });
 
-const DeleteSkillInputSchema = z.object({
+export const DeleteSkillInputSchema = z.object({
   skill_id: z.number().positive(),
 });
 

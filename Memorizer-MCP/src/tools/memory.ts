@@ -41,7 +41,7 @@ export const retrieveMemoriesToolDefinition = {
 };
 
 // Input schema for validation
-const RetrieveMemoriesInputSchema = z.object({
+export const RetrieveMemoriesInputSchema = z.object({
   agent_id: z.string().default('main'),
   query: z.string().min(1),
   limit: z.number().positive().default(5),

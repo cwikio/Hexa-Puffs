@@ -28,7 +28,7 @@ export const getMemoryStatsToolDefinition = {
 };
 
 // Input schema for validation
-const GetMemoryStatsInputSchema = z.object({
+export const GetMemoryStatsInputSchema = z.object({
   agent_id: z.string().default('main'),
 });
 

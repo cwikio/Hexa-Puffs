@@ -1,32 +1,61 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
-import { logger } from '@mcp/shared/Utils/logger.js';
+/**
+ * Memorizer MCP Server
+ * Provides memory storage and retrieval tools (facts, conversations, profiles, skills)
+ */
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerTool } from '@mcp/shared/Utils/register-tool.js';
 import { getDatabase } from './db/index.js';
-import { type StandardResponse } from './types/responses.js';
 import {
-  allToolDefinitions,
-  // Facts
+  // Tool definitions (for descriptions)
+  storeFactToolDefinition,
+  listFactsToolDefinition,
+  deleteFactToolDefinition,
+  updateFactToolDefinition,
+  storeConversationToolDefinition,
+  searchConversationsToolDefinition,
+  getProfileToolDefinition,
+  updateProfileToolDefinition,
+  retrieveMemoriesToolDefinition,
+  getMemoryStatsToolDefinition,
+  exportMemoryToolDefinition,
+  importMemoryToolDefinition,
+  storeSkillToolDefinition,
+  listSkillsToolDefinition,
+  getSkillToolDefinition,
+  updateSkillToolDefinition,
+  deleteSkillToolDefinition,
+  // Zod input schemas
+  StoreFactInputSchema,
+  ListFactsInputSchema,
+  DeleteFactInputSchema,
+  UpdateFactInputSchema,
+  StoreConversationInputSchema,
+  SearchConversationsInputSchema,
+  GetProfileInputSchema,
+  UpdateProfileInputSchema,
+  RetrieveMemoriesInputSchema,
+  GetMemoryStatsInputSchema,
+  ExportMemoryInputSchema,
+  ImportMemoryInputSchema,
+  StoreSkillInputSchema,
+  ListSkillsInputSchema,
+  GetSkillInputSchema,
+  UpdateSkillInputSchema,
+  DeleteSkillInputSchema,
+  // Handlers
   handleStoreFact,
   handleListFacts,
   handleDeleteFact,
   handleUpdateFact,
-  // Conversations
   handleStoreConversation,
   handleSearchConversations,
-  // Profiles
   handleGetProfile,
   handleUpdateProfile,
-  // Memory
   handleRetrieveMemories,
-  // Stats
   handleGetMemoryStats,
-  // Export/Import
   handleExportMemory,
   handleImportMemory,
-  // Skills
   handleStoreSkill,
   handleListSkills,
   handleGetSkill,
@@ -34,139 +63,159 @@ import {
   handleDeleteSkill,
 } from './tools/index.js';
 
-export function createServer(): Server {
-  const server = new Server(
-    {
-      name: 'annabelle-memory-mcp',
-      version: '1.0.0',
-    },
-    {
-      capabilities: {
-        tools: {},
-      },
-    }
-  );
-
-  // List available tools
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    logger.debug('Listing tools');
-    return {
-      tools: allToolDefinitions,
-    };
+export function createServer(): McpServer {
+  const server = new McpServer({
+    name: 'annabelle-memory-mcp',
+    version: '1.0.0',
   });
 
-  // Handle tool calls
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    logger.info('Tool called', { name });
+  // Facts
+  registerTool(server, {
+    name: 'store_fact',
+    description: storeFactToolDefinition.description,
+    inputSchema: StoreFactInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleStoreFact(params),
+  });
 
-    try {
-      let result: StandardResponse<unknown>;
+  registerTool(server, {
+    name: 'list_facts',
+    description: listFactsToolDefinition.description,
+    inputSchema: ListFactsInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleListFacts(params),
+  });
 
-      switch (name) {
-        // Facts
-        case 'store_fact':
-          result = await handleStoreFact(args);
-          break;
-        case 'list_facts':
-          result = await handleListFacts(args);
-          break;
-        case 'delete_fact':
-          result = await handleDeleteFact(args);
-          break;
-        case 'update_fact':
-          result = await handleUpdateFact(args);
-          break;
+  registerTool(server, {
+    name: 'delete_fact',
+    description: deleteFactToolDefinition.description,
+    inputSchema: DeleteFactInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    handler: async (params) => handleDeleteFact(params),
+  });
 
-        // Conversations
-        case 'store_conversation':
-          result = await handleStoreConversation(args);
-          break;
-        case 'search_conversations':
-          result = await handleSearchConversations(args);
-          break;
+  registerTool(server, {
+    name: 'update_fact',
+    description: updateFactToolDefinition.description,
+    inputSchema: UpdateFactInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleUpdateFact(params),
+  });
 
-        // Profiles
-        case 'get_profile':
-          result = await handleGetProfile(args);
-          break;
-        case 'update_profile':
-          result = await handleUpdateProfile(args);
-          break;
+  // Conversations
+  registerTool(server, {
+    name: 'store_conversation',
+    description: storeConversationToolDefinition.description,
+    inputSchema: StoreConversationInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleStoreConversation(params),
+  });
 
-        // Memory
-        case 'retrieve_memories':
-          result = await handleRetrieveMemories(args);
-          break;
+  registerTool(server, {
+    name: 'search_conversations',
+    description: searchConversationsToolDefinition.description,
+    inputSchema: SearchConversationsInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleSearchConversations(params),
+  });
 
-        // Stats
-        case 'get_memory_stats':
-          result = await handleGetMemoryStats(args);
-          break;
+  // Profiles
+  registerTool(server, {
+    name: 'get_profile',
+    description: getProfileToolDefinition.description,
+    inputSchema: GetProfileInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleGetProfile(params),
+  });
 
-        // Export/Import
-        case 'export_memory':
-          result = await handleExportMemory(args);
-          break;
-        case 'import_memory':
-          result = await handleImportMemory(args);
-          break;
+  registerTool(server, {
+    name: 'update_profile',
+    description: updateProfileToolDefinition.description,
+    inputSchema: UpdateProfileInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleUpdateProfile(params),
+  });
 
-        // Skills
-        case 'store_skill':
-          result = await handleStoreSkill(args);
-          break;
-        case 'list_skills':
-          result = await handleListSkills(args);
-          break;
-        case 'get_skill':
-          result = await handleGetSkill(args);
-          break;
-        case 'update_skill':
-          result = await handleUpdateSkill(args);
-          break;
-        case 'delete_skill':
-          result = await handleDeleteSkill(args);
-          break;
+  // Memory
+  registerTool(server, {
+    name: 'retrieve_memories',
+    description: retrieveMemoriesToolDefinition.description,
+    inputSchema: RetrieveMemoriesInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleRetrieveMemories(params),
+  });
 
-        default:
-          logger.warn('Unknown tool called', { name });
-          result = {
-            success: false,
-            error: `Unknown tool: ${name}`,
-          };
-      }
+  // Stats
+  registerTool(server, {
+    name: 'get_memory_stats',
+    description: getMemoryStatsToolDefinition.description,
+    inputSchema: GetMemoryStatsInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleGetMemoryStats(params),
+  });
 
-      // Response is already in StandardResponse format, just serialize
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    } catch (error) {
-      logger.error('Tool call failed', { name, error });
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              success: false,
-              error: error instanceof Error ? error.message : 'Unknown error',
-            }),
-          },
-        ],
-        isError: true,
-      };
-    }
+  // Export/Import
+  registerTool(server, {
+    name: 'export_memory',
+    description: exportMemoryToolDefinition.description,
+    inputSchema: ExportMemoryInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleExportMemory(params),
+  });
+
+  registerTool(server, {
+    name: 'import_memory',
+    description: importMemoryToolDefinition.description,
+    inputSchema: ImportMemoryInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    handler: async (params) => handleImportMemory(params),
+  });
+
+  // Skills
+  registerTool(server, {
+    name: 'store_skill',
+    description: storeSkillToolDefinition.description,
+    inputSchema: StoreSkillInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleStoreSkill(params),
+  });
+
+  registerTool(server, {
+    name: 'list_skills',
+    description: listSkillsToolDefinition.description,
+    inputSchema: ListSkillsInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleListSkills(params),
+  });
+
+  registerTool(server, {
+    name: 'get_skill',
+    description: getSkillToolDefinition.description,
+    inputSchema: GetSkillInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleGetSkill(params),
+  });
+
+  registerTool(server, {
+    name: 'update_skill',
+    description: updateSkillToolDefinition.description,
+    inputSchema: UpdateSkillInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleUpdateSkill(params),
+  });
+
+  registerTool(server, {
+    name: 'delete_skill',
+    description: deleteSkillToolDefinition.description,
+    inputSchema: DeleteSkillInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    handler: async (params) => handleDeleteSkill(params),
   });
 
   return server;
 }
 
-export async function initializeServer(): Promise<Server> {
+export async function initializeServer(): Promise<McpServer> {
   // Initialize the database first
   getDatabase();
 
