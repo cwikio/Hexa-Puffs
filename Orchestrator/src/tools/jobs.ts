@@ -1,9 +1,28 @@
 import { z } from 'zod';
+import Cron from 'croner';
 import { JobStorage } from '../jobs/storage.js';
 import { inngest } from '../jobs/inngest-client.js';
 import { JobDefinition, TaskDefinition } from '../jobs/types.js';
 import { logger } from '../../../Shared/Utils/logger.js';
 import type { StandardResponse } from '../../../Shared/Types/StandardResponse.js';
+
+function isValidCronExpression(expression: string): boolean {
+  try {
+    new Cron(expression);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isValidTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const storage = new JobStorage();
 
@@ -128,6 +147,21 @@ export async function handleCreateJob(args: unknown): Promise<StandardResponse> 
       };
     }
 
+    if (data.type === 'cron' && data.cronExpression && !isValidCronExpression(data.cronExpression)) {
+      return {
+        success: false,
+        error: `Invalid cron expression: "${data.cronExpression}". Use standard format: "minute hour day month weekday" (e.g., "0 9 * * *" for daily at 9am)`,
+      };
+    }
+
+    // Validate timezone
+    if (data.timezone && !isValidTimezone(data.timezone)) {
+      return {
+        success: false,
+        error: `Invalid timezone: "${data.timezone}". Use IANA format (e.g., "America/New_York", "Europe/Warsaw", "UTC")`,
+      };
+    }
+
     // Validate scheduledAt if type is scheduled
     if (data.type === 'scheduled' && !data.scheduledAt) {
       return {
@@ -153,17 +187,21 @@ export async function handleCreateJob(args: unknown): Promise<StandardResponse> 
     await storage.saveJob(job);
     logger.info('Job created', { jobId: job.id, name: job.name });
 
-    // Register with Inngest
+    // Register with Inngest (only for scheduled one-time jobs)
+    // Cron jobs are handled by the cronJobPollerFunction which runs every minute
     if (job.type === 'cron' && job.cronExpression) {
-      await inngest.send({
-        name: 'job/cron.register',
-        data: {
-          jobId: job.id,
-          cron: job.cronExpression,
-          action: job.action,
-        },
-      });
-      logger.info('Cron job registered with Inngest', { jobId: job.id });
+      // Compute next run time for informational purposes
+      try {
+        const cron = new Cron(job.cronExpression, { timezone: job.timezone || 'UTC' });
+        const nextRun = cron.nextRun();
+        if (nextRun) {
+          job.nextRunAt = nextRun.toISOString();
+          await storage.saveJob(job);
+        }
+      } catch {
+        // nextRunAt is optional, don't fail job creation
+      }
+      logger.info('Cron job saved, will be picked up by poller', { jobId: job.id });
     } else if (job.type === 'scheduled' && job.scheduledAt) {
       const scheduledTime = new Date(job.scheduledAt).getTime();
       const now = Date.now();
@@ -434,21 +472,19 @@ export async function handleDeleteJob(args: unknown): Promise<StandardResponse> 
       };
     }
 
+    // Disable the job first so the poller won't pick it up
+    job.enabled = false;
+    await storage.saveJob(job);
+
     // Delete from storage
     await storage.deleteJob(argsTyped.jobId);
-    logger.info('Job deleted', { jobId: argsTyped.jobId });
-
-    // Send cancellation event to Inngest
-    await inngest.send({
-      name: 'job/cancel',
-      data: { jobId: argsTyped.jobId },
-    });
+    logger.info('Job deleted', { jobId: argsTyped.jobId, type: job.type });
 
     return {
       success: true,
       data: {
         jobId: argsTyped.jobId,
-        message: 'Job deleted successfully',
+        message: `Job "${job.name}" deleted successfully`,
       },
     };
   } catch (error) {

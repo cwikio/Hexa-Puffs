@@ -399,29 +399,55 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
           }
         }
 
-        // If still no text, try to extract from tool results (collect all search results)
+        // If still no text, collect all tool results and ask the LLM to summarize them
         if (responseText === 'I apologize, but I was unable to generate a response.') {
-          const allSearchResults: Array<{ title?: string; description?: string; url?: string }> = [];
+          const collectedResults: Array<{ tool: string; result: unknown }> = [];
 
           for (const step of result.steps) {
-            if (step.toolResults?.length) {
+            if (step.toolCalls?.length && step.toolResults?.length) {
               const toolResults = step.toolResults as Array<{ result?: unknown }>;
-              for (const toolResult of toolResults) {
-                if (toolResult?.result && typeof toolResult.result === 'object') {
-                  const resultObj = toolResult.result as Record<string, unknown>;
-                  if (resultObj.results && Array.isArray(resultObj.results)) {
-                    allSearchResults.push(...(resultObj.results as Array<{ title?: string; description?: string; url?: string }>));
-                  }
+              for (let j = 0; j < step.toolCalls.length; j++) {
+                const call = step.toolCalls[j];
+                const res = toolResults[j];
+                if (res?.result !== undefined && res.result !== null) {
+                  collectedResults.push({ tool: call.toolName, result: res.result });
                 }
               }
             }
           }
 
-          if (allSearchResults.length > 0) {
-            responseText = allSearchResults
-              .slice(0, 3)
-              .map((r, i) => `${i + 1}. ${r.title || 'Result'}\n   ${r.description || ''}\n   ${r.url || ''}`)
+          if (collectedResults.length > 0) {
+            // Truncate large results to avoid blowing up the summarization call
+            const resultsText = collectedResults
+              .map((r) => {
+                const json = JSON.stringify(r.result);
+                const truncated = json.length > 2000 ? json.substring(0, 2000) + '...(truncated)' : json;
+                return `Tool: ${r.tool}\nResult: ${truncated}`;
+              })
               .join('\n\n');
+
+            try {
+              const summary = await generateText({
+                model: this.modelFactory.getModel(),
+                system: 'You are a helpful assistant. The user asked a question and tools were called to get data. Summarize the tool results into a concise, natural response for the user. Do NOT mention tools or technical details — just answer naturally.',
+                messages: [
+                  { role: 'user', content: message.text },
+                  { role: 'user', content: `Here are the results from the tools that were called:\n\n${resultsText}` },
+                ],
+              });
+              if (summary.text) {
+                responseText = sanitizeResponseText(summary.text);
+              }
+            } catch (summaryError) {
+              // If summarization fails, fall back to raw formatted output
+              console.warn('Tool result summarization failed, using raw output:', summaryError);
+              responseText = collectedResults
+                .map((r) => {
+                  const json = JSON.stringify(r.result, null, 2);
+                  return json.length > 500 ? json.substring(0, 500) + '...' : json;
+                })
+                .join('\n\n');
+            }
           }
         }
       }

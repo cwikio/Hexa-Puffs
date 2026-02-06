@@ -199,20 +199,21 @@ The `start-all.sh` script does one-time health checks but no ongoing monitoring.
 
 ---
 
-## 10. Thinker Doesn't Store Tool Results Back Into Context Properly
+## 10. Thinker Doesn't Store Tool Results Back Into Context Properly — RESOLVED
 
-**File:** `Thinker/src/agent/loop.ts:370-412`
+**File:** `Thinker/src/agent/loop.ts:389-441`
+**Status:** Fixed on Feb 5, 2026. Replaced search-specific fallback with generic tool result collection + LLM summarization call.
 
-**Problem:** When the LLM doesn't generate a text response (only tool calls), the fallback logic (lines 374-412) tries to extract text from steps and tool results. But it:
-- Only looks at search results specifically (checking for `.results` array)
-- Doesn't handle other tool types (memory, calendar, email results)
-- Falls back to "I apologize, but I was unable to generate a response" for non-search tools
+**Problem:** When the LLM didn't generate a text response (only tool calls), the fallback logic only handled search results (checking for `.results` array). Calendar, email, memory, and other tool results fell through to "I apologize, but I was unable to generate a response."
 
-This means if the agent calls `list_events` or `list_facts` and the LLM doesn't produce a final text response, the user gets an apology instead of results.
+**Fix:** The fallback now:
 
-**Fix:** Make the fallback more generic — serialize any non-empty tool result as a formatted response, or better yet, make a final LLM call with the tool results to generate a proper summary.
+1. Collects all tool call names and their results generically (any tool type)
+2. Makes a final LLM call asking it to summarize the tool results into a natural response
+3. Falls back to raw formatted JSON if the summarization call itself fails
+4. Truncates large results (>2000 chars) to prevent blowing up the summarization context
 
-**Impact:** Directly reduces "sorry I couldn't help" responses that frustrate users.
+**Impact:** Directly reduces "sorry I couldn't help" responses for non-search tool calls.
 
 ---
 
@@ -225,7 +226,7 @@ This means if the agent calls `list_events` or `list_facts` and the LLM doesn't 
 | 6 | Improve tool descriptions across all MCPs | 2-3 hrs | High | DONE |
 | 8 | Increase conversation history window | 5 min | High | DONE |
 | 2 | Wire Guardian security scanning in stdio mode | 1-2 hrs | Critical (security) | |
-| 10 | Fix tool result fallback in Thinker | 1 hr | Medium | |
+| 10 | Fix tool result fallback in Thinker | 1 hr | Medium | DONE |
 | 4 | Add memory deduplication and consolidation | 2-3 hrs | High (long-term) | |
 | 3 | Wire skills to Inngest cron scheduler | 3-4 hrs | High (unlocks proactivity) | |
 | 9 | Add MCP health monitoring and auto-restart | 2 hrs | Medium (reliability) | |

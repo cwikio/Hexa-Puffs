@@ -344,6 +344,81 @@ describe('Workflow: Jobs → Guardian → Telegram (Background Tasks)', () => {
         log('Unexpected: Job creation did not fail', 'warn')
       }
     })
+
+    it('should reject invalid cron expressions', async () => {
+      if (skipIfUnavailable(['orchestrator'])) return
+
+      const jobName = `Invalid Cron Expr Test ${testId()}`
+
+      log('Creating cron job with invalid expression (should fail)...', 'info')
+      const result = await orchestratorClient.callTool('create_job', {
+        name: jobName,
+        type: 'cron',
+        cronExpression: 'not-a-cron',
+        action: {
+          type: 'tool_call',
+          toolName: 'list_facts',
+          parameters: {},
+        },
+      })
+
+      const parsed = parseJsonContent<{ success?: boolean; error?: string }>(result)
+      expect(parsed?.success).toBe(false)
+      expect(parsed?.error).toContain('Invalid cron expression')
+      log('Correctly rejected invalid cron expression', 'success')
+    })
+
+    it('should reject invalid timezone', async () => {
+      if (skipIfUnavailable(['orchestrator'])) return
+
+      const jobName = `Invalid TZ Test ${testId()}`
+
+      log('Creating cron job with invalid timezone (should fail)...', 'info')
+      const result = await orchestratorClient.callTool('create_job', {
+        name: jobName,
+        type: 'cron',
+        cronExpression: '0 9 * * *',
+        timezone: 'Mars/Olympus_Mons',
+        action: {
+          type: 'tool_call',
+          toolName: 'list_facts',
+          parameters: {},
+        },
+      })
+
+      const parsed = parseJsonContent<{ success?: boolean; error?: string }>(result)
+      expect(parsed?.success).toBe(false)
+      expect(parsed?.error).toContain('Invalid timezone')
+      log('Correctly rejected invalid timezone', 'success')
+    })
+
+    it('should accept valid timezones', async () => {
+      if (skipIfUnavailable(['orchestrator'])) return
+
+      const jobName = `Valid TZ Test ${testId()}`
+
+      log('Creating cron job with Europe/Warsaw timezone...', 'info')
+      const result = await orchestratorClient.callTool('create_job', {
+        name: jobName,
+        type: 'cron',
+        cronExpression: '0 8 * * *',
+        timezone: 'Europe/Warsaw',
+        action: {
+          type: 'tool_call',
+          toolName: 'list_facts',
+          parameters: { limit: 1 },
+        },
+        enabled: false,
+      })
+
+      expect(result.success).toBe(true)
+      log('Accepted valid timezone', 'success')
+
+      const parsed = parseJsonContent<{ jobId?: string }>(result)
+      if (parsed?.jobId) {
+        createdJobIds.push(parsed.jobId)
+      }
+    })
   })
 
   describe('Job Deletion', () => {
