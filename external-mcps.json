@@ -1,0 +1,11 @@
+{
+  "vercel": {
+    "command": "npx",
+    "args": ["-y", "vercel-mcp", "VERCEL_API_KEY=${VERCEL_API_KEY}"],
+    "description": "Vercel project management and deployments"
+  },
+  "posthog": {
+    "command": "npx",
+    "args": ["-y", "mcp-remote@latest", "https://mcp.posthog.com/sse"]
+  }
+}

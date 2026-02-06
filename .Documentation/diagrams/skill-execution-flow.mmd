@@ -1,0 +1,98 @@
+flowchart TD
+    START(["Inngest fires every 1 minute"])
+
+    subgraph AutoEnable["Step 0: Auto-Enable"]
+        AE_CHECK{"Disabled skills with\nrequired_tools?"}
+        AE_TOOLS{"All required_tools\navailable in ToolRouter?"}
+        AE_ONESHOT{"One-shot skill\n(trigger_config.at)?"}
+        AE_ENABLE["Enable skill"]
+        AE_SKIP["Skip — don't re-enable\none-shot skills"]
+    end
+
+    subgraph LoadSkills["Step 1: Load Due Skills"]
+        LOAD["memory_list_skills\n(enabled=true, cron)"]
+        DUE_CHECK{"Skill is due?\n• cron: nextRun in this minute\n• interval: elapsed >= interval\n• one-shot: now >= at"}
+    end
+
+    subgraph Backoff["Step 2: Graduated Backoff"]
+        FAIL_CHECK{"last_run_status\n= error?"}
+        BACKOFF{"Backoff elapsed?\n1 → 5 → 15 → 60 min"}
+        AUTO_DISABLE{"5 consecutive\nfailures?"}
+        DISABLE["Auto-disable skill\n+ Telegram notification"]
+    end
+
+    subgraph Preflight["Step 3: Pre-flight Checks"]
+        CAL_CHECK{"Meeting skill?\nname ~= /meeting|prep/i\n+ requires gmail_list_events"}
+        CAL_EVENTS{"Events in next\n2-hour window?"}
+        EMAIL_CHECK{"Email skill?\nname ~= /email/i\n+ requires gmail_get_new_emails"}
+        EMAIL_NEW{"New emails\nexist?"}
+        SKIP_SILENT["Skip silently\n(zero LLM cost)\nUpdate: 'No data — skipped'"]
+    end
+
+    subgraph Execution["Step 4: Tier Routing + Execution"]
+        TIER{"execution_plan\nexists?"}
+
+        subgraph Direct["Direct Tier"]
+            EXEC_DIRECT["executeWorkflow()\nvia executor.ts"]
+            INJECT["Auto-inject chat_id\nfor telegram tools"]
+        end
+
+        subgraph Agent["Agent Tier"]
+            EXEC_AGENT["AgentManager\n→ Thinker.executeSkill()"]
+            SANDBOX["Strict sandbox:\nonly required_tools available"]
+        end
+
+        UPDATE["Update skill:\nlast_run_at\nlast_run_status\nlast_run_summary"]
+        ONESHOT_CHECK{"One-shot skill?\ntrigger_config.at"}
+        ONESHOT_DISABLE["Auto-disable\n(fires once)"]
+        NOTIFY{"notify_on_completion\n= true?"}
+        TELEGRAM["Send Telegram\nnotification"]
+    end
+
+    OLLAMA["Ollama health check\n(rate-limited, stateful alerts)"]
+
+    START --> OLLAMA
+    START --> AE_CHECK
+    AE_CHECK -->|Yes| AE_ONESHOT
+    AE_CHECK -->|No| LOAD
+    AE_ONESHOT -->|Yes| AE_SKIP
+    AE_ONESHOT -->|No| AE_TOOLS
+    AE_TOOLS -->|Yes| AE_ENABLE --> LOAD
+    AE_TOOLS -->|No| LOAD
+
+    LOAD --> DUE_CHECK
+    DUE_CHECK -->|Not due| START
+    DUE_CHECK -->|Due| FAIL_CHECK
+
+    FAIL_CHECK -->|No error| CAL_CHECK
+    FAIL_CHECK -->|Error| AUTO_DISABLE
+    AUTO_DISABLE -->|Yes| DISABLE
+    AUTO_DISABLE -->|No| BACKOFF
+    BACKOFF -->|Not elapsed| START
+    BACKOFF -->|Elapsed| CAL_CHECK
+
+    CAL_CHECK -->|Yes| CAL_EVENTS
+    CAL_CHECK -->|No| EMAIL_CHECK
+    CAL_EVENTS -->|Yes| EMAIL_CHECK
+    CAL_EVENTS -->|No| SKIP_SILENT
+    EMAIL_CHECK -->|Yes| EMAIL_NEW
+    EMAIL_CHECK -->|No| TIER
+    EMAIL_NEW -->|Yes| TIER
+    EMAIL_NEW -->|No| SKIP_SILENT
+
+    TIER -->|"Has execution_plan"| EXEC_DIRECT
+    TIER -->|"Instructions only"| EXEC_AGENT
+    EXEC_DIRECT --> INJECT --> UPDATE
+    EXEC_AGENT --> SANDBOX --> UPDATE
+    UPDATE --> ONESHOT_CHECK
+    ONESHOT_CHECK -->|Yes| ONESHOT_DISABLE --> NOTIFY
+    ONESHOT_CHECK -->|No| NOTIFY
+    NOTIFY -->|Yes| TELEGRAM
+    NOTIFY -->|No| START
+
+    style TIER fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    style EXEC_DIRECT fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    style EXEC_AGENT fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style SKIP_SILENT fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style DISABLE fill:#ffcdd2,stroke:#c62828,stroke-width:2px
+    style ONESHOT_DISABLE fill:#e3f2fd,stroke:#1565c0,stroke-width:2px

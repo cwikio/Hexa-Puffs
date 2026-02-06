@@ -1,0 +1,48 @@
+{
+  "name": "hexa-puffs-orchestrator",
+  "version": "1.0.0",
+  "description": "Orchestration layer for Hexa Puffs AI Assistant - coordinates all MCP servers",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "dev": "concurrently --kill-others \"npm run inngest:dev\" \"INNGEST_DEV_SERVER_URL=http://localhost:8289 npm run dev:app\"",
+    "dev:app": "tsx watch src/index.ts",
+    "inngest:dev": "npx inngest-cli@latest dev -u http://localhost:3000/api/inngest --port 8289 --no-discovery",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.build.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:telegram": "vitest run tests/integration/telegram.test.ts",
+    "test:filer": "vitest run tests/integration/filer.test.ts",
+    "test:memory": "vitest run tests/integration/memory.test.ts",
+    "test:searcher": "vitest run tests/integration/searcher.test.ts",
+    "test:orchestrator": "vitest run tests/integration/orchestrator.test.ts",
+    "test:workflows": "vitest run tests/integration/workflow-*.test.ts",
+    "test:workflow:guardian-telegram": "vitest run tests/integration/workflow-guardian-telegram.test.ts",
+    "test:workflow:filer-memory": "vitest run tests/integration/workflow-filer-memory.test.ts",
+    "test:workflow:onepassword-memory": "vitest run tests/integration/workflow-onepassword-memory.test.ts",
+    "test:workflow:jobs": "vitest run tests/integration/workflow-jobs.test.ts",
+    "test:stdio": "vitest run tests/integration/stdio-mode.test.ts",
+    "test:skills": "vitest run tests/integration/workflow-skills.test.ts"
+  },
+  "dependencies": {
+    "@mcp/shared": "file:../Shared",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "croner": "^10.0.1",
+    "dotenv": "^17.2.4",
+    "inngest": "^3.50.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.10.0",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

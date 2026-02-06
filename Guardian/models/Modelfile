@@ -1,0 +1,13 @@
+# Guardian Model Definition
+# Change the FROM line to use a different model
+
+FROM ./granite-guardian-3.3-8b.i1-Q4_K_M.gguf
+
+# Keep temperature at 0 for deterministic security decisions
+PARAMETER temperature 0
+
+# Context window size
+PARAMETER num_ctx 4096
+
+# No custom system prompt - use the model's native prompt injection detection format
+# Granite Guardian uses <score> yes/no </score> format natively

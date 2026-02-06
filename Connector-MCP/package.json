@@ -1,0 +1,23 @@
+{
+  "name": "hexa-puffs-connector-mcp",
+  "version": "1.0.0",
+  "description": "Lightweight MCP Connector for Hexa Puffs Orchestrator",
+  "type": "module",
+  "main": "build/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "dev": "ts-node src/index.ts",
+    "watch": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.1",
+    "dotenv": "^16.4.5",
+    "axios": "^1.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  }
+}
