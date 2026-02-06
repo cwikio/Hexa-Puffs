@@ -401,16 +401,54 @@ export const skillSchedulerFunction = inngest.createFunction(
 
     for (const rawSkill of skills) {
       const skill = rawSkill as SkillRecord;
-      // Check if skill is due based on interval_minutes in trigger_config
       const triggerConfig = typeof skill.trigger_config === 'string'
         ? JSON.parse(skill.trigger_config)
         : skill.trigger_config;
-      const intervalMinutes = triggerConfig?.interval_minutes || 1440; // Default: daily
-      const lastRunAt = skill.last_run_at ? new Date(skill.last_run_at).getTime() : 0;
-      const minutesSinceLastRun = (Date.now() - lastRunAt) / 60000;
 
-      if (minutesSinceLastRun < intervalMinutes) {
-        continue; // Not due yet
+      // Determine if skill is due. Two scheduling modes:
+      // 1. Cron expression: { "schedule": "0 9 * * *", "timezone": "Europe/Warsaw" }
+      // 2. Interval: { "interval_minutes": 60 }
+      let isDue = false;
+      const now = new Date();
+
+      if (triggerConfig?.schedule) {
+        // Cron expression mode — use croner to check if the schedule fires this minute
+        try {
+          const cron = new Cron(triggerConfig.schedule, {
+            timezone: triggerConfig.timezone || 'UTC',
+          });
+          const minuteStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0);
+          const prevMinuteStart = new Date(minuteStart.getTime() - 60000);
+          const nextRun = cron.nextRun(prevMinuteStart);
+
+          if (nextRun && nextRun >= minuteStart && nextRun < new Date(minuteStart.getTime() + 60000)) {
+            isDue = true;
+          }
+
+          // Prevent double execution within the same minute
+          if (isDue && skill.last_run_at) {
+            const lastRun = new Date(skill.last_run_at).getTime();
+            if (lastRun >= minuteStart.getTime()) {
+              isDue = false;
+            }
+          }
+        } catch (cronError) {
+          logger.error('Invalid cron schedule in skill trigger_config', {
+            skillId: skill.id,
+            schedule: triggerConfig.schedule,
+            error: cronError,
+          });
+        }
+      } else {
+        // Interval mode — check minutes since last run
+        const intervalMinutes = triggerConfig?.interval_minutes || 1440; // Default: daily
+        const lastRunAt = skill.last_run_at ? new Date(skill.last_run_at).getTime() : 0;
+        const minutesSinceLastRun = (now.getTime() - lastRunAt) / 60000;
+        isDue = minutesSinceLastRun >= intervalMinutes;
+      }
+
+      if (!isDue) {
+        continue;
       }
 
       // Execute the skill via Thinker

@@ -51,28 +51,30 @@ if (stdioConfigs.guardian) {
 
 ---
 
-## 3. Skills System is Half-Built — Storage Works, Execution Doesn't Trigger
+## 3. Skills System is Half-Built — Storage Works, Execution Doesn't Trigger — RESOLVED
 
 **Files:**
-- `Memorizer-MCP/src/tools/skills.ts` — CRUD for skills works perfectly
-- `Orchestrator/src/jobs/` — Inngest job infrastructure exists
-- `Thinker/src/agent/loop.ts:484-590` — `processProactiveTask()` exists and works
 
-**Problem:** The pipeline is disconnected:
-1. Skills get stored in SQLite via `store_skill` with trigger_type and trigger_config (cron schedules, etc.)
-2. But **nothing reads the skills table and creates Inngest cron jobs** from them
-3. The Inngest functions in the Orchestrator don't query skills from memory
-4. `processProactiveTask` on the Thinker is ready to execute, but nobody calls it
+- `Orchestrator/src/jobs/functions.ts` — `skillSchedulerFunction` (lines 345-477)
+- `Memorizer-MCP/src/tools/skills.ts` — `store_skill` trigger_config description
+- `Thinker/src/index.ts` — `/execute-skill` HTTP endpoint (lines 132-170)
 
-The user can create a skill like "Check my email every morning at 9am" — it gets stored, but never runs.
+**Status:** Pipeline was wired in a prior session. Fixed on Feb 5, 2026: added cron expression support to the skill scheduler (previously only supported `interval_minutes`).
 
-**Fix:** Add a skill scheduler that:
-- On Orchestrator startup, reads all enabled skills from Memorizer
-- Creates/updates Inngest cron functions for each `cron` trigger type
-- When a cron fires, calls Thinker's `/execute-skill` endpoint with the skill's instructions
-- On skill CRUD changes, syncs the Inngest schedule
+**Current pipeline (fully working):**
 
-**Impact:** This unlocks the entire proactive assistant capability — daily briefings, scheduled email summaries, periodic reminders, automated workflows.
+1. User creates a skill via `store_skill` with `trigger_type: "cron"` and `trigger_config`
+2. `skillSchedulerFunction` (Inngest, runs every minute) lists enabled cron skills from Memory MCP
+3. For each skill, checks if it's due based on trigger_config:
+   - **Cron expression**: `{ "schedule": "0 9 * * *", "timezone": "Europe/Warsaw" }` — evaluated via croner library
+   - **Interval**: `{ "interval_minutes": 60 }` — simple elapsed-time check
+4. If due, POSTs to Thinker's `/execute-skill` endpoint with skillId, instructions, maxSteps
+5. Thinker executes autonomously using all available tools (ReAct pattern)
+6. Updates skill's `last_run_at`, `last_run_status`, `last_run_summary` in Memory MCP
+
+**What was fixed:** The scheduler previously only read `trigger_config.interval_minutes`, silently ignoring cron expressions like `{ "schedule": "0 9 * * *" }`. Now both modes work.
+
+**Impact:** Proactive assistant capability is fully unlocked — daily briefings, scheduled email summaries, periodic reminders, automated workflows.
 
 ---
 
@@ -232,7 +234,7 @@ The `start-all.sh` script does one-time health checks but no ongoing monitoring.
 | 2 | Wire Guardian security scanning in stdio mode | 1-2 hrs | Critical (security) | |
 | 10 | Fix tool result fallback in Thinker | 1 hr | Medium | DONE |
 | 4 | Add memory deduplication and consolidation | 2-3 hrs | High (long-term) | DONE |
-| 3 | Wire skills to Inngest cron scheduler | 3-4 hrs | High (unlocks proactivity) | |
+| 3 | Wire skills to Inngest cron scheduler | 3-4 hrs | High (unlocks proactivity) | DONE |
 | 9 | Add MCP health monitoring and auto-restart | 2 hrs | Medium (reliability) | |
 | 7 | Clean up dead HTTP-mode execute() code | 30 min | Low (code quality) | |
 

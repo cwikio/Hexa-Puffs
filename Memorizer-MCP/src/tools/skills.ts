@@ -67,7 +67,7 @@ export const storeSkillToolDefinition = {
       },
       trigger_config: {
         type: 'object',
-        description: 'Trigger configuration (e.g. { "schedule": "0 9 * * *", "timezone": "Europe/Warsaw" } for cron)',
+        description: 'For cron trigger_type, use EITHER: (1) Cron expression: { "schedule": "0 9 * * *", "timezone": "Europe/Warsaw" } for precise scheduling (e.g., 9am daily), OR (2) Interval: { "interval_minutes": 60 } for every-N-minutes execution. Default if omitted: runs once daily.',
       },
       instructions: {
         type: 'string',
