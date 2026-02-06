@@ -1,15 +1,10 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, mergeConfig } from 'vitest/config';
+import baseConfig from '../vitest.base.js';
 
-export default defineConfig({
+export default mergeConfig(baseConfig, defineConfig({
   test: {
-    globals: true,
-    environment: "node",
-    include: ["tests/**/*.test.ts"],
-    testTimeout: 60000, // 60s for model inference
+    testTimeout: 60000,
     hookTimeout: 60000,
-    fileParallelism: false, // Run test files sequentially (shared MCP connection)
-    sequence: {
-      shuffle: false,
-    },
+    fileParallelism: false,
   },
-});
+}));

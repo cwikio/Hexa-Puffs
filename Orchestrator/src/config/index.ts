@@ -48,7 +48,7 @@ export function loadConfig(): Config {
       },
       onepassword: {
         command: 'node',
-        args: [resolve(mcpsRoot, 'Onepassword-MCP/dist/Onepassword/src/index.js')],
+        args: [resolve(mcpsRoot, 'Onepassword-MCP/dist/index.js')],
         cwd: resolve(mcpsRoot, 'Onepassword-MCP'),
         timeout: getEnvNumber('ONEPASSWORD_MCP_TIMEOUT', 30000),
         required: false,
@@ -56,7 +56,7 @@ export function loadConfig(): Config {
       },
       memory: {
         command: 'node',
-        args: [resolve(mcpsRoot, 'Memorizer-MCP/dist/Memorizer-MCP/src/index.js')],
+        args: [resolve(mcpsRoot, 'Memorizer-MCP/dist/index.js')],
         cwd: resolve(mcpsRoot, 'Memorizer-MCP'),
         timeout: getEnvNumber('MEMORY_MCP_TIMEOUT', 30000),
         required: false,
@@ -64,7 +64,7 @@ export function loadConfig(): Config {
       },
       filer: {
         command: 'node',
-        args: [resolve(mcpsRoot, 'Filer-MCP/dist/Filer/src/index.js')],
+        args: [resolve(mcpsRoot, 'Filer-MCP/dist/index.js')],
         cwd: resolve(mcpsRoot, 'Filer-MCP'),
         timeout: getEnvNumber('FILER_MCP_TIMEOUT', 30000),
         required: false,
