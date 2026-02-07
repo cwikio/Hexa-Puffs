@@ -58,6 +58,9 @@ export interface GuardianScanResult {
 
 /**
  * Parse Guardian scan_content tool result into structured format.
+ *
+ * Guardian returns a StandardResponse wrapping ScanContentResult:
+ *   { success: true, data: { safe, confidence, threats, explanation, scan_id } }
  */
 export function parseGuardianResult(result: MCPToolCallResult): GuardianScanResult | null {
   if (!result.success || !result.data) {
@@ -69,11 +72,21 @@ export function parseGuardianResult(result: MCPToolCallResult): GuardianScanResu
     const content = data.content?.[0]
     if (content?.type === 'text' && content.text) {
       const parsed = JSON.parse(content.text)
+      // Unwrap StandardResponse: { success, data: { safe, confidence, threats, explanation } }
+      const scan = parsed.data ?? parsed
+      const safe = scan.safe ?? true
+      const confidence: number = scan.confidence ?? 1
+
+      let risk: GuardianScanResult['risk'] = 'none'
+      if (!safe) {
+        risk = confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low'
+      }
+
       return {
-        allowed: parsed.allowed ?? true,
-        risk: parsed.risk ?? 'none',
-        reason: parsed.reason,
-        threats: parsed.threats,
+        allowed: safe,
+        risk,
+        reason: scan.explanation,
+        threats: scan.threats,
       }
     }
     return null

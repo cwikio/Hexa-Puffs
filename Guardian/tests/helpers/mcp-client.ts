@@ -1,12 +1,18 @@
 /**
  * MCP Client helper for integration tests
- * Connects to Guardian MCP server via HTTP/SSE
+ * Connects to Guardian MCP server via stdio transport (spawns child process)
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 
-const GUARDIAN_URL = process.env.GUARDIAN_URL || "http://localhost:8003";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const GUARDIAN_ROOT = resolve(__dirname, "../..");
+
+const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434";
 
 export interface ScanContentInput {
   content: string | Record<string, unknown> | unknown[];
@@ -55,15 +61,32 @@ interface StandardResponse<T = unknown> {
 }
 
 let client: Client | null = null;
-let transport: SSEClientTransport | null = null;
+let transport: StdioClientTransport | null = null;
 
 /**
- * Connect to Guardian MCP server
+ * Connect to Guardian MCP server via stdio (spawns a child process)
  */
 export async function connect(): Promise<Client> {
   if (client) return client;
 
-  transport = new SSEClientTransport(new URL(`${GUARDIAN_URL}/sse`));
+  // Filter env vars, force stdio transport
+  const envVars: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && key !== "TRANSPORT") {
+      envVars[key] = value;
+    }
+  }
+
+  transport = new StdioClientTransport({
+    command: "node",
+    args: [resolve(GUARDIAN_ROOT, "dist/index.js")],
+    cwd: GUARDIAN_ROOT,
+    env: {
+      ...envVars,
+      TRANSPORT: "stdio",
+    },
+  });
+
   client = new Client(
     { name: "guardian-test-client", version: "1.0.0" },
     { capabilities: {} }
@@ -80,32 +103,60 @@ export async function disconnect(): Promise<void> {
   if (client) {
     await client.close();
     client = null;
+  }
+  if (transport) {
+    await transport.close();
     transport = null;
   }
 }
 
 /**
- * Check health endpoint
+ * Check Ollama health directly (no HTTP endpoint in stdio mode)
  */
 export async function checkHealth(): Promise<{
   status: string;
   ollama: string;
   model: string;
 }> {
-  const response = await fetch(`${GUARDIAN_URL}/health`);
-  return response.json();
+  try {
+    const response = await fetch(`${OLLAMA_HOST}/api/tags`);
+    if (!response.ok) {
+      return { status: "degraded", ollama: "disconnected", model: "unknown" };
+    }
+
+    const data = (await response.json()) as {
+      models: Array<{ name: string }>;
+    };
+    const hasGuardian = data.models.some((m) => m.name.startsWith("guardian"));
+
+    return {
+      status: hasGuardian ? "healthy" : "degraded",
+      ollama: "connected",
+      model: hasGuardian ? "guardian" : "missing",
+    };
+  } catch {
+    return { status: "degraded", ollama: "disconnected", model: "unknown" };
+  }
 }
 
 /**
  * Parse MCP tool response, unwrapping StandardResponse
  */
-function parseToolResponse<T>(result: { content: Array<{ type: string; text?: string }> }): T {
+function parseToolResponse<T>(result: {
+  content: Array<{ type: string; text?: string }>;
+}): T {
   const textContent = result.content.find((c) => c.type === "text");
-  if (!textContent || textContent.type !== "text" || !("text" in textContent)) {
+  if (
+    !textContent ||
+    textContent.type !== "text" ||
+    !("text" in textContent)
+  ) {
     throw new Error("No text content in response");
   }
 
-  const parsed = JSON.parse((textContent as { type: "text"; text: string }).text) as StandardResponse<T>;
+  const parsed = JSON.parse(
+    (textContent as { type: "text"; text: string }).text
+  ) as StandardResponse<T>;
   if (!parsed.success) {
     throw new Error(parsed.error || "Tool returned error");
   }
