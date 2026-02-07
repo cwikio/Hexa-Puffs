@@ -4,6 +4,7 @@
  */
 
 import { type GuardianScanResult } from "../ollama/client.js";
+import { waitForRateLimit } from "./rate-limiter.js";
 
 export type { GuardianScanResult };
 
@@ -195,6 +196,8 @@ export async function scanWithGuardian(
   if (!GROQ_API_KEY) {
     throw new GroqClientError("GROQ_API_KEY is not set");
   }
+
+  await waitForRateLimit();
 
   const sourceContext = context ? ` (source: ${context})` : "";
   const requestBody = JSON.stringify({

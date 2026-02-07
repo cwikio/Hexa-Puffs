@@ -12,7 +12,7 @@ import type { GuardianScanResult } from "./ollama/client.js";
 
 export type { GuardianScanResult };
 
-export type ProviderName = "groq" | "ollama";
+export type ProviderName = "groq" | "ollama" | "safeguard";
 
 interface ScanProvider {
   scanWithGuardian(
@@ -30,7 +30,12 @@ let _providerName: ProviderName | null = null;
 
 function resolveProviderName(): ProviderName {
   if (!_providerName) {
-    _providerName = process.env.GROQ_API_KEY ? "groq" : "ollama";
+    if (!process.env.GROQ_API_KEY) {
+      _providerName = "ollama";
+    } else {
+      const model = process.env.GROQ_MODEL || "";
+      _providerName = model.includes("safeguard") ? "safeguard" : "groq";
+    }
   }
   return _providerName;
 }
@@ -40,7 +45,16 @@ async function loadProvider(): Promise<ScanProvider> {
 
   const name = resolveProviderName();
 
-  if (name === "groq") {
+  if (name === "safeguard") {
+    const safeguard = await import("./groq/safeguard-client.js");
+    _provider = {
+      scanWithGuardian: safeguard.scanWithGuardian,
+      healthCheck: safeguard.healthCheck,
+      verifyConnection: safeguard.verifyConnection,
+      getModelName: safeguard.getModelName,
+      getHost: safeguard.getHost,
+    };
+  } else if (name === "groq") {
     const groq = await import("./groq/client.js");
     _provider = {
       scanWithGuardian: groq.scanWithGuardian,
