@@ -41,6 +41,14 @@ export const JobsConfigSchema = z.object({
 
 export type JobsConfig = z.infer<typeof JobsConfigSchema>;
 
+export const ChannelPollingConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  intervalMs: z.number().int().min(1000).default(10000),
+  maxMessagesPerCycle: z.number().int().min(1).default(3),
+});
+
+export type ChannelPollingConfig = z.infer<typeof ChannelPollingConfigSchema>;
+
 export const ConfigSchema = z.object({
   // Transport for incoming connections (from Claude Desktop/Thinker)
   transport: z.enum(['stdio', 'sse', 'http']).default('stdio'),
@@ -78,7 +86,10 @@ export const ConfigSchema = z.object({
 
   jobs: JobsConfigSchema.optional(),
 
-  // Thinker URL for skill execution
+  // Channel polling (Orchestrator polls Telegram and dispatches to Thinker)
+  channelPolling: ChannelPollingConfigSchema.default({}),
+
+  // Thinker URL for skill execution and message dispatch
   thinkerUrl: z.string().default('http://localhost:8006'),
 
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),

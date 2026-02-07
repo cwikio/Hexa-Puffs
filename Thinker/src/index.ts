@@ -65,6 +65,7 @@ function createServer(config: Config, startTime: number) {
       description: 'AI reasoning engine for Annabelle MCP ecosystem',
       endpoints: {
         health: '/health',
+        processMessage: '/process-message',
         executeSkill: '/execute-skill',
       },
     });
@@ -89,7 +90,8 @@ async function main() {
     console.log(`Configuration loaded:`);
     console.log(`  - LLM Provider: ${providerName}`);
     console.log(`  - Port: ${config.thinkerPort}`);
-    console.log(`  - Poll Interval: ${config.telegramPollIntervalMs}ms`);
+    console.log(`  - Polling: ${config.pollingEnabled ? `enabled (${config.telegramPollIntervalMs}ms)` : 'disabled'}`);
+    console.log(`  - Send responses directly: ${config.sendResponseDirectly}`);
     console.log(`  - Orchestrator: ${config.orchestratorUrl}`);
   } catch (error) {
     console.error('Failed to load configuration:', error);
@@ -128,6 +130,44 @@ async function main() {
     console.error('Failed to initialize agent:', error);
     console.log('Continuing with limited functionality...');
   }
+
+  // Register /process-message endpoint for Orchestrator-dispatched messages
+  app.post('/process-message', async (req: Request, res: Response) => {
+    const { id, chatId, senderId, text, date, agentId } = req.body;
+
+    if (!chatId || !text) {
+      res.status(400).json({ success: false, error: 'chatId and text are required' });
+      return;
+    }
+
+    console.log(`Received message dispatch: chat=${chatId}, agent=${agentId || 'default'}`);
+
+    try {
+      const result = await agent.processMessage({
+        id: id || `ext_${Date.now()}`,
+        chatId,
+        senderId: senderId || 'unknown',
+        text,
+        date: date || new Date().toISOString(),
+      });
+
+      res.json({
+        success: result.success,
+        response: result.response,
+        toolsUsed: result.toolsUsed,
+        totalSteps: result.totalSteps,
+        error: result.error,
+      });
+    } catch (error) {
+      console.error('Error processing dispatched message:', error);
+      res.status(500).json({
+        success: false,
+        toolsUsed: [],
+        totalSteps: 0,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
 
   // Register /execute-skill endpoint for proactive task execution
   app.post('/execute-skill', async (req: Request, res: Response) => {
@@ -169,9 +209,13 @@ async function main() {
     }
   });
 
-  // Start message polling
+  // Start message polling (skip if Orchestrator handles polling)
   console.log('='.repeat(50));
-  agent.startPolling();
+  if (config.pollingEnabled) {
+    agent.startPolling();
+  } else {
+    console.log('Polling disabled (THINKER_POLLING_ENABLED=false) — waiting for dispatched messages');
+  }
 
   // Periodic cleanup of old conversation states
   setInterval(() => {

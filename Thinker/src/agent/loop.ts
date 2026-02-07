@@ -503,22 +503,26 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
         : result.steps
           .flatMap((step) => step.toolCalls?.map((tc) => tc.toolName) || []);
 
-      // Send response to Telegram (prefer direct connection)
-      if (this.telegramDirect) {
-        await this.telegramDirect.sendMessage(message.chatId, responseText, undefined, trace);
-      } else {
-        await this.orchestrator.sendTelegramMessage(message.chatId, responseText, undefined, trace);
-      }
-      await this.logger.logResponseSent(trace, message.chatId, responseText.length);
+      // Send response to Telegram and store conversation
+      // (skip when Orchestrator handles delivery — sendResponseDirectly=false)
+      if (this.config.sendResponseDirectly) {
+        if (this.telegramDirect) {
+          await this.telegramDirect.sendMessage(message.chatId, responseText, undefined, trace);
+        } else {
+          await this.orchestrator.sendTelegramMessage(message.chatId, responseText, undefined, trace);
+        }
+        await this.logger.logResponseSent(trace, message.chatId, responseText.length);
 
-      // Store conversation in memory
-      await this.orchestrator.storeConversation(
-        this.config.thinkerAgentId,
-        message.text,
-        responseText,
-        undefined,
-        trace
-      );
+        await this.orchestrator.storeConversation(
+          this.config.thinkerAgentId,
+          message.text,
+          responseText,
+          undefined,
+          trace
+        );
+      } else {
+        await this.logger.logResponseSent(trace, message.chatId, responseText.length);
+      }
 
       // Invalidate playbook cache if any skill-modifying tools were called
       const skillTools = ['memory_store_skill', 'memory_update_skill', 'memory_delete_skill'];

@@ -44,8 +44,13 @@ export const ConfigSchema = z.object({
   // Thinker HTTP server
   thinkerPort: z.number().int().min(1).max(65535).default(8006),
 
-  // Polling settings
+  // Polling settings (disable when Orchestrator handles polling)
+  pollingEnabled: z.boolean().default(true),
   telegramPollIntervalMs: z.number().int().min(1000).default(10000),
+
+  // Response delivery: when false, processMessage returns result without sending to Telegram
+  // (Orchestrator handles delivery in channel-polling mode)
+  sendResponseDirectly: z.boolean().default(true),
 
   // Agent settings
   thinkerAgentId: z.string().default('thinker'),
@@ -98,7 +103,9 @@ export function loadConfig(): Config {
     telegramDirectUrl: process.env.TELEGRAM_DIRECT_URL || undefined,
     telegramDirectEnabled: parseBoolean(process.env.TELEGRAM_DIRECT_ENABLED, true),
     thinkerPort: parseInteger(process.env.THINKER_PORT, 8006),
+    pollingEnabled: parseBoolean(process.env.THINKER_POLLING_ENABLED, true),
     telegramPollIntervalMs: parseInteger(process.env.TELEGRAM_POLL_INTERVAL_MS, 10000),
+    sendResponseDirectly: parseBoolean(process.env.THINKER_SEND_RESPONSE_DIRECTLY, true),
     thinkerAgentId: process.env.THINKER_AGENT_ID || 'thinker',
     proactiveTasksEnabled: parseBoolean(process.env.PROACTIVE_TASKS_ENABLED, true),
     defaultNotifyChatId: process.env.DEFAULT_NOTIFY_CHAT_ID || undefined,

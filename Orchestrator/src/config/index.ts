@@ -132,6 +132,13 @@ export function loadConfig(): Config {
       failMode: getEnvString('SECURITY_FAIL_MODE', 'closed'),
     },
 
+    // Channel polling: Orchestrator polls Telegram and dispatches to Thinker
+    channelPolling: {
+      enabled: getEnvBoolean('CHANNEL_POLLING_ENABLED', false),
+      intervalMs: getEnvNumber('CHANNEL_POLL_INTERVAL_MS', 10000),
+      maxMessagesPerCycle: getEnvNumber('CHANNEL_POLL_MAX_MESSAGES', 3),
+    },
+
     thinkerUrl: getEnvString('THINKER_URL', 'http://localhost:8006'),
 
     logLevel: getEnvString('LOG_LEVEL', 'info'),
@@ -164,4 +171,5 @@ export {
   type MCPServerConfig,
   type StdioMCPServerConfig,
   type SecurityConfig,
+  type ChannelPollingConfig,
 } from './schema.js';

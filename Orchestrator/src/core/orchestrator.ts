@@ -29,6 +29,9 @@ import { SecurityCoordinator } from './security.js';
 import { SessionManager } from './sessions.js';
 import { ToolExecutor, type ToolRegistry } from './tools.js';
 import { ToolRouter } from './tool-router.js';
+import { ChannelPoller } from './channel-poller.js';
+import { ThinkerClient } from './thinker-client.js';
+import type { IncomingAgentMessage } from './agent-types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export interface MCPServerStatus {
@@ -68,6 +71,10 @@ export class Orchestrator {
   private sessions: SessionManager;
   private tools: ToolExecutor | null = null;
   private toolRouter: ToolRouter;
+
+  // Channel polling & Thinker dispatch (Phase 1 multi-agent)
+  private channelPoller: ChannelPoller | null = null;
+  private thinkerClient: ThinkerClient | null = null;
 
   private initialized: boolean = false;
   private connectionMode: 'stdio' | 'http';
@@ -230,6 +237,11 @@ export class Orchestrator {
     // Start health monitoring for stdio clients
     if (this.connectionMode === 'stdio') {
       this.startHealthMonitoring();
+    }
+
+    // Start channel polling if enabled (dispatches messages to Thinker)
+    if (this.config.channelPolling.enabled) {
+      await this.startChannelPolling();
     }
   }
 
@@ -399,6 +411,97 @@ export class Orchestrator {
       await this.toolRouter.discoverTools();
     }
   }
+
+  // ─── Channel Polling & Thinker Dispatch ────────────────────────────
+
+  /**
+   * Start polling channels and dispatching messages to the Thinker.
+   */
+  private async startChannelPolling(): Promise<void> {
+    this.logger.info('Starting channel polling...');
+
+    // Create Thinker client
+    this.thinkerClient = new ThinkerClient(this.config.thinkerUrl);
+
+    // Check Thinker health before starting
+    const thinkerHealthy = await this.thinkerClient.healthCheck();
+    if (!thinkerHealthy) {
+      this.logger.warn(`Thinker at ${this.config.thinkerUrl} is not responding — polling will start but dispatch may fail`);
+    } else {
+      this.logger.info(`Thinker connected at ${this.config.thinkerUrl}`);
+    }
+
+    // Create and initialize channel poller
+    this.channelPoller = new ChannelPoller(this.toolRouter, {
+      intervalMs: this.config.channelPolling.intervalMs,
+      maxMessagesPerCycle: this.config.channelPolling.maxMessagesPerCycle,
+    });
+
+    this.channelPoller.onMessage = (msg) => this.dispatchMessage(msg);
+
+    await this.channelPoller.initialize();
+    this.channelPoller.start();
+
+    this.logger.info('Channel polling started');
+  }
+
+  /**
+   * Stop channel polling.
+   */
+  stopChannelPolling(): void {
+    if (this.channelPoller) {
+      this.channelPoller.stop();
+      this.channelPoller = null;
+      this.logger.info('Channel polling stopped');
+    }
+  }
+
+  /**
+   * Dispatch a message to the Thinker and relay the response back to the channel.
+   */
+  private async dispatchMessage(msg: IncomingAgentMessage): Promise<void> {
+    if (!this.thinkerClient) {
+      this.logger.error('Cannot dispatch message — ThinkerClient not initialized');
+      return;
+    }
+
+    this.logger.info(`Dispatching to Thinker: chat=${msg.chatId}, agent=${msg.agentId}`);
+
+    const result = await this.thinkerClient.processMessage(msg);
+
+    if (result.success && result.response) {
+      // Send response back to the originating channel
+      if (msg.channel === 'telegram') {
+        await this.toolRouter.routeToolCall('telegram_send_message', {
+          chat_id: msg.chatId,
+          message: result.response,
+        });
+      }
+
+      // Store conversation in memory
+      await this.toolRouter.routeToolCall('memory_store_conversation', {
+        agent_id: msg.agentId,
+        user_message: msg.text,
+        agent_response: result.response,
+      });
+
+      this.logger.info(
+        `Response delivered: chat=${msg.chatId}, steps=${result.totalSteps}, tools=${result.toolsUsed.join(', ') || 'none'}`
+      );
+    } else {
+      this.logger.error(`Thinker processing failed: ${result.error}`);
+      // Do NOT send error messages to chat — prevents feedback loops
+    }
+  }
+
+  /**
+   * Get the Thinker client (for Inngest skill execution passthrough).
+   */
+  getThinkerClient(): ThinkerClient | null {
+    return this.thinkerClient;
+  }
+
+  // ─── HTTP Mode Helpers ────────────────────────────────────────────
 
   /**
    * Helper to assert we're in HTTP mode for methods that require direct MCP client access.
