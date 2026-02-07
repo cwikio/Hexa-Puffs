@@ -1,5 +1,8 @@
 import { getConfig, type Config } from '../config/index.js';
+import { guardianConfig } from '../config/guardian.js';
 import { GuardianMCPClient } from '../mcp-clients/guardian.js';
+import { StdioGuardianClient } from '../mcp-clients/stdio-guardian.js';
+import { GuardedMCPClient } from '../mcp-clients/guarded-client.js';
 import { TelegramMCPClient } from '../mcp-clients/telegram.js';
 import { OnePasswordMCPClient } from '../mcp-clients/onepassword.js';
 import {
@@ -86,6 +89,9 @@ export class Orchestrator {
     }
   }
 
+  // Guardian scanner adapter (stdio mode)
+  private guardianScanner: StdioGuardianClient | null = null;
+
   private initializeStdioClients(): void {
     this.logger.info('Initializing MCP clients in stdio mode');
 
@@ -95,47 +101,70 @@ export class Orchestrator {
       return;
     }
 
-    // Create stdio clients for each configured MCP
+    // Create Guardian stdio client first (needed by GuardedMCPClient wrappers)
     if (stdioConfigs.guardian) {
-      const client = new StdioMCPClient('guardian', stdioConfigs.guardian);
-      this.stdioClients.set('guardian', client);
-      // Note: Guardian needs special handling for security - skip for now in stdio mode
+      const guardianClient = new StdioMCPClient('guardian', stdioConfigs.guardian);
+      this.stdioClients.set('guardian', guardianClient);
+
+      if (guardianConfig.enabled) {
+        this.guardianScanner = new StdioGuardianClient(guardianClient, guardianConfig.failMode);
+        this.logger.info('Guardian security scanning enabled');
+      } else {
+        this.logger.info('Guardian security scanning disabled (guardian-config.enabled = false)');
+      }
     }
 
-    if (stdioConfigs.telegram) {
-      const client = new StdioMCPClient('telegram', stdioConfigs.telegram);
-      this.stdioClients.set('telegram', client);
-      this.toolRouter.registerMCP('telegram', client);
-    }
+    // Register downstream MCPs — conditionally wrap with Guardian
+    const stdioMcps: Array<{ name: string; config: typeof stdioConfigs.telegram }> = [
+      { name: 'telegram', config: stdioConfigs.telegram },
+      { name: 'onepassword', config: stdioConfigs.onepassword },
+      { name: 'memory', config: stdioConfigs.memory },
+      { name: 'filer', config: stdioConfigs.filer },
+    ];
 
-    if (stdioConfigs.onepassword) {
-      const client = new StdioMCPClient('onepassword', stdioConfigs.onepassword);
-      this.stdioClients.set('onepassword', client);
-      this.toolRouter.registerMCP('onepassword', client);
-    }
+    for (const { name, config: mcpConfig } of stdioMcps) {
+      if (!mcpConfig) continue;
 
-    if (stdioConfigs.memory) {
-      const client = new StdioMCPClient('memory', stdioConfigs.memory);
-      this.stdioClients.set('memory', client);
-      this.toolRouter.registerMCP('memory', client);
-    }
+      const raw = new StdioMCPClient(name, mcpConfig);
+      this.stdioClients.set(name, raw);
 
-    if (stdioConfigs.filer) {
-      const client = new StdioMCPClient('filer', stdioConfigs.filer);
-      this.stdioClients.set('filer', client);
-      this.toolRouter.registerMCP('filer', client);
+      const client = this.maybeGuard(name, raw);
+      this.toolRouter.registerMCP(name, client);
     }
 
     // Searcher and Gmail run as independent HTTP services (not spawned via stdio)
     const httpConfigs = this.config.mcpServers;
     if (httpConfigs?.searcher) {
       this.searcher = new SearcherMCPClient(httpConfigs.searcher);
-      this.toolRouter.registerMCP('searcher', this.searcher);
+      const client = this.maybeGuard('searcher', this.searcher);
+      this.toolRouter.registerMCP('searcher', client);
     }
     if (httpConfigs?.gmail) {
       this.gmail = new GmailMCPClient(httpConfigs.gmail);
-      this.toolRouter.registerMCP('gmail', this.gmail);
+      const client = this.maybeGuard('gmail', this.gmail);
+      this.toolRouter.registerMCP('gmail', client);
     }
+  }
+
+  /**
+   * Wrap an MCP client with Guardian scanning if configured.
+   * Returns the original client if Guardian is disabled or no scanning is configured for this MCP.
+   */
+  private maybeGuard(mcpName: string, client: IMCPClient): IMCPClient {
+    if (!this.guardianScanner) return client;
+
+    const scanInput = guardianConfig.input[mcpName] ?? false;
+    const scanOutput = guardianConfig.output[mcpName] ?? false;
+
+    if (!scanInput && !scanOutput) return client;
+
+    this.logger.info(`Guardian guarding ${mcpName} (input: ${scanInput}, output: ${scanOutput})`);
+
+    return new GuardedMCPClient(client, this.guardianScanner, {
+      scanInput,
+      scanOutput,
+      failMode: guardianConfig.failMode,
+    });
   }
 
   private initializeHttpClients(): void {
@@ -333,8 +362,9 @@ export class Orchestrator {
     let needsRediscovery = false;
 
     for (const [name, client] of this.stdioClients) {
-      // Skip guardian (not registered with tool router)
-      if (name === 'guardian') continue;
+      // Guardian is health-checked but not registered with tool router
+      // (it's used internally via StdioGuardianClient, not as a passthrough MCP)
+      const isGuardian = name === 'guardian';
 
       const healthy = await client.healthCheck();
 
@@ -355,8 +385,11 @@ export class Orchestrator {
         const restarted = await client.restart();
         if (restarted) {
           this.logger.info(`MCP ${name} recovered`);
-          this.toolRouter.registerMCP(name, client);
-          needsRediscovery = true;
+          // Don't re-register guardian with tool router — it's used via StdioGuardianClient
+          if (!isGuardian) {
+            this.toolRouter.registerMCP(name, client);
+            needsRediscovery = true;
+          }
         }
       }
     }

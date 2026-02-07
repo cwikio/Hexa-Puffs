@@ -423,14 +423,14 @@ All Gmail tools route through to the Gmail MCP via HTTP:
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| TRANSPORT | stdio | Transport mode: "stdio" or "http" |
-| PORT | 8010 | HTTP port (when TRANSPORT=http) |
-| MCP_CONNECTION_MODE | stdio | How to connect to downstream MCPs: "stdio" (spawn) or "http" (legacy) |
-| SCAN_ALL_INPUTS | true | Enable security scanning |
-| SECURITY_FAIL_MODE | closed | "closed" blocks when scanner unavailable, "open" allows |
-| LOG_LEVEL | info | Log level: debug, info, warn, error |
+| Variable            | Default | Description                                                           |
+| ------------------- | ------- | --------------------------------------------------------------------- |
+| TRANSPORT           | stdio   | Transport mode: "stdio" or "http"                                     |
+| PORT                | 8010    | HTTP port (when TRANSPORT=http)                                       |
+| MCP_CONNECTION_MODE | stdio   | How to connect to downstream MCPs: "stdio" (spawn) or "http" (legacy) |
+| LOG_LEVEL           | info    | Log level: debug, info, warn, error                                   |
+
+> **Note:** Guardian security scanning is no longer configured via environment variables. It is controlled by `Orchestrator/src/config/guardian.ts` — see [Security — Guardian Pass-Through](#security--guardian-pass-through) below.
 
 **Legacy HTTP mode variables** (only used when `MCP_CONNECTION_MODE=http`):
 
@@ -472,12 +472,95 @@ npm run dev
 npm run build
 ```
 
-## Security
+## Security — Guardian Pass-Through
 
-- All inputs are scanned by Guardian MCP for prompt injection/jailbreak attempts
-- Sensitive tool outputs (1Password, Telegram) are also scanned
-- Credentials are never logged or returned in raw form
-- Security events are tracked and available via get_status
+Guardian MCP provides transparent security scanning for tool calls flowing through the Orchestrator. It uses a **decorator pattern** — `GuardedMCPClient` wraps downstream MCP clients and intercepts `callTool()` to scan inputs and/or outputs before they pass through.
+
+**Guardian is disabled by default.** To enable it, edit the config file.
+
+### Configuration
+
+**File:** `Orchestrator/src/config/guardian.ts` (symlinked at repo root as `guardian-config.ts`)
+
+```typescript
+export const guardianConfig = {
+  enabled: false,               // Set to true to enable scanning
+  failMode: 'closed' as const,  // 'closed' = block when Guardian unavailable
+
+  input: {                      // Scan tool arguments BEFORE reaching the MCP
+    telegram: true,
+    onepassword: true,
+    filer: true,
+    gmail: true,
+    memory: true,
+    searcher: false,
+  },
+
+  output: {                     // Scan tool results BEFORE returning to caller
+    onepassword: true,
+    filer: true,
+    gmail: true,
+    telegram: false,
+    memory: false,
+    searcher: false,
+  },
+};
+```
+
+### Enabling Guardian
+
+1. Set `enabled: true` in `Orchestrator/src/config/guardian.ts`
+2. Ensure Ollama is running with the Guardian model loaded (`ollama run guardian`)
+3. Restart the Orchestrator
+
+### Disabling Guardian
+
+**Disable all scanning globally:**
+
+```typescript
+// In Orchestrator/src/config/guardian.ts
+enabled: false,  // All MCPs pass through without scanning
+```
+
+**Disable scanning for a specific MCP** (while keeping Guardian active for others):
+
+```typescript
+input: {
+  telegram: false,  // Stop scanning Telegram inputs
+  // ...other MCPs unchanged
+},
+```
+
+### Fail Mode
+
+Controls what happens when Guardian MCP itself is unavailable (e.g., Ollama not running):
+
+- `'closed'` (default) — block all requests to guarded MCPs (secure, may cause downtime)
+- `'open'` — allow requests through without scanning (keeps things running, less secure)
+
+### How It Works
+
+```text
+Caller → Orchestrator → [GuardedMCPClient] → Guardian scan → Downstream MCP
+                                ↓ (if blocked)
+                         SecurityError returned
+```
+
+- Input scanning: tool arguments are scanned before reaching the downstream MCP
+- Output scanning: tool results are scanned before returning to the caller
+- Blocked requests return `{ success: false, blocked: true, error: "..." }`
+- All scans are logged in Guardian's audit log (`get_scan_log` tool)
+
+### What Gets Scanned
+
+| MCP        | Input | Output | Rationale                            |
+| ---------- | ----- | ------ | ------------------------------------ |
+| Telegram   | Yes   | No     | Catch injection in outgoing messages |
+| 1Password  | Yes   | Yes    | Protect credentials from leakage     |
+| Filer      | Yes   | Yes    | Scan file content both ways          |
+| Gmail      | Yes   | Yes    | Scan email content both ways         |
+| Memory     | Yes   | No     | Protect stored facts from injection  |
+| Searcher   | No    | No     | Search queries are low-risk          |
 
 ## Future Enhancements
 

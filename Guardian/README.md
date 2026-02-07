@@ -183,6 +183,113 @@ All scans are logged to `logs/audit.jsonl`:
 
 Content is hashed (not stored) for privacy.
 
+## Orchestrator Integration (Pass-Through Mode)
+
+Guardian integrates with the Orchestrator as a **transparent security decorator**. When enabled, it automatically scans tool calls flowing through the Orchestrator to downstream MCPs — no manual scan calls needed.
+
+### How It Works
+
+```
+Caller (Claude/Thinker)
+  │
+  ▼
+Orchestrator
+  │
+  ├─→ [GuardedMCPClient] ──scan input──→ Guardian MCP ──scan──→ Ollama
+  │         │                                                       │
+  │         │◄──────────── allowed / blocked ◄──────────────────────┘
+  │         │
+  │         ├─→ Telegram MCP (if allowed)
+  │         │
+  │         │◄── response ◄── Telegram MCP
+  │         │
+  │         ├─→ Guardian MCP ──scan output──→ Ollama (if output scanning enabled)
+  │         │
+  │         ▼
+  │     return result (or block)
+  │
+  ├─→ Memory MCP (no wrapper, scanning disabled in config)
+  ├─→ Searcher MCP (no wrapper)
+  └─→ ...
+```
+
+Guardian wraps individual MCP clients using a **decorator pattern** (`GuardedMCPClient`). The Orchestrator's tool router sees guarded clients as normal MCP clients — zero changes to routing logic.
+
+### Scanning Configuration
+
+Guardian scanning is controlled by a single config file:
+
+**File:** `Orchestrator/src/config/guardian.ts` (symlinked at repo root as `guardian-config.ts`)
+
+```typescript
+export const guardianConfig = {
+  enabled: false,               // Global kill switch (disabled by default)
+  failMode: 'closed' as const,  // 'closed' = block when Guardian unavailable
+
+  input: {                      // Scan tool arguments BEFORE reaching the MCP
+    telegram: true,
+    onepassword: true,
+    filer: true,
+    gmail: true,
+    memory: true,
+    searcher: false,
+  },
+
+  output: {                     // Scan tool results BEFORE returning to caller
+    onepassword: true,
+    filer: true,
+    gmail: true,
+    telegram: false,
+    memory: false,
+    searcher: false,
+  },
+};
+```
+
+### Enabling Guardian
+
+1. Set `enabled: true` in `Orchestrator/src/config/guardian.ts`
+2. Ensure Ollama is running with the Guardian model loaded
+3. Restart the Orchestrator
+
+### Disabling Guardian
+
+**Disable all scanning globally:**
+
+```typescript
+// In Orchestrator/src/config/guardian.ts
+enabled: false,  // All MCPs pass through without scanning
+```
+
+**Disable scanning for a specific MCP:**
+
+```typescript
+input: {
+  telegram: false,  // Stop scanning Telegram inputs
+  // ...
+},
+output: {
+  telegram: false,  // Stop scanning Telegram outputs
+  // ...
+},
+```
+
+**Fail mode when Guardian MCP is unavailable:**
+
+- `'closed'` (default) — block all requests to guarded MCPs (secure)
+- `'open'` — allow requests through without scanning (availability over security)
+
+### What Gets Scanned
+
+| MCP        | Input Scanning | Output Scanning | Rationale                            |
+| ---------- | -------------- | --------------- | ------------------------------------ |
+| Telegram   | Yes            | No              | Catch injection in outgoing messages |
+| 1Password  | Yes            | Yes             | Protect credentials from leakage     |
+| Filer      | Yes            | Yes             | Scan file content both ways          |
+| Gmail      | Yes            | Yes             | Scan email content both ways         |
+| Memory     | Yes            | No              | Protect stored facts from injection  |
+| Searcher   | No             | No              | Search queries are low-risk          |
+
 ## Architecture
 
 ```

@@ -125,6 +125,49 @@ else
   echo -e "  ${YELLOW}Check logs: tail -f ~/.annabelle/logs/gmail.log${RESET}"
 fi
 
+# Ensure Ollama is running with Guardian model (required for Guardian MCP spawned by Orchestrator)
+echo -e "\n${BOLD}Checking Ollama + Guardian model...${RESET}"
+if ! command -v ollama &> /dev/null; then
+  echo -e "${YELLOW}⚠ Ollama not installed — Guardian scanning will be unavailable${RESET}"
+elif ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+  echo -e "${BLUE}Starting Ollama...${RESET}"
+  ollama serve > ~/.annabelle/logs/ollama.log 2>&1 &
+  OLLAMA_PID=$!
+  for i in {1..10}; do
+    if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Ollama started (PID: $OLLAMA_PID)${RESET}"
+  else
+    echo -e "${YELLOW}⚠ Ollama failed to start — Guardian scanning will be unavailable${RESET}"
+  fi
+else
+  echo -e "${GREEN}✓ Ollama already running${RESET}"
+fi
+
+# Check if Guardian model is loaded
+if command -v ollama &> /dev/null && curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+  if ollama list 2>/dev/null | grep -q "guardian"; then
+    echo -e "${GREEN}✓ Guardian model loaded${RESET}"
+  else
+    GUARDIAN_GGUF="/Users/tomasz/Coding/AI Assistants/MCPs/Guardian/models/granite-guardian-3.3-8b.i1-Q4_K_M.gguf"
+    if [ -f "$GUARDIAN_GGUF" ]; then
+      echo -e "${BLUE}Loading Guardian model into Ollama...${RESET}"
+      cd "/Users/tomasz/Coding/AI Assistants/MCPs/Guardian/models" && ollama create guardian -f Modelfile > /dev/null 2>&1
+      if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Guardian model loaded${RESET}"
+      else
+        echo -e "${YELLOW}⚠ Failed to load Guardian model${RESET}"
+      fi
+    else
+      echo -e "${YELLOW}⚠ Guardian model GGUF not found — run Guardian/scripts/setup-model.sh first${RESET}"
+    fi
+  fi
+fi
+
 # Start Orchestrator MCP (HTTP mode with stdio connections to downstream MCPs)
 echo -e "\n${BOLD}Starting Orchestrator MCP (HTTP on port 8010)...${RESET}"
 echo -e "  ${BLUE}Orchestrator will spawn downstream MCPs (Memory, Filer, Guardian, 1Password) via stdio${RESET}"
@@ -192,7 +235,7 @@ echo -e "  Gmail MCP    (8008) - Independent HTTP service (email + polling)"
 echo -e "  Orchestrator (8010) spawns via stdio:"
 echo -e "    └── Memory MCP (Memorizer)"
 echo -e "    └── Filer MCP"
-echo -e "    └── Guardian MCP"
+echo -e "    └── Guardian MCP (scanning disabled by default — edit guardian-config.ts to enable)"
 echo -e "    └── 1Password MCP"
 echo -e "  Orchestrator (8010) connects via HTTP:"
 echo -e "    └── Searcher MCP (8007)"

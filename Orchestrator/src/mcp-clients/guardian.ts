@@ -9,12 +9,95 @@ export interface ScanResult {
   threats?: string[];
 }
 
-const GuardianResponseSchema = z.object({
-  blocked: z.boolean(),
-  risk_level: z.enum(['none', 'low', 'medium', 'high']).optional(),
-  reason: z.string().optional(),
-  detected_threats: z.array(z.string()).optional(),
+/**
+ * Schema matching Guardian's actual output (post-refactoring).
+ * Guardian returns: { safe, confidence, threats: [{path, type, snippet}], explanation, scan_id }
+ */
+const GuardianScanDataSchema = z.object({
+  safe: z.boolean(),
+  confidence: z.number(),
+  threats: z.array(z.object({
+    path: z.string().optional(),
+    type: z.string(),
+    snippet: z.string().optional(),
+  })),
+  explanation: z.string(),
+  scan_id: z.string(),
 });
+
+/**
+ * Guardian responses are wrapped in StandardResponse: { success: true, data: { ... } }
+ */
+const StandardResponseSchema = z.object({
+  success: z.boolean(),
+  data: z.unknown().optional(),
+  error: z.string().optional(),
+});
+
+/**
+ * Derive risk level from Guardian's confidence and threat data.
+ */
+function deriveRisk(safe: boolean, confidence: number, threatCount: number): ScanResult['risk'] {
+  if (safe && threatCount === 0) return 'none';
+  if (!safe && confidence > 0.8) return 'high';
+  if (!safe && confidence > 0.5) return 'medium';
+  if (!safe) return 'low';
+  // safe but with low confidence
+  if (confidence < 0.5) return 'low';
+  return 'none';
+}
+
+/**
+ * Parse a Guardian scan response (StandardResponse-wrapped) into a ScanResult.
+ * Shared between GuardianMCPClient (HTTP) and StdioGuardianClient.
+ */
+export function parseGuardianResponse(parsed: unknown): ScanResult | null {
+  // First, unwrap StandardResponse envelope
+  const stdResponse = StandardResponseSchema.safeParse(parsed);
+  if (!stdResponse.success) {
+    return null;
+  }
+
+  if (!stdResponse.data.success || !stdResponse.data.data) {
+    return null;
+  }
+
+  // Validate the inner scan data
+  const scanData = GuardianScanDataSchema.safeParse(stdResponse.data.data);
+  if (!scanData.success) {
+    return null;
+  }
+
+  const data = scanData.data;
+  return {
+    allowed: data.safe,
+    risk: deriveRisk(data.safe, data.confidence, data.threats.length),
+    reason: data.explanation,
+    threats: data.threats.map(t => t.type),
+  };
+}
+
+/**
+ * Create a failure ScanResult based on fail mode.
+ */
+export function createFailureScanResult(
+  failMode: 'open' | 'closed',
+  context: string,
+  error?: string
+): ScanResult {
+  if (failMode === 'closed') {
+    return {
+      allowed: false,
+      risk: 'high',
+      reason: `${context} - blocking in fail-closed mode`,
+    };
+  }
+  return {
+    allowed: true,
+    risk: 'none',
+    reason: `${context} - allowing in fail-open mode`,
+  };
+}
 
 export class GuardianMCPClient extends BaseMCPClient {
   private failMode: 'open' | 'closed';
@@ -38,20 +121,8 @@ export class GuardianMCPClient extends BaseMCPClient {
   }
 
   private handleFailure(context: string, error?: string): ScanResult {
-    if (this.failMode === 'closed') {
-      this.logger.warn(`${context}, blocking request (fail-closed mode)`, { error });
-      return {
-        allowed: false,
-        risk: 'high',
-        reason: `${context} - blocking in fail-closed mode`,
-      };
-    }
-    this.logger.warn(`${context}, allowing request (fail-open mode)`, { error });
-    return {
-      allowed: true,
-      risk: 'none',
-      reason: `${context} - allowing in fail-open mode`,
-    };
+    this.logger.warn(`${context}`, { error, failMode: this.failMode });
+    return createFailureScanResult(this.failMode, context, error);
   }
 
   private parseScanResult(result: ToolCallResult): ScanResult {
@@ -60,19 +131,13 @@ export class GuardianMCPClient extends BaseMCPClient {
       return this.handleFailure('Failed to parse scan result');
     }
 
-    const validated = GuardianResponseSchema.safeParse(parsed);
-    if (!validated.success) {
-      this.logger.warn('Scan result validation failed', { errors: validated.error.flatten() });
+    const scanResult = parseGuardianResponse(parsed);
+    if (!scanResult) {
+      this.logger.warn('Scan result validation failed', { parsed });
       return this.handleFailure('Invalid scan result format');
     }
 
-    const data = validated.data;
-    return {
-      allowed: !data.blocked,
-      risk: data.risk_level ?? 'none',
-      reason: data.reason,
-      threats: data.detected_threats,
-    };
+    return scanResult;
   }
 
   async getScanLog(limit: number = 10): Promise<unknown> {

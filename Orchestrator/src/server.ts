@@ -6,6 +6,7 @@ import {
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { getOrchestrator } from './core/orchestrator.js';
 import { ToolRouter } from './core/tool-router.js';
+import { SecurityError } from './utils/errors.js';
 import {
   statusToolDefinition,
   handleStatus,
@@ -132,6 +133,24 @@ export function createServerWithRouter(toolRouter: ToolRouter): Server {
         ],
       };
     } catch (error) {
+      // Guardian security blocks
+      if (error instanceof SecurityError) {
+        logger.warn('Request blocked by Guardian', { name, reason: error.message });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                blocked: true,
+                error: error.message,
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
       logger.error('Tool call failed', { name, error });
       return {
         content: [
