@@ -26,7 +26,6 @@ interface HealthResponse {
     llmProvider: string;
     model: string;
     orchestratorUrl: string;
-    pollIntervalMs: number;
   };
 }
 
@@ -52,7 +51,6 @@ function createServer(config: Config, startTime: number) {
                config.llmProvider === 'lmstudio' ? (config.lmstudioModel || 'local-model') :
                config.ollamaModel,
         orchestratorUrl: config.orchestratorUrl,
-        pollIntervalMs: config.telegramPollIntervalMs,
       },
     };
     res.json(response);
@@ -90,8 +88,6 @@ async function main() {
     console.log(`Configuration loaded:`);
     console.log(`  - LLM Provider: ${providerName}`);
     console.log(`  - Port: ${config.thinkerPort}`);
-    console.log(`  - Polling: ${config.pollingEnabled ? `enabled (${config.telegramPollIntervalMs}ms)` : 'disabled'}`);
-    console.log(`  - Send responses directly: ${config.sendResponseDirectly}`);
     console.log(`  - Orchestrator: ${config.orchestratorUrl}`);
   } catch (error) {
     console.error('Failed to load configuration:', error);
@@ -209,13 +205,9 @@ async function main() {
     }
   });
 
-  // Start message polling (skip if Orchestrator handles polling)
+  // Thinker is now a passive agent runtime — Orchestrator dispatches messages via HTTP
   console.log('='.repeat(50));
-  if (config.pollingEnabled) {
-    agent.startPolling();
-  } else {
-    console.log('Polling disabled (THINKER_POLLING_ENABLED=false) — waiting for dispatched messages');
-  }
+  console.log('Waiting for dispatched messages from Orchestrator');
 
   // Periodic cleanup of old conversation states
   setInterval(() => {

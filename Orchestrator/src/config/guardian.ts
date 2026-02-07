@@ -8,6 +8,16 @@
  * Edit this file to toggle scanning per MCP, globally, or change fail mode.
  */
 
+/**
+ * Per-agent Guardian overrides.
+ * When an agent is listed here, its input/output flags are merged on top of the
+ * global defaults. Unlisted MCPs inherit the global setting.
+ */
+export interface AgentGuardianOverride {
+  input?: Record<string, boolean>;
+  output?: Record<string, boolean>;
+}
+
 export const guardianConfig = {
   /** Global kill switch — set to true to enable Guardian scanning */
   enabled: true,
@@ -51,6 +61,45 @@ export const guardianConfig = {
     searcher: true,
     gmail: true,
   } as Record<string, boolean>,
-}
 
-export type GuardianConfig = typeof guardianConfig
+  /**
+   * Per-agent overrides: allows stricter or more relaxed scanning per agent.
+   * Example: a "work" agent might skip output scanning on memory,
+   * while a "code-review" agent might scan everything.
+   *
+   * Usage:
+   *   agentOverrides: {
+   *     'work-assistant': { input: { memory: false }, output: { gmail: false } },
+   *   }
+   */
+  agentOverrides: {} as Record<string, AgentGuardianOverride>,
+};
+
+export type GuardianConfig = typeof guardianConfig;
+
+/**
+ * Resolve effective scan flags for a specific agent.
+ * Falls back to global defaults for any MCPs not overridden.
+ */
+export function getEffectiveScanFlags(
+  agentId?: string,
+): { input: Record<string, boolean>; output: Record<string, boolean> } {
+  const base = {
+    input: { ...guardianConfig.input },
+    output: { ...guardianConfig.output },
+  };
+
+  if (!agentId) return base;
+
+  const overrides = guardianConfig.agentOverrides[agentId];
+  if (!overrides) return base;
+
+  if (overrides.input) {
+    Object.assign(base.input, overrides.input);
+  }
+  if (overrides.output) {
+    Object.assign(base.output, overrides.output);
+  }
+
+  return base;
+}

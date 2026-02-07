@@ -344,6 +344,49 @@ export class ToolRouter {
   }
 
   /**
+   * Get tool definitions filtered by allow/deny glob patterns.
+   * - If allowedTools is empty, all tools are allowed.
+   * - deniedTools is evaluated after allowedTools.
+   */
+  getFilteredToolDefinitions(
+    allowedTools: string[] = [],
+    deniedTools: string[] = [],
+  ): MCPToolDefinition[] {
+    if (allowedTools.length === 0 && deniedTools.length === 0) {
+      return this.getToolDefinitions();
+    }
+
+    return this.getToolDefinitions().filter((tool) => {
+      // Check allow list (empty = all allowed)
+      if (allowedTools.length > 0 && !matchesAnyGlob(tool.name, allowedTools)) {
+        return false;
+      }
+      // Check deny list
+      if (deniedTools.length > 0 && matchesAnyGlob(tool.name, deniedTools)) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  /**
+   * Check whether a tool call is permitted for the given allow/deny lists.
+   */
+  isToolAllowed(
+    toolName: string,
+    allowedTools: string[] = [],
+    deniedTools: string[] = [],
+  ): boolean {
+    if (allowedTools.length > 0 && !matchesAnyGlob(toolName, allowedTools)) {
+      return false;
+    }
+    if (deniedTools.length > 0 && matchesAnyGlob(toolName, deniedTools)) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Route a tool call to the appropriate MCP
    */
   async routeToolCall(
@@ -399,4 +442,19 @@ export class ToolRouter {
       originalName,
     }));
   }
+}
+
+/**
+ * Simple glob matching for tool name patterns.
+ * Supports `*` as a wildcard that matches any sequence of characters.
+ * Examples: "telegram_*" matches "telegram_send_message", "*_search" matches "web_search".
+ */
+function globToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  const regexStr = escaped.replace(/\*/g, '.*');
+  return new RegExp(`^${regexStr}$`);
+}
+
+function matchesAnyGlob(name: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => globToRegex(pattern).test(name));
 }

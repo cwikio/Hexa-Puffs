@@ -6,7 +6,6 @@ import type { TraceContext } from '../tracing/types.js';
 import { createTrace, getTraceDuration } from '../tracing/context.js';
 import { getTraceLogger } from '../tracing/logger.js';
 import { OrchestratorClient } from '../orchestrator/client.js';
-import { TelegramDirectClient } from '../telegram/client.js';
 import { createEssentialTools, createToolsFromOrchestrator } from '../orchestrator/tools.js';
 import { ModelFactory } from '../llm/factory.js';
 import { sanitizeResponseText } from '../utils/sanitize.js';
@@ -104,16 +103,11 @@ CRITICAL: NEVER include raw function calls, tool invocations, or technical synta
 export class Agent {
   private config: Config;
   private orchestrator: OrchestratorClient;
-  private telegramDirect: TelegramDirectClient | null = null;
   private modelFactory: ModelFactory;
   private tools: Record<string, CoreTool> = {};
   private conversationStates: Map<string, AgentState> = new Map();
   private currentTrace: TraceContext | undefined;
   private logger = getTraceLogger();
-  private processedMessageIds: Set<string> = new Set();
-  private botUserId: string | null = null;
-  private monitoredChatIds: string[] = [];
-  private lastChatRefresh = 0;
   private playbookCache: PlaybookCache;
   private customSystemPrompt: string | null = null;
 
@@ -126,26 +120,11 @@ export class Agent {
   private maxConsecutiveErrors = 5;
   private circuitBreakerTripped = false;
 
-  // Patterns that indicate bot-generated messages (to prevent feedback loops)
-  private readonly botMessagePatterns = [
-    'I encountered an error:',
-    'I apologize, but I was unable to',
-    'Failed after',
-    'rate limit issue cannot be resolved',
-    'Invalid API Key',
-    'I was unable to generate a response',
-  ];
-
   constructor(config: Config) {
     this.config = config;
     this.orchestrator = new OrchestratorClient(config);
     this.modelFactory = new ModelFactory(config);
     this.playbookCache = new PlaybookCache(this.orchestrator, config.thinkerAgentId);
-
-    // Initialize direct Telegram client if enabled and URL provided
-    if (config.telegramDirectEnabled && config.telegramDirectUrl) {
-      this.telegramDirect = new TelegramDirectClient(config.telegramDirectUrl);
-    }
   }
 
   /**
@@ -171,24 +150,6 @@ export class Agent {
       console.warn('Warning: Orchestrator is not healthy. Some features may not work.');
     }
 
-    // Check direct Telegram connection if enabled
-    if (this.telegramDirect) {
-      const telegramHealthy = await this.telegramDirect.healthCheck();
-      if (telegramHealthy) {
-        console.log('Direct Telegram MCP connection: healthy');
-
-        // Get bot's user ID to filter out our own messages
-        const me = await this.telegramDirect.getMe();
-        if (me) {
-          this.botUserId = me.id;
-          console.log(`Bot user ID: ${me.id}`);
-        }
-      } else {
-        console.warn('Warning: Direct Telegram MCP is not healthy. Falling back to Orchestrator.');
-        this.telegramDirect = null;
-      }
-    }
-
     // Discover tools from Orchestrator
     const orchestratorTools = await this.orchestrator.discoverTools();
     console.log(`Discovered ${orchestratorTools.length} tools from Orchestrator`);
@@ -200,12 +161,11 @@ export class Agent {
       () => this.currentTrace
     );
 
-    // Create essential tools (with optional direct Telegram client)
+    // Create essential tools
     const essentialTools = createEssentialTools(
       this.orchestrator,
       this.config.thinkerAgentId,
       () => this.currentTrace,
-      this.telegramDirect
     );
 
     // Merge tools (essential tools override dynamic ones)
@@ -519,11 +479,7 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
       // Send response to Telegram and store conversation
       // (skip when Orchestrator handles delivery — sendResponseDirectly=false)
       if (this.config.sendResponseDirectly) {
-        if (this.telegramDirect) {
-          await this.telegramDirect.sendMessage(message.chatId, responseText, undefined, trace);
-        } else {
-          await this.orchestrator.sendTelegramMessage(message.chatId, responseText, undefined, trace);
-        }
+        await this.orchestrator.sendTelegramMessage(message.chatId, responseText, undefined, trace);
         await this.logger.logResponseSent(trace, message.chatId, responseText.length);
 
         await this.orchestrator.storeConversation(
@@ -654,15 +610,11 @@ Complete the task step by step, using your available tools. When done, provide a
         console.error('Failed to store skill execution summary in memory:', memError);
       }
 
-      // Optionally notify via Telegram
+      // Optionally notify via Telegram (always via Orchestrator)
       if (notifyChatId) {
         try {
           const notificationText = `📋 Skill completed:\n\n${responseText}`;
-          if (this.telegramDirect) {
-            await this.telegramDirect.sendMessage(notifyChatId, notificationText, undefined, trace);
-          } else {
-            await this.orchestrator.sendTelegramMessage(notifyChatId, notificationText, undefined, trace);
-          }
+          await this.orchestrator.sendTelegramMessage(notifyChatId, notificationText, undefined, trace);
         } catch (notifyError) {
           console.error('Failed to send skill completion notification:', notifyError);
         }
@@ -689,172 +641,6 @@ Complete the task step by step, using your available tools. When done, provide a
     } finally {
       this.currentTrace = undefined;
     }
-  }
-
-  /**
-   * Poll for new messages and process them
-   * Uses direct message fetching instead of unreliable real-time queue
-   */
-  async pollAndProcess(): Promise<number> {
-    try {
-      if (!this.telegramDirect) {
-        // Fall back to old queue-based method if no direct client
-        const messages = await this.orchestrator.getNewTelegramMessages(false);
-        for (const msg of messages) {
-          if (!msg.isOutgoing) {
-            await this.processAndLog(msg);
-          }
-        }
-        return messages.length;
-      }
-
-      // Get list of chats to monitor (refresh every 5 minutes)
-      if (this.monitoredChatIds.length === 0 || Date.now() - this.lastChatRefresh > 5 * 60 * 1000) {
-        await this.refreshMonitoredChats();
-        this.lastChatRefresh = Date.now();
-      }
-
-      let totalProcessed = 0;
-
-      // Poll recent messages from each monitored chat
-      for (const chatId of this.monitoredChatIds) {
-        const messages = await this.telegramDirect.getRecentMessages(chatId, 5);
-
-        // Filter to new, incoming, recent messages we haven't processed
-        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-        const newMessages = messages.filter((msg) => {
-          // Skip if already processed
-          if (this.processedMessageIds.has(msg.id)) {
-            return false;
-          }
-          // Skip our own messages (outgoing)
-          if (msg.senderId === this.botUserId) {
-            return false;
-          }
-          // Skip messages without text
-          if (!msg.text || msg.text.trim() === '') {
-            return false;
-          }
-          // Skip old messages — only process messages from the last 2 minutes
-          if (msg.date && msg.date < twoMinutesAgo) {
-            return false;
-          }
-          // CRITICAL: Skip messages that look like bot-generated responses
-          // This prevents infinite feedback loops where the bot processes its own messages
-          const textToCheck = msg.text.trim();
-          if (this.botMessagePatterns.some((pattern) => textToCheck.startsWith(pattern))) {
-            console.log(`Skipping bot-like message: "${textToCheck.substring(0, 50)}..."`);
-            return false;
-          }
-          return true;
-        });
-
-        // Process new messages (oldest first), capped to prevent runaway costs
-        const MAX_MESSAGES_PER_CYCLE = 3;
-        const sortedMessages = newMessages
-          .sort((a, b) => parseInt(a.id, 10) - parseInt(b.id, 10))
-          .slice(0, MAX_MESSAGES_PER_CYCLE);
-
-        for (const msg of sortedMessages) {
-          // Mark as processed BEFORE processing to avoid duplicates
-          this.processedMessageIds.add(msg.id);
-          await this.processAndLog(msg);
-          totalProcessed++;
-        }
-
-        // Also mark recent bot messages as processed to avoid confusion
-        for (const msg of messages) {
-          if (msg.senderId === this.botUserId) {
-            this.processedMessageIds.add(msg.id);
-          }
-        }
-      }
-
-      // Cleanup old processed IDs to prevent memory leak (keep last 1000)
-      if (this.processedMessageIds.size > 1000) {
-        const sorted = Array.from(this.processedMessageIds).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-        const toRemove = sorted.slice(0, sorted.length - 500);
-        for (const id of toRemove) {
-          this.processedMessageIds.delete(id);
-        }
-      }
-
-      return totalProcessed;
-    } catch (error) {
-      console.error('Error polling messages:', error);
-      return 0;
-    }
-  }
-
-  /**
-   * Refresh the list of monitored chats
-   */
-  private async refreshMonitoredChats(): Promise<void> {
-    if (!this.telegramDirect) return;
-
-    try {
-      // For now, use a simple approach: get chats from subscriptions or recent activity
-      // We'll start with the subscriptions list, or fall back to discovering from messages
-      const subscriptions = await this.telegramDirect.listSubscriptions();
-
-      if (subscriptions.length > 0) {
-        this.monitoredChatIds = subscriptions.filter(id => id !== this.botUserId);
-        console.log(`Monitoring ${this.monitoredChatIds.length} subscribed chat(s)`);
-      } else {
-        // No subscriptions - auto-discover private chats (excluding bot's own Saved Messages)
-        const chats = await this.telegramDirect.listChats(20);
-        const privateChatIds = chats
-          .filter(chat => chat.type === 'user' && chat.id !== this.botUserId)
-          .map(chat => chat.id);
-
-        if (privateChatIds.length > 0) {
-          this.monitoredChatIds = privateChatIds;
-          console.log(`Auto-discovered ${privateChatIds.length} chat(s) to monitor`);
-        } else {
-          console.log('No chats found to monitor.');
-          this.monitoredChatIds = [];
-        }
-      }
-    } catch (error) {
-      console.error('Error refreshing monitored chats:', error);
-    }
-  }
-
-  /**
-   * Process a message and log the result
-   */
-  private async processAndLog(msg: { id: string; chatId: string; senderId?: string; text: string; date?: string }): Promise<void> {
-    console.log(`Processing message from chat ${msg.chatId}: "${msg.text.substring(0, 50)}..."`);
-
-    const result = await this.processMessage({
-      id: msg.id,
-      chatId: msg.chatId,
-      senderId: msg.senderId || 'unknown',
-      text: msg.text,
-      date: msg.date || new Date().toISOString(),
-    });
-
-    if (result.success) {
-      console.log(`Response sent (${result.totalSteps} steps, tools: ${result.toolsUsed.join(', ') || 'none'})`);
-    } else {
-      console.error(`Failed to process message: ${result.error}`);
-    }
-  }
-
-  /**
-   * Start the polling loop
-   */
-  startPolling(): void {
-    const intervalMs = this.config.telegramPollIntervalMs;
-    console.log(`Starting message polling (interval: ${intervalMs}ms)`);
-
-    // Initial poll
-    this.pollAndProcess();
-
-    // Set up interval
-    setInterval(() => {
-      this.pollAndProcess();
-    }, intervalMs);
   }
 
   /**

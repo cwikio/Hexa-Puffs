@@ -37,20 +37,12 @@ export const ConfigSchema = z.object({
   // Orchestrator connection
   orchestratorUrl: z.string().url().default('http://localhost:8000'),
 
-  // Direct Telegram MCP connection (bypasses Orchestrator for messaging)
-  telegramDirectUrl: z.string().url().optional(),
-  telegramDirectEnabled: z.boolean().default(true),
-
   // Thinker HTTP server
   thinkerPort: z.number().int().min(1).max(65535).default(8006),
 
-  // Polling settings (disable when Orchestrator handles polling)
-  pollingEnabled: z.boolean().default(true),
-  telegramPollIntervalMs: z.number().int().min(1000).default(10000),
-
   // Response delivery: when false, processMessage returns result without sending to Telegram
   // (Orchestrator handles delivery in channel-polling mode)
-  sendResponseDirectly: z.boolean().default(true),
+  sendResponseDirectly: z.boolean().default(false),
 
   // Agent settings
   thinkerAgentId: z.string().default('thinker'),
@@ -104,12 +96,8 @@ export function loadConfig(): Config {
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
     ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2',
     orchestratorUrl: process.env.ORCHESTRATOR_URL || 'http://localhost:8000',
-    telegramDirectUrl: process.env.TELEGRAM_DIRECT_URL || undefined,
-    telegramDirectEnabled: parseBoolean(process.env.TELEGRAM_DIRECT_ENABLED, true),
     thinkerPort: parseInteger(process.env.THINKER_PORT, 8006),
-    pollingEnabled: parseBoolean(process.env.THINKER_POLLING_ENABLED, true),
-    telegramPollIntervalMs: parseInteger(process.env.TELEGRAM_POLL_INTERVAL_MS, 10000),
-    sendResponseDirectly: parseBoolean(process.env.THINKER_SEND_RESPONSE_DIRECTLY, true),
+    sendResponseDirectly: parseBoolean(process.env.THINKER_SEND_RESPONSE_DIRECTLY, false),
     thinkerAgentId: process.env.THINKER_AGENT_ID || 'thinker',
     systemPromptPath: process.env.THINKER_SYSTEM_PROMPT_PATH || undefined,
     proactiveTasksEnabled: parseBoolean(process.env.PROACTIVE_TASKS_ENABLED, true),

@@ -180,6 +180,8 @@ export {
 export {
   type AgentDefinition,
   type AgentsConfig,
+  type ChannelBinding,
+  type FullAgentsConfig,
   getDefaultAgent,
   loadAgentsFromFile,
 } from './agents.js';

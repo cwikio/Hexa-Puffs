@@ -72,16 +72,31 @@ export function createServerWithRouter(toolRouter: ToolRouter): Server {
   );
 
   // List available tools - combine passthrough + custom tools
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    logger.debug('Listing tools');
+  // When agentId is provided (via _meta), returns filtered tools based on agent's allowedTools/deniedTools
+  server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+    const meta = request.params?._meta as Record<string, unknown> | undefined;
+    const agentId = meta?.agentId as string | undefined;
+    logger.debug('Listing tools', { agentId });
 
-    // Get passthrough tools from MCPs
-    const passthroughTools = toolRouter.getToolDefinitions();
+    let passthroughTools;
+
+    if (agentId) {
+      const orchestrator = await getOrchestrator();
+      const agentDef = orchestrator.getAgentDefinition(agentId);
+      if (agentDef) {
+        passthroughTools = toolRouter.getFilteredToolDefinitions(agentDef.allowedTools, agentDef.deniedTools);
+        logger.debug(`Filtered tools for agent ${agentId}: ${passthroughTools.length}`);
+      } else {
+        passthroughTools = toolRouter.getToolDefinitions();
+      }
+    } else {
+      passthroughTools = toolRouter.getToolDefinitions();
+    }
 
     // Combine with custom tools
     const allTools = [...passthroughTools, ...customToolDefinitions];
 
-    logger.info(`Exposing ${allTools.length} tools (${passthroughTools.length} passthrough, ${customToolDefinitions.length} custom)`);
+    logger.info(`Exposing ${allTools.length} tools (${passthroughTools.length} passthrough, ${customToolDefinitions.length} custom)${agentId ? ` for agent ${agentId}` : ''}`);
 
     return {
       tools: allTools,
@@ -89,9 +104,31 @@ export function createServerWithRouter(toolRouter: ToolRouter): Server {
   });
 
   // Handle tool calls - try passthrough first, then custom handlers
+  // Enforces per-agent tool policy when agentId is provided via _meta
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    logger.info('Tool called', { name });
+    const callMeta = request.params._meta as Record<string, unknown> | undefined;
+    const callerAgentId = callMeta?.agentId as string | undefined;
+    logger.info('Tool called', { name, agentId: callerAgentId });
+
+    // Enforce tool policy if caller identified as an agent
+    if (callerAgentId) {
+      const orchestrator = await getOrchestrator();
+      const agentDef = orchestrator.getAgentDefinition(callerAgentId);
+      if (agentDef && !toolRouter.isToolAllowed(name, agentDef.allowedTools, agentDef.deniedTools)) {
+        logger.warn(`Tool ${name} denied for agent ${callerAgentId}`);
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              error: `Tool '${name}' is not available for agent '${callerAgentId}'`,
+            }),
+          }],
+          isError: true,
+        };
+      }
+    }
 
     try {
       let result: StandardResponse;

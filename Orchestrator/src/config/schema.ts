@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentDefinitionSchema } from './agents.js';
+import { AgentDefinitionSchema, ChannelBindingSchema } from './agents.js';
 
 // Stdio-based MCP server config (spawns process)
 export const StdioMCPServerConfigSchema = z.object({
@@ -98,6 +98,9 @@ export const ConfigSchema = z.object({
 
   // Path to agents config JSON file (alternative to inline agents array)
   agentsConfigPath: z.string().optional(),
+
+  // Channel bindings: map (channel, chatId) → agentId
+  bindings: z.array(ChannelBindingSchema).optional(),
 
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });

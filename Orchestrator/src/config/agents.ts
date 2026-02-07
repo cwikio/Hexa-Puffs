@@ -54,6 +54,29 @@ export const AgentsConfigSchema = z.object({
 export type AgentsConfig = z.infer<typeof AgentsConfigSchema>;
 
 /**
+ * Channel binding — maps a (channel, chatId) pair to an agent.
+ * Wildcard "*" for chatId matches any chat on that channel.
+ * Order matters: first match wins. Put specific chatId bindings before wildcards.
+ */
+export const ChannelBindingSchema = z.object({
+  channel: z.string().min(1),
+  chatId: z.string().min(1),
+  agentId: z.string().min(1),
+});
+
+export type ChannelBinding = z.infer<typeof ChannelBindingSchema>;
+
+/**
+ * Extended agents config: agents + optional channel bindings.
+ */
+export const FullAgentsConfigSchema = z.object({
+  agents: z.array(AgentDefinitionSchema).min(1),
+  bindings: z.array(ChannelBindingSchema).optional(),
+});
+
+export type FullAgentsConfig = z.infer<typeof FullAgentsConfigSchema>;
+
+/**
  * Default agent definition — backward compatible with current single-agent setup
  */
 export function getDefaultAgent(): AgentDefinition {
@@ -72,14 +95,15 @@ export function getDefaultAgent(): AgentDefinition {
 
 /**
  * Load agents config from a JSON file path.
- * Returns null if the path is not set or file cannot be read.
+ * Supports both simple { agents: [...] } and full { agents: [...], bindings: [...] } formats.
+ * Returns null if the file cannot be read.
  */
-export async function loadAgentsFromFile(filePath: string): Promise<AgentsConfig | null> {
+export async function loadAgentsFromFile(filePath: string): Promise<FullAgentsConfig | null> {
   try {
     const { readFile } = await import('fs/promises');
     const content = await readFile(filePath, 'utf-8');
     const parsed = JSON.parse(content);
-    const result = AgentsConfigSchema.safeParse(parsed);
+    const result = FullAgentsConfigSchema.safeParse(parsed);
 
     if (!result.success) {
       const errors = result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');

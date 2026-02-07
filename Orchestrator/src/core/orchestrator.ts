@@ -1,4 +1,4 @@
-import { getConfig, type Config, type AgentDefinition, getDefaultAgent, loadAgentsFromFile } from '../config/index.js';
+import { getConfig, type Config, type AgentDefinition, type ChannelBinding, getDefaultAgent, loadAgentsFromFile } from '../config/index.js';
 import { guardianConfig } from '../config/guardian.js';
 import { GuardianMCPClient } from '../mcp-clients/guardian.js';
 import { StdioGuardianClient } from '../mcp-clients/stdio-guardian.js';
@@ -32,6 +32,7 @@ import { ToolRouter } from './tool-router.js';
 import { ChannelPoller } from './channel-poller.js';
 import { ThinkerClient } from './thinker-client.js';
 import { AgentManager, type AgentStatus } from './agent-manager.js';
+import { MessageRouter } from './message-router.js';
 import type { IncomingAgentMessage } from './agent-types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
@@ -77,6 +78,9 @@ export class Orchestrator {
   // Channel polling & agent dispatch (multi-agent)
   private channelPoller: ChannelPoller | null = null;
   private agentManager: AgentManager | null = null;
+  private messageRouter: MessageRouter | null = null;
+  // Agent definitions (kept for tool policy lookups)
+  private agentDefinitions: Map<string, AgentDefinition> = new Map();
   // Fallback single-agent client (used when no agents config is provided)
   private thinkerClient: ThinkerClient | null = null;
 
@@ -423,15 +427,18 @@ export class Orchestrator {
 
   /**
    * Initialize agents: either multi-agent via AgentManager or single-agent fallback.
+   * Also sets up the MessageRouter if bindings are configured.
    */
   private async initializeAgents(): Promise<void> {
     // Try to load agents config from file
     let agentDefs: AgentDefinition[] | undefined = this.config.agents;
+    let bindings: ChannelBinding[] | undefined = this.config.bindings;
 
     if (!agentDefs && this.config.agentsConfigPath) {
       const loaded = await loadAgentsFromFile(this.config.agentsConfigPath);
       if (loaded) {
         agentDefs = loaded.agents;
+        bindings = bindings ?? loaded.bindings;
         this.logger.info(`Loaded ${agentDefs.length} agent definition(s) from ${this.config.agentsConfigPath}`);
       } else {
         this.logger.warn(`Could not load agents config from ${this.config.agentsConfigPath} — falling back to single agent`);
@@ -439,10 +446,19 @@ export class Orchestrator {
     }
 
     if (agentDefs && agentDefs.length > 0) {
+      // Store agent definitions for tool policy lookups
+      for (const def of agentDefs) {
+        this.agentDefinitions.set(def.agentId, def);
+      }
+
       // Multi-agent mode: spawn Thinker instances via AgentManager
       this.agentManager = new AgentManager();
       await this.agentManager.initializeAll(agentDefs);
       this.logger.info(`AgentManager initialized: ${this.agentManager.getAvailableCount()} agent(s) available`);
+
+      // Set up message router with bindings
+      const defaultAgentId = this.agentManager.getDefaultAgentId() ?? agentDefs[0].agentId;
+      this.messageRouter = new MessageRouter(bindings ?? [], defaultAgentId);
     } else {
       // Single-agent fallback: use thinkerUrl directly (backward compatible)
       this.thinkerClient = new ThinkerClient(this.config.thinkerUrl);
@@ -490,16 +506,26 @@ export class Orchestrator {
 
   /**
    * Dispatch a message to the appropriate agent and relay the response back to the channel.
+   * Uses MessageRouter to resolve which agent handles the message.
    */
   private async dispatchMessage(msg: IncomingAgentMessage): Promise<void> {
+    // Resolve agent via MessageRouter (if available), otherwise use msg.agentId
+    let targetAgentId = msg.agentId;
+    if (this.messageRouter) {
+      const resolved = this.messageRouter.resolveAgents(msg.channel, msg.chatId);
+      if (resolved.length > 0) {
+        targetAgentId = resolved[0];
+      }
+    }
+
     // Resolve which client to use
-    const client = this.resolveClient(msg.agentId);
+    const client = this.resolveClient(targetAgentId);
     if (!client) {
-      this.logger.error(`Cannot dispatch message — no agent available for agentId="${msg.agentId}"`);
+      this.logger.error(`Cannot dispatch message — no agent available for agentId="${targetAgentId}"`);
       return;
     }
 
-    this.logger.info(`Dispatching to agent: chat=${msg.chatId}, agent=${msg.agentId}`);
+    this.logger.info(`Dispatching to agent: chat=${msg.chatId}, agent=${targetAgentId}`);
 
     const result = await client.processMessage(msg);
 
@@ -558,6 +584,20 @@ export class Orchestrator {
    */
   getAgentManager(): AgentManager | null {
     return this.agentManager;
+  }
+
+  /**
+   * Get the MessageRouter (for status reporting).
+   */
+  getMessageRouter(): MessageRouter | null {
+    return this.messageRouter;
+  }
+
+  /**
+   * Get agent definition by ID (for tool policy enforcement).
+   */
+  getAgentDefinition(agentId: string): AgentDefinition | undefined {
+    return this.agentDefinitions.get(agentId);
   }
 
   // ─── HTTP Mode Helpers ────────────────────────────────────────────

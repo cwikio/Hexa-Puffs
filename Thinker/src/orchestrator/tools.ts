@@ -2,7 +2,6 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { CoreTool } from 'ai';
 import type { OrchestratorClient } from './client.js';
-import type { TelegramDirectClient } from '../telegram/client.js';
 import type { OrchestratorTool } from './types.js';
 import type { TraceContext } from '../tracing/types.js';
 import { getTraceLogger } from '../tracing/logger.js';
@@ -169,7 +168,6 @@ export function createEssentialTools(
   client: OrchestratorClient,
   agentId: string,
   getTrace: () => TraceContext | undefined,
-  telegramDirect?: TelegramDirectClient | null
 ): Record<string, CoreTool> {
   const logger = getTraceLogger();
 
@@ -189,10 +187,7 @@ export function createEssentialTools(
           await logger.logToolCallStart(trace, 'send_telegram', { chat_id, message_length: message.length });
         }
 
-        // Use direct Telegram client if available
-        const success = telegramDirect
-          ? await telegramDirect.sendMessage(chat_id, message, reply_to, trace)
-          : await client.sendTelegramMessage(chat_id, message, reply_to, trace);
+        const success = await client.sendTelegramMessage(chat_id, message, reply_to, trace);
         const durationMs = Date.now() - startTime;
 
         if (trace) {
