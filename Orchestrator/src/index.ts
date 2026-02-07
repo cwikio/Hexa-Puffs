@@ -112,16 +112,22 @@ async function main(): Promise<void> {
         res.end('Not found');
       });
 
-      httpServer.listen(config.port, () => {
-        logger.info(`Orchestrator running on http://localhost:${config.port}`);
-        logger.info('Endpoints:');
-        logger.info(`  GET  /health      - Health check`);
-        logger.info(`  GET  /tools/list  - List available tools (REST API)`);
-        logger.info(`  POST /tools/call  - Execute a tool (REST API)`);
-        logger.info(`  POST /agents/:id/resume - Resume a cost-paused agent`);
-        logger.info(`  GET  /sse         - SSE connection`);
-        logger.info(`  POST /message     - SSE messages`);
+      await new Promise<void>((resolve) => {
+        httpServer.listen(config.port, () => {
+          logger.info(`Orchestrator running on http://localhost:${config.port}`);
+          logger.info('Endpoints:');
+          logger.info(`  GET  /health      - Health check`);
+          logger.info(`  GET  /tools/list  - List available tools (REST API)`);
+          logger.info(`  POST /tools/call  - Execute a tool (REST API)`);
+          logger.info(`  POST /agents/:id/resume - Resume a cost-paused agent`);
+          logger.info(`  GET  /sse         - SSE connection`);
+          logger.info(`  POST /message     - SSE messages`);
+          resolve();
+        });
       });
+
+      // Start agents AFTER HTTP server is listening so Thinker can connect back
+      await orchestrator.startAgents();
 
       // Graceful shutdown
       process.on('SIGINT', () => {

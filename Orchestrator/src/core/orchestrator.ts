@@ -244,7 +244,14 @@ export class Orchestrator {
     if (this.connectionMode === 'stdio') {
       this.startHealthMonitoring();
     }
+  }
 
+  /**
+   * Start agents and channel polling.
+   * Must be called AFTER the HTTP server is listening so that
+   * spawned Thinker processes can connect back to the Orchestrator.
+   */
+  async startAgents(): Promise<void> {
     // Initialize agents (multi-agent or single-agent fallback)
     await this.initializeAgents();
 

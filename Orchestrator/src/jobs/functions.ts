@@ -3,7 +3,6 @@ import { JobStorage } from './storage.js';
 import { executeAction } from './executor.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { JobDefinition, TaskDefinition } from './types.js';
-import { TelegramMCPClient } from '../mcp-clients/telegram.js';
 import { getConfig } from '../config/index.js';
 import { Cron } from 'croner';
 
@@ -280,68 +279,6 @@ export const cronJobPollerFunction = inngest.createFunction(
   }
 );
 
-// Telegram message poller - checks for new real-time messages
-export const telegramMessagePollerFunction = inngest.createFunction(
-  {
-    id: 'telegram-message-poller',
-    name: 'Poll Telegram Messages',
-    concurrency: { limit: 1 }, // Only one poller at a time
-  },
-  { cron: '* * * * *' }, // Every minute (Inngest doesn't support sub-minute cron)
-  async ({ step }) => {
-    const messages = await step.run('fetch-new-messages', async () => {
-      try {
-        const config = getConfig();
-        if (!config.mcpServers) {
-          throw new Error('HTTP MCP servers not configured');
-        }
-        const client = new TelegramMCPClient(config.mcpServers.telegram);
-        return await client.getNewMessages();
-      } catch (error) {
-        logger.error('Failed to fetch new messages', { error });
-        return { messages: [], count: 0 };
-      }
-    });
-
-    if (messages.count === 0) {
-      return { processed: 0 };
-    }
-
-    logger.info('Received new Telegram messages', { count: messages.count });
-
-    // Process each message
-    let processed = 0;
-    for (const msg of messages.messages) {
-      // Skip outgoing messages (our own)
-      if (msg.isOutgoing) continue;
-
-      await step.run(`process-message-${msg.id}`, async () => {
-        // Log to memory
-        try {
-          const { handleStoreFact } = await import('../tools/memory.js');
-          await handleStoreFact({
-            fact: `Telegram message from ${msg.senderName || msg.senderId || 'unknown'}: "${msg.text.substring(0, 200)}"`,
-            category: 'telegram_message',
-            agentId: 'telegram-poller',
-          });
-        } catch (error) {
-          logger.error('Failed to store message in memory', { error, messageId: msg.id });
-        }
-
-        logger.info('Processed Telegram message', {
-          messageId: msg.id,
-          chatId: msg.chatId,
-          preview: msg.text.substring(0, 50),
-        });
-      });
-
-      processed++;
-    }
-
-    return { processed };
-  }
-);
-
 // Skill scheduler - checks for due skills and dispatches to Thinker
 export const skillSchedulerFunction = inngest.createFunction(
   {
@@ -514,4 +451,4 @@ export const skillSchedulerFunction = inngest.createFunction(
   }
 );
 
-export const jobFunctions = [backgroundJobFunction, cronJobFunction, cronJobPollerFunction, telegramMessagePollerFunction, skillSchedulerFunction];
+export const jobFunctions = [backgroundJobFunction, cronJobFunction, cronJobPollerFunction, skillSchedulerFunction];
