@@ -408,6 +408,7 @@ Passive AI reasoning engine that receives messages from Orchestrator via HTTP an
 - **Config-driven personality** - System prompt loaded from file path provided by Orchestrator at spawn
 - **Context management** - Loads persona and facts from Memory MCP via Orchestrator's tool API
 - **Per-agent tool filtering** - Discovers only tools allowed by agent's policy (via `agentId` query param)
+- **LLM cost controls** - Anomaly-based spike detection with sliding-window algorithm; pauses agent and sends Telegram alert on abnormal token consumption
 
 **Architecture:**
 
@@ -608,7 +609,13 @@ Orchestrator spawns and manages multiple Thinker instances, each with its own LL
       "model": "llama-3.3-70b-versatile",
       "systemPrompt": "You are Annabelle, a personal assistant...",
       "allowedTools": ["*"],
-      "maxSteps": 5
+      "maxSteps": 5,
+      "costControls": {
+        "enabled": true,
+        "hardCapTokensPerHour": 500000,
+        "spikeMultiplier": 3.0,
+        "notifyChatId": "12345"
+      }
     },
     {
       "agentId": "work-assistant",
@@ -642,7 +649,7 @@ Orchestrator spawns and manages multiple Thinker instances, each with its own LL
 
 **Key Components:**
 
-- `AgentManager` — spawns processes, monitors health, auto-restarts crashed agents
+- `AgentManager` — spawns processes, monitors health, auto-restarts crashed agents, tracks cost-pause state
 - `ChannelPoller` — polls Telegram via ToolRouter, deduplicates messages
 - `MessageRouter` — resolves `(channel, chatId)` → `agentId` via config-driven bindings
 - `ToolRouter.isToolAllowed()` — glob-based allow/deny filtering per agent
@@ -672,6 +679,9 @@ Layer 5: MCP Isolation
 
 Layer 6: Credential Separation
          └── Secrets in 1Password, never in prompts or logs
+
+Layer 7: LLM Cost Controls
+         └── Anomaly-based spike detection, hard cap, auto-pause with Telegram alert
 ```
 
 ### What Gets Scanned

@@ -1,0 +1,25 @@
+{
+  "agents": [
+    {
+      "agentId": "annabelle",
+      "enabled": true,
+      "port": 8006,
+      "llmProvider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "systemPrompt": "",
+      "allowedTools": [],
+      "deniedTools": [],
+      "maxSteps": 8,
+      "costControls": {
+        "enabled": true,
+        "shortWindowMinutes": 2,
+        "spikeMultiplier": 3.0,
+        "hardCapTokensPerHour": 500000,
+        "minimumBaselineTokens": 1000
+      }
+    }
+  ],
+  "bindings": [
+    { "channel": "telegram", "chatId": "*", "agentId": "annabelle" }
+  ]
+}

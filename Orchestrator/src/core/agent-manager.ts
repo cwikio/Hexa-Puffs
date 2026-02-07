@@ -215,7 +215,7 @@ export class AgentManager {
 
     // Ensure Orchestrator URL is set (so agent can discover tools)
     if (!env.ORCHESTRATOR_URL) {
-      env.ORCHESTRATOR_URL = 'http://localhost:8000';
+      env.ORCHESTRATOR_URL = `http://localhost:${process.env.PORT || '8010'}`;
     }
 
     // Cost control settings

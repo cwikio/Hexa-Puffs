@@ -8,15 +8,10 @@
 #   Gmail MCP    (HTTP on 8008) <-- Independent service (email + polling)
 #   Orchestrator (HTTP on 8010) <--(stdio)--> Memory, Filer, Guardian, 1Password
 #                               <--(http)--> Searcher (8007), Gmail (8008)
-#        ^
-#        |--- HTTP ---|
-#                     v
-#                  Thinker (HTTP on 8006)
-#        ^
-#        |--- Direct HTTP ---|
-#                            v
-#                      Telegram MCP (HTTP on 8002)
+#                               <--(spawn)--> Thinker agent(s) from agents.json
 #
+# Orchestrator spawns Thinker agent(s) via AgentManager (multi-agent mode).
+# Cost controls are enabled by default in agents.json.
 # Telegram MCP runs separately in HTTP mode for direct Thinker connection.
 # Orchestrator spawns other MCPs via stdio.
 
@@ -169,17 +164,24 @@ if command -v ollama &> /dev/null && curl -s http://localhost:11434/api/tags > /
 fi
 
 # Start Orchestrator MCP (HTTP mode with stdio connections to downstream MCPs)
+# Orchestrator spawns Thinker agent(s) via AgentManager using agents.json config
+AGENTS_JSON="/Users/tomasz/Coding/AI Assistants/MCPs/agents.json"
 echo -e "\n${BOLD}Starting Orchestrator MCP (HTTP on port 8010)...${RESET}"
 echo -e "  ${BLUE}Orchestrator will spawn downstream MCPs (Memory, Filer, Guardian, 1Password) via stdio${RESET}"
 echo -e "  ${BLUE}Orchestrator connects to Searcher MCP (8007) and Gmail MCP (8008) via HTTP${RESET}"
+echo -e "  ${BLUE}Orchestrator spawns Thinker agent(s) from ${AGENTS_JSON}${RESET}"
 cd "/Users/tomasz/Coding/AI Assistants/MCPs/Orchestrator"
-TRANSPORT=http PORT=8010 MCP_CONNECTION_MODE=stdio npm start > ~/.annabelle/logs/orchestrator.log 2>&1 &
+TRANSPORT=http PORT=8010 MCP_CONNECTION_MODE=stdio \
+  AGENTS_CONFIG_PATH="$AGENTS_JSON" \
+  ORCHESTRATOR_URL=http://localhost:8010 \
+  TELEGRAM_DIRECT_URL=http://localhost:8002 \
+  npm start > ~/.annabelle/logs/orchestrator.log 2>&1 &
 ORCHESTRATOR_PID=$!
 echo -e "${GREEN}✓ Orchestrator started (PID: $ORCHESTRATOR_PID)${RESET}"
 
-# Wait for Orchestrator and downstream MCPs to initialize
-echo -e "\n${YELLOW}Waiting for Orchestrator and downstream MCPs to initialize...${RESET}"
-sleep 8
+# Wait for Orchestrator, downstream MCPs, and Thinker agent(s) to initialize
+echo -e "\n${YELLOW}Waiting for Orchestrator, downstream MCPs, and Thinker agent(s) to initialize...${RESET}"
+sleep 10
 
 # Check Orchestrator health
 ORCHESTRATOR_HEALTH=$(curl -s http://localhost:8010/health 2>/dev/null)
@@ -205,26 +207,23 @@ else
   echo -e "${YELLOW}⚠ Auto-registration failed - sync manually at http://localhost:8288${RESET}"
 fi
 
-# Start Thinker
-echo -e "\n${BOLD}Starting Thinker (HTTP on port 8006)...${RESET}"
-echo -e "  ${BLUE}Thinker connects directly to Telegram MCP (8002) and Orchestrator (8010)${RESET}"
-cd "/Users/tomasz/Coding/AI Assistants/MCPs/Thinker"
-ORCHESTRATOR_URL=http://localhost:8010 TELEGRAM_DIRECT_URL=http://localhost:8002 npm start > ~/.annabelle/logs/thinker.log 2>&1 &
-THINKER_PID=$!
-echo -e "${GREEN}✓ Thinker started (PID: $THINKER_PID)${RESET}"
-
-# Wait for Thinker to initialize
-sleep 3
-
-# Check Thinker health
+# Check Thinker agent (spawned by Orchestrator's AgentManager from agents.json)
+echo -e "\n${BOLD}Checking Thinker agent (spawned by Orchestrator)...${RESET}"
 THINKER_HEALTH=$(curl -s http://localhost:8006/health 2>/dev/null)
 if echo "$THINKER_HEALTH" | grep -q "ok"; then
-  echo -e "${GREEN}✓ Thinker is healthy${RESET}"
+  echo -e "${GREEN}✓ Thinker agent is healthy${RESET}"
   LLM_PROVIDER=$(echo "$THINKER_HEALTH" | grep -o '"llmProvider":"[^"]*"' | cut -d'"' -f4)
   echo -e "  ${BLUE}LLM Provider: $LLM_PROVIDER${RESET}"
+  # Check cost controls
+  COST_STATUS=$(curl -s http://localhost:8006/cost-status 2>/dev/null)
+  if echo "$COST_STATUS" | grep -q '"enabled":true'; then
+    echo -e "  ${BLUE}Cost controls: enabled${RESET}"
+  else
+    echo -e "  ${YELLOW}Cost controls: disabled${RESET}"
+  fi
 else
-  echo -e "${YELLOW}⚠ Thinker not responding (may be disabled or still starting)${RESET}"
-  echo -e "  ${YELLOW}Check logs: tail -f ~/.annabelle/logs/thinker.log${RESET}"
+  echo -e "${YELLOW}⚠ Thinker agent not responding (may still be starting)${RESET}"
+  echo -e "  ${YELLOW}Check logs: tail -f ~/.annabelle/logs/orchestrator.log${RESET}"
 fi
 
 echo -e "\n${BOLD}${GREEN}=== All services launched ===${RESET}"
@@ -237,12 +236,11 @@ echo -e "    └── Memory MCP (Memorizer)"
 echo -e "    └── Filer MCP"
 echo -e "    └── Guardian MCP (scanning disabled by default — edit guardian-config.ts to enable)"
 echo -e "    └── 1Password MCP"
+echo -e "  Orchestrator (8010) spawns Thinker agent(s) from agents.json:"
+echo -e "    └── Thinker :8006 (annabelle) — cost controls enabled"
 echo -e "  Orchestrator (8010) connects via HTTP:"
 echo -e "    └── Searcher MCP (8007)"
 echo -e "    └── Gmail MCP (8008)"
-echo -e "  Thinker (8006) connects to:"
-echo -e "    └── Telegram MCP (8002) directly for messages"
-echo -e "    └── Orchestrator (8010) for other tools"
 
 echo -e "\n${BOLD}Service URLs:${RESET}"
 echo -e "  Telegram:     http://localhost:8002"
@@ -264,8 +262,7 @@ echo -e "\n${BOLD}Process IDs:${RESET}"
 echo -e "  Telegram:     $TELEGRAM_PID"
 echo -e "  Searcher:     $SEARCHER_PID"
 echo -e "  Gmail:        $GMAIL_PID"
-echo -e "  Orchestrator: $ORCHESTRATOR_PID"
-echo -e "  Thinker:      $THINKER_PID"
+echo -e "  Orchestrator: $ORCHESTRATOR_PID (Thinker agent(s) are child processes)"
 echo -e "  Inngest:      $INNGEST_PID"
 
 echo -e "\n${YELLOW}Tip: Use 'tail -f ~/.annabelle/logs/*.log' to monitor all services${RESET}"

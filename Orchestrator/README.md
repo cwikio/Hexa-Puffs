@@ -22,7 +22,8 @@ The central orchestration layer for Annabelle AI Assistant. The Orchestrator act
 ┌───────────────────────────────────────────────────────────────────┐
 │                   ORCHESTRATOR MCP (:8010)                         │
 │                                                                    │
-│  HTTP REST API: /health, /tools/list, /tools/call                 │
+│  HTTP REST API: /health, /tools/list, /tools/call,                │
+│                 /agents/:id/resume                                 │
 │  MCP stdio: Standard MCP protocol for Claude Desktop              │
 │  65+ Tools (passthrough from downstream MCPs)                     │
 │                                                                    │
@@ -307,6 +308,45 @@ Agents are defined in a JSON config file (set via `AGENTS_CONFIG_PATH` env var):
 | `allowedTools` | Glob patterns of permitted tools (empty = all) |
 | `deniedTools` | Glob patterns of denied tools (evaluated after allow) |
 | `maxSteps` | Max ReAct steps per message (1-50) |
+| `costControls` | Optional cost control config (see below) |
+
+### Cost Controls
+
+Per-agent LLM cost controls that detect abnormal token consumption spikes and pause the agent. When triggered, Orchestrator sends a Telegram alert and stops dispatching messages to the paused agent.
+
+Add a `costControls` block to an agent definition:
+
+```json
+{
+  "agentId": "annabelle",
+  "port": 8006,
+  "costControls": {
+    "enabled": true,
+    "shortWindowMinutes": 2,
+    "spikeMultiplier": 3.0,
+    "hardCapTokensPerHour": 500000,
+    "minimumBaselineTokens": 1000,
+    "notifyChatId": "12345"
+  }
+}
+```
+
+| Field | Default | Description |
+| ----- | ------- | ----------- |
+| `enabled` | `false` | Enable cost monitoring for this agent |
+| `shortWindowMinutes` | `2` | Short window size for spike detection (1-30) |
+| `spikeMultiplier` | `3.0` | Spike threshold: short-window rate must exceed baseline x this (1.5-10) |
+| `hardCapTokensPerHour` | `500000` | Absolute safety cap: max tokens in any 60-minute window (min 10000) |
+| `minimumBaselineTokens` | `1000` | Minimum baseline tokens before spike detection activates (min 100) |
+| `notifyChatId` | _(none)_ | Telegram chat ID for cost alert notifications (falls back to message sender) |
+
+**How it works:**
+
+1. Orchestrator passes cost config to Thinker via environment variables at spawn time
+2. Thinker's `CostMonitor` tracks tokens in a 60-bucket sliding window (1 bucket/minute)
+3. After each LLM call, if a spike or hard cap is detected, Thinker pauses and returns `{ paused: true }`
+4. Orchestrator marks the agent paused, sends a Telegram notification, and stops dispatching new messages
+5. Resume via `POST /agents/:agentId/resume` (see REST API below)
 
 ### Channel Bindings
 
@@ -339,6 +379,8 @@ Thinker exposes these HTTP endpoints:
 - `POST /process-message` — Process a dispatched message (called by Orchestrator)
 - `POST /execute-skill` — Execute a proactive task
 - `GET /health` — Health check
+- `GET /cost-status` — Get cost monitor state (tokens used, rates, pause status)
+- `POST /cost-resume` — Resume a cost-paused agent (`{ resetWindow: true }` to clear token history)
 
 Thinker discovers tools from Orchestrator on startup:
 
@@ -768,6 +810,22 @@ agentOverrides: {
 ```
 
 Use `getEffectiveScanFlags(agentId)` to resolve the merged flags for a specific agent. Unlisted MCPs inherit the global defaults.
+
+## REST API: Agent Resume
+
+Resume an agent that was paused by cost controls:
+
+```http
+POST /agents/:agentId/resume
+Content-Type: application/json
+
+{ "resetWindow": true }
+```
+
+- `resetWindow: false` (default) — resume but keep token history (may re-trigger if still over cap)
+- `resetWindow: true` — resume and clear all token history (fresh start)
+
+Returns `{ "success": true, "message": "Agent \"annabelle\" resumed" }` on success.
 
 ## Future Enhancements
 

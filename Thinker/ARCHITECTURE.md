@@ -496,6 +496,11 @@ Thinker/
 │   │   ├── persona.ts           # Persona loading from Memory profile
 │   │   └── memory.ts            # Memory MCP interactions
 │   │
+│   ├── cost/
+│   │   ├── types.ts             # CostControlConfig, CostStatus, TokenBucket
+│   │   ├── monitor.ts           # CostMonitor — sliding-window anomaly detection
+│   │   └── index.ts             # Barrel export
+│   │
 │   └── agent/
 │       ├── loop.ts              # ReAct agent loop
 │       └── types.ts             # Agent state types
@@ -746,7 +751,43 @@ Skips messages matching known bot-generated patterns (error messages, apology ph
 | Poll interval | 10s | 30s | 3x fewer polls per minute |
 | Messages per cycle | unlimited | 3 | Bounded cost per interval |
 
-### 8. Worst-Case Cost Calculation
+### 8. LLM Cost Monitor (Anomaly Detection)
+
+Beyond the static safeguards above, Thinker includes a runtime **CostMonitor** that detects abnormal token consumption using a sliding-window algorithm. When triggered, it pauses the agent, and Orchestrator sends a Telegram notification.
+
+**Algorithm:**
+
+- 60-bucket ring buffer (1 bucket per minute, 1 hour of history)
+- After each `generateText()` call, records `promptTokens + completionTokens` into the current minute's bucket
+- **Spike detection:** compares the short-window rate (last N minutes, default 2) against the baseline rate (rest of the hour, computed over active buckets only). If short-window rate > baseline × `spikeMultiplier` (default 3x), and baseline has enough data (`minimumBaselineTokens`), the agent pauses.
+- **Hard cap:** if total tokens in the last 60 minutes exceed `hardCapTokensPerHour`, the agent pauses immediately regardless of pattern.
+
+**Configuration** (via environment variables, passed from Orchestrator's `agents.json`):
+
+| Variable | Default | Description |
+|---|---|---|
+| `THINKER_COST_CONTROL_ENABLED` | `false` | Enable cost monitoring |
+| `THINKER_COST_SHORT_WINDOW_MINUTES` | `2` | Short window for spike detection |
+| `THINKER_COST_SPIKE_MULTIPLIER` | `3.0` | Spike threshold multiplier |
+| `THINKER_COST_HARD_CAP_PER_HOUR` | `500000` | Absolute token cap per hour |
+| `THINKER_COST_MIN_BASELINE_TOKENS` | `1000` | Minimum baseline before spike detection activates |
+
+**Endpoints:**
+
+- `GET /cost-status` — Returns current cost monitor state (tokens used, rates, pause status)
+- `POST /cost-resume` — Resume a cost-paused agent (`{ resetWindow: true }` to clear history)
+
+**Behavior when triggered:**
+
+1. Current request completes normally (pause takes effect on the next call)
+2. `processMessage()` and `processProactiveTask()` return `{ paused: true }` immediately
+3. Orchestrator detects `paused: true`, marks the agent paused, sends Telegram alert
+4. Agent remains paused until resumed via `POST /cost-resume` or Orchestrator's `POST /agents/:id/resume`
+
+**Source:** `Thinker/src/cost/monitor.ts`, `Thinker/src/cost/types.ts`
+**Tests:** `Thinker/tests/cost-monitor.test.ts` (16 tests)
+
+### 9. Worst-Case Cost Calculation
 
 With all safeguards:
 

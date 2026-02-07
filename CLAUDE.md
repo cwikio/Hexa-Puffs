@@ -25,6 +25,7 @@ All MCP tools follow this pattern:
 - Memorizer-MCP uses SQLite via better-sqlite3
 - Orchestrator passthrough tools must stay in sync with downstream MCPs
 - Each MCP should expose a `/health` endpoint (HTTP) or respond to health tool calls (stdio)
+- Thinker agents support per-agent `costControls` in `agents.json` — anomaly-based spike detection with auto-pause and Telegram notification. See `Orchestrator/README.md` → "Cost Controls"
 
 ## Auto-Discovery
 New MCPs are auto-discovered at Orchestrator startup via the `"annabelle"` field in `package.json`:
