@@ -43,7 +43,8 @@
   },
   "annabelle": {
     "mcpName": "telegram",
-    "transport": "stdio",
-    "sensitive": true
+    "transport": "http",
+    "sensitive": true,
+    "httpPort": 8002
   }
 }
