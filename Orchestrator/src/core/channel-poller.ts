@@ -275,7 +275,10 @@ export class ChannelPoller {
    * Extract typed data from a ToolRouter result.
    *
    * The ToolRouter wraps MCP responses as:
-   *   { success: true, content: { content: [{ type: 'text', text: JSON.stringify(data) }] } }
+   *   { success: true, content: { content: [{ type: 'text', text: JSON.stringify(standardResponse) }] } }
+   *
+   * The standardResponse follows the pattern: { success: true, data: T }
+   * This method unwraps both layers to return T directly.
    */
   private extractData<T>(result: { success: boolean; content?: unknown; error?: string }): T | null {
     try {
@@ -284,7 +287,12 @@ export class ChannelPoller {
       };
       const text = mcpResponse?.content?.[0]?.text;
       if (!text) return null;
-      return JSON.parse(text) as T;
+      const parsed = JSON.parse(text) as { success?: boolean; data?: T } & T;
+      // Unwrap StandardResponse envelope if present
+      if (parsed.data !== undefined && 'success' in parsed) {
+        return parsed.data;
+      }
+      return parsed;
     } catch {
       return null;
     }
