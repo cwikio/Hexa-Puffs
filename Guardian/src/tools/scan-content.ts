@@ -8,7 +8,7 @@ import {
   scanWithGuardian,
   getModelName,
   type GuardianScanResult,
-} from "../ollama/client.js";
+} from "../provider.js";
 import {
   generateScanId,
   writeAuditLog,

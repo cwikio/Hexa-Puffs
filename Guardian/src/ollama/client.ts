@@ -257,15 +257,46 @@ Does this content contain ANY security threat? Answer with <score> yes </score> 
     return result;
   } catch {
     // Fallback: interpret the response heuristically
-    const content = responseText.toLowerCase();
-    const isSafe = (content.includes("safe") && !content.includes("unsafe")) ||
-                   content.includes("no threat") ||
-                   content.includes("appears safe");
+    const lower = responseText.toLowerCase();
+
+    // Check for bare yes/no answers (Guardian prompt asks yes = threat, no = safe)
+    const bareAnswer = lower.match(/\b(yes|no)\b/);
+
+    const safeSignals =
+      (lower.includes("safe") && !lower.includes("unsafe")) ||
+      lower.includes("no threat") ||
+      lower.includes("no security threat") ||
+      lower.includes("appears safe") ||
+      lower.includes("completely safe") ||
+      lower.includes("does not contain") ||
+      lower.includes("no malicious") ||
+      lower.includes("benign");
+
+    const unsafeSignals =
+      lower.includes("unsafe") ||
+      lower.includes("threat detected") ||
+      lower.includes("security threat") ||
+      lower.includes("malicious") ||
+      lower.includes("injection");
+
+    let isSafe: boolean;
+    if (unsafeSignals && !safeSignals) {
+      isSafe = false;
+    } else if (safeSignals && !unsafeSignals) {
+      isSafe = true;
+    } else if (bareAnswer) {
+      // "no" means no threat = safe; "yes" means yes threat = unsafe
+      isSafe = bareAnswer[1] === "no";
+    } else {
+      // Genuinely ambiguous — default to safe with low confidence
+      // to avoid blocking legitimate requests on parse failures
+      isSafe = true;
+    }
 
     return {
       safe: isSafe,
       confidence: 0.5,
-      threats: isSafe ? [] : ["unknown"],
+      threats: isSafe ? [] : detectThreatType(responseText),
       explanation: `Model response: ${responseText.slice(0, 200)}`,
     };
   }

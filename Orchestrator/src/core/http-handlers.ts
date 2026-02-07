@@ -1,6 +1,7 @@
 import type { ToolRouter } from './tool-router.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { logger } from '@mcp/shared/Utils/logger.js';
+import { SecurityError } from '../utils/errors.js';
 import {
   statusToolDefinition,
   handleStatus,
@@ -164,6 +165,27 @@ export async function handleCallTool(
         })
       );
     } catch (error) {
+      if (error instanceof SecurityError) {
+        logger.warn('Request blocked by Guardian via HTTP', { error: error.message });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: false,
+                  blocked: true,
+                  error: error.message,
+                }),
+              },
+            ],
+            isError: true,
+          })
+        );
+        return;
+      }
+
       logger.error('Tool call failed via HTTP', { error });
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(

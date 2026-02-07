@@ -3,26 +3,36 @@
  * Supports both stdio and HTTP/SSE transports
  */
 
+import { config as dotenvConfig } from "dotenv";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Load .env before any other imports that read process.env
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenvConfig({ path: resolve(__dirname, "../.env") });
+
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { createServer } from "./server.js";
 import { createServer as createHttpServer } from "node:http";
-import { verifyConnection, getOllamaHost, getModelName } from "./ollama/client.js";
+import { verifyConnection, getHost, getModelName, getProviderName } from "./provider.js";
 
 const TRANSPORT = process.env.TRANSPORT || "stdio";
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
 async function main() {
-  // Verify Ollama connection on startup (warn but don't fail for stdio)
+  // Verify provider connection on startup (warn but don't fail for stdio)
+  const provider = getProviderName();
   try {
     await verifyConnection();
-    console.error(`Connected to Ollama at ${getOllamaHost()}`);
+    console.error(`Connected to ${provider} at ${getHost()}`);
     console.error(`Using model: ${getModelName()}`);
   } catch (error) {
     console.error(
-      `Warning: ${error instanceof Error ? error.message : "Cannot connect to Ollama"}`
+      `Warning: ${error instanceof Error ? error.message : `Cannot connect to ${provider}`}`
     );
-    console.error("Scans will fail until Ollama is running with the guardian model.");
+    console.error(`Scans will fail until ${provider} is available.`);
   }
 
   const server = createServer();
@@ -79,23 +89,23 @@ async function main() {
       }
 
       if (req.url === "/health") {
-        // Check Ollama connection for health endpoint
-        let ollamaOk = false;
+        let providerOk = false;
         try {
           await verifyConnection();
-          ollamaOk = true;
+          providerOk = true;
         } catch {
-          ollamaOk = false;
+          providerOk = false;
         }
 
-        res.writeHead(ollamaOk ? 200 : 503, {
+        res.writeHead(providerOk ? 200 : 503, {
           "Content-Type": "application/json",
         });
         res.end(
           JSON.stringify({
-            status: ollamaOk ? "healthy" : "degraded",
+            status: providerOk ? "healthy" : "degraded",
             transport: "http",
-            ollama: ollamaOk ? "connected" : "disconnected",
+            provider: getProviderName(),
+            providerStatus: providerOk ? "connected" : "disconnected",
             model: getModelName(),
           })
         );
