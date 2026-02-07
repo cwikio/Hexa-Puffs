@@ -98,7 +98,7 @@ When agents do real autonomous work (sending emails, modifying files), consider 
 
 ## Deep Dive: Heartbeat
 
-### How It Works in OpenClaw
+### How Heartbeat Works in OpenClaw
 
 Every N minutes (default 30), the gateway sends the agent a "wake up" prompt. The agent reads a `HEARTBEAT.md` checklist from its workspace and checks for pending tasks — new emails, calendar events, CI failures, etc. If nothing needs attention, it replies `HEARTBEAT_OK` (silently suppressed). If something is urgent, it sends an alert to the user.
 
@@ -153,6 +153,60 @@ This gives the two-tier pattern without the always-on LLM cost.
 
 ---
 
+## Deep Dive: Webhook-Based Message Ingestion
+
+### Current Approach (Polling)
+
+ChannelPoller calls `telegram_get_messages` via ToolRouter every 10 seconds. Messages are deduplicated via `processedMessageIds`, filtered (skip bot's own, old >2min, bot-like patterns, max 3/cycle), and dispatched to agents via MessageRouter. This works for a single platform but has inherent tradeoffs.
+
+### How OpenClaw Does It
+
+OpenClaw uses platform adapter webhooks — each platform (Discord, Slack, Telegram) pushes messages to the gateway via HTTP POST. The gateway routes them to agent sessions immediately. No polling loop, no wasted API calls.
+
+### Pros of Webhooks
+
+1. **Near-instant delivery** — Messages arrive in milliseconds instead of up to 10s polling delay. Users notice the difference in back-and-forth conversations.
+
+2. **Zero wasted API calls** — ChannelPoller makes a `get_messages` call every 10 seconds even when nothing has arrived. That's ~8,640 API calls/day per platform with zero messages. Webhooks only fire when there's actual data.
+
+3. **Scales with platforms** — Adding Discord, Slack, WhatsApp means adding more polling loops, each with its own interval, rate limits, and deduplication logic. Webhooks are a single `POST /webhook/:platform` endpoint — the platform pushes to you.
+
+4. **Rate limit safety** — Telegram's Bot API has rate limits. Aggressive polling (especially across many chats) can hit them. Webhooks don't consume rate limit quota for reading.
+
+5. **Simpler deduplication** — With polling, you need `processedMessageIds` to avoid reprocessing. Webhooks deliver each message exactly once (with retry semantics if your server is down).
+
+6. **Event-driven fit** — The Orchestrator already dispatches messages to agents via HTTP POST. Webhooks arriving as HTTP POST → MessageRouter → AgentManager is a natural pipeline with no polling loop to manage.
+
+### Cons of Webhooks
+
+1. **Requires a public URL** — Polling works behind NAT, firewalls, home networks. Webhooks need a publicly routable HTTPS endpoint. For local dev, you'd need ngrok or Cloudflare Tunnel. This is significant friction — currently everything runs on `localhost`.
+
+2. **SSL/TLS mandatory** — Telegram, Slack, Discord all require HTTPS for webhooks. That means real certs (Let's Encrypt) or a reverse proxy.
+
+3. **Increased attack surface** — A public endpoint is a target. You'd need to validate webhook signatures (Telegram sends a secret token, Slack signs payloads with HMAC), handle replay protection, and rate-limit incoming requests. The current polling model has zero inbound surface.
+
+4. **Missed messages during downtime** — If the Orchestrator is down or restarting, webhook deliveries fail. Most platforms retry (Telegram retries for ~24h with exponential backoff), but there's a window for message loss. Polling can catch up on missed messages when it comes back.
+
+5. **GramJS/MTProto conflict** — The Telegram MCP uses GramJS with MTProto (user client protocol), not the Bot API. Telegram webhooks are Bot API only. To use Telegram webhooks, you'd need to either switch from GramJS to Bot API (losing user-client features), run both protocols in parallel, or keep polling for Telegram and use webhooks for other platforms.
+
+6. **Infrastructure overhead** — DNS, TLS, reverse proxy, process manager to keep the webhook endpoint alive. Currently we just run `node` processes on localhost.
+
+7. **Harder local development** — `curl localhost:8010` is simpler to test than setting up ngrok, registering a webhook URL with Telegram, sending a real message, and inspecting what arrived.
+
+### Webhook Verdict
+
+**Not needed yet.** The main driver for webhooks is multi-platform support. With only Telegram + Gmail, polling is fine. The GramJS/MTProto constraint means Telegram webhooks aren't directly possible without switching protocols.
+
+**When it becomes worth it:**
+
+- When adding Discord or Slack (both webhook-native — polling is unnatural for them)
+- When the 10s polling delay becomes a user experience problem
+- When deploying to a server with a public URL (VPS, cloud)
+
+**Recommended path:** A hybrid model — webhook ingestion for platforms that push natively (Discord, Slack, Gmail via Pub/Sub), polling retained for Telegram (GramJS/MTProto). The Orchestrator's `dispatchMessage` method already accepts messages from any source. The MessageRouter doesn't care how the message arrived.
+
+---
+
 ## Missing / To Improve
 
 | Priority | Item | Notes |
@@ -171,6 +225,7 @@ This gives the two-tier pattern without the always-on LLM cost.
 ---
 
 Sources:
+
 - [OpenClaw Architecture for Beginners (Jan 2026)](https://cyberstrategyinstitute.com/openclaw-architecture-for-beginners-jan-2026/)
 - [OpenClaw Architecture Guide — Vertu](https://vertu.com/ai-tools/openclaw-clawdbot-architecture-engineering-reliable-and-controllable-ai-agents/)
 - [What is OpenClaw — DigitalOcean](https://www.digitalocean.com/resources/articles/what-is-openclaw)
