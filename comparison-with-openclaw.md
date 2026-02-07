@@ -207,6 +207,121 @@ OpenClaw uses platform adapter webhooks — each platform (Discord, Slack, Teleg
 
 ---
 
+## Deep Dive: Agent-to-Agent Delegation
+
+### How OpenClaw Does It (Sub-Agents)
+
+OpenClaw has a four-step sub-agent delegation pattern:
+
+1. **Spawning** — The main agent spawns a new isolated worker session with a unique session ID (`agent:agentId:subagent:uuid`)
+2. **Isolation** — The sub-agent receives all context in its initial instructions (it cannot see the main chat)
+3. **Background execution** — The sub-agent works independently while the main conversation continues
+4. **Results delivery** — Upon completion, the sub-agent announces results back to the requester chat
+
+Sub-agents are managed via the `/subagents` command (list, stop, log, info, send). Key constraints: no nested delegation (a sub-agent cannot spawn its own sub-agents), context independence (must be explicitly given all info), and unidirectional communication (results flow only back to the requester).
+
+Separately, OpenClaw has agent-to-agent messaging between *persistent* agents, but it's **off by default** and requires explicit allowlisting per agent pair.
+
+### What We Have Today
+
+Nothing. Our agents are isolated silos. Agent A cannot talk to Agent B. The MessageRouter routes *inbound* messages (from Telegram) to agents, but there's no mechanism for inter-agent communication.
+
+However, our architecture is well-positioned for delegation because the Orchestrator already mediates all communication — agents talk to Orchestrator via `/tools/call`, not to each other directly. AgentManager tracks all running agents. Tool policy enforcement and Guardian scanning apply automatically.
+
+### How It Would Work in Our Architecture
+
+#### Model A: Synchronous Delegation (Tool Call)
+
+```text
+Agent "annabelle" receives: "Review this PR and draft a summary email"
+       ↓
+Annabelle calls tool: delegate_to_agent({
+  agentId: "code-reviewer",
+  task: "Review PR #42 in repo X. Return a summary of changes and issues.",
+  context: { prUrl: "..." }
+})
+       ↓
+Orchestrator receives tool call via POST /tools/call
+       ↓
+Orchestrator validates: is "annabelle" allowed to delegate to "code-reviewer"?
+       ↓
+Orchestrator calls AgentManager.getClient("code-reviewer").processMessage(task)
+       ↓
+code-reviewer processes (using its own LLM, tools, system prompt)
+       ↓
+Orchestrator returns result to annabelle as the tool call response
+       ↓
+Annabelle uses the review to draft the email via gmail_send_email
+```
+
+From the calling agent's perspective, delegation is just another tool call. No new infrastructure — it routes through the existing `/tools/call` → ToolRouter pipeline.
+
+#### Model B: Async Delegation (Fire-and-Forget)
+
+```text
+Agent "annabelle" receives: "Research competitors and email me a report"
+       ↓
+Annabelle calls tool: delegate_async({
+  agentId: "research-assistant",
+  task: "Research top 5 competitors...",
+  replyTo: { channel: "telegram", chatId: "12345" }
+})
+       ↓
+Orchestrator queues the task, returns immediately: { delegationId: "abc", status: "queued" }
+       ↓
+Annabelle replies to user: "I've delegated the research. You'll get the report when ready."
+       ↓
+(Background) Orchestrator dispatches to research-assistant via Inngest
+       ↓
+research-assistant completes → Orchestrator sends result to Telegram chat
+```
+
+### What Would Need to Change
+
+| Change | Scope | Description |
+| --- | --- | --- |
+| New tool: `delegate_to_agent` | Orchestrator | Virtual tool (not from any downstream MCP). Accepts `agentId`, `task`, `context`. Routes to AgentManager. |
+| Delegation policy | Config (`agents.json`) | `"canDelegateTo": ["code-reviewer", "research-assistant"]` per agent. Default: none. |
+| Context serialization | Orchestrator | Target agent receives task text only (isolated, like OpenClaw). No conversation history leakage. |
+| Async queue (Model B only) | Orchestrator + Inngest | Fire-and-forget via Inngest job. Results delivered to a channel or stored in memory. |
+| Result size handling | Orchestrator | Truncate or summarize if delegated response exceeds calling agent's context budget. |
+
+### How Ours Compares to OpenClaw's
+
+| Aspect | OpenClaw Sub-Agents | Annabelle (proposed) |
+| --- | --- | --- |
+| Agent lifecycle | Spawns **new instance** per delegation | Routes to **existing running agent** — zero spawn overhead |
+| Startup cost | New session = cold start, context loading | Agent already running, warm, tools discovered |
+| Specialization | Sub-agent is generic (same model, same skills as parent) | Target agent has its own LLM, system prompt, tool set — truly specialized |
+| Security | Same permissions as parent (no policy isolation) | Target agent has its **own** tool policy + Guardian overrides |
+| Nesting | Explicitly forbidden (no sub-sub-agents) | Could allow controlled depth (max depth 2), but not needed in v1 |
+| Communication | Unidirectional (results back to requester only) | Bidirectional (tool call = synchronous request/response) |
+| Parallel delegation | Yes (multiple sub-agents at once) | Yes (multiple `delegate_to_agent` calls in one ReAct loop) |
+| Agent persistence | Sub-agent is ephemeral (dies after task) | Agent is persistent (always running, handles many delegations) |
+
+Our model is structurally better for one reason: **delegation to a pre-existing specialized agent is more useful than spawning a generic clone**. When Annabelle delegates to `code-reviewer`, that agent has a system prompt tuned for code review, tools limited to `filer_*` and `web_search`, and maybe a different LLM optimized for code. OpenClaw's sub-agents are copies of the parent — they don't have specialized configurations.
+
+### Do We Need Delegation?
+
+**Not yet.** Currently:
+
+- We have 2 channels and 1-2 agents — no scenario where Agent A needs Agent B's help
+- A single agent with `allowedTools: ["*"]` can already do everything — there are no capability boundaries to cross
+- The main bottleneck is elsewhere (integrations, cost controls, semantic memory)
+
+**When it becomes needed:**
+
+- When there are 3+ specialized agents with different tool policies (code-reviewer can't send emails, email-drafter can't modify files)
+- When tasks naturally span multiple specializations ("review this code AND draft a response email")
+- When parallel processing matters ("research competitors" + "draft presentation" simultaneously)
+- When agent context windows are a concern — delegation offloads a sub-task to a fresh context
+
+### Delegation Verdict
+
+Start with **Model A (synchronous)** only when there are specialized agents to delegate to. It's a single new tool, routing through existing infrastructure. Add delegation policy to `agents.json` (`canDelegateTo` field). Model B (async via Inngest) can come later. No nesting in v1. The Orchestrator's mediation model makes this straightforward — unlike OpenClaw, we don't need to spawn new processes or create new sessions.
+
+---
+
 ## Missing / To Improve
 
 | Priority | Item | Notes |
