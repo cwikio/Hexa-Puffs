@@ -66,6 +66,93 @@
 
 8. **Single-user design** — Personal assistant only. OpenClaw supports multi-tenant deployment.
 
+## Deep Dive: Ishi (Supervisory Agent)
+
+### How It Works in OpenClaw
+
+Ishi is a second, narrower agent that sits between OpenClaw and tool execution. When OpenClaw plans a high-risk action (shell command, file delete, sending money), the plan gets passed to Ishi along with AI SAFE² policy rules. Ishi evaluates and returns go/no-go. It can also require human confirmation for certain action categories.
+
+The relationship: OpenClaw is the operator, AI SAFE² is the security harness, and Ishi is the supervisor that reads the harness signals and the operator's plans and says "go/no-go" on sensitive actions.
+
+### Do We Need Ishi?
+
+**Not urgently.** Annabelle already has structural enforcement that OpenClaw lacks:
+
+- **Tool policy** (`allowedTools`/`deniedTools`) — a restricted agent literally cannot see or call denied tools. OpenClaw relies on Ishi to *review* tool calls that are already technically available.
+- **Guardian ML scanning** — input/output scanning catches prompt injection and PII leakage at the protocol level, not by asking another LLM "does this look safe?"
+- **Per-agent Guardian overrides** — fine-grained scan flags per agent.
+
+Ishi solves a real problem, but it's a **soft control** — an LLM judging another LLM's plan. That's inherently probabilistic. Our tool policies and Guardian scanning are **hard controls** — enforced in code, not in prompts.
+
+### Where Ishi Would Add Value for Us
+
+- **Destructive actions within allowed tools** — an agent allowed `gmail_*` could send embarrassing emails. Tool policy can't distinguish "send routine reply" from "send angry rant to boss." A supervisory review step could.
+- **Cost-sensitive operations** — if an agent triggers an expensive LLM chain or sends 50 messages in a loop.
+- **Human-in-the-loop for production** — "Agent wants to send this email, approve?" before actual delivery.
+
+### Ishi Verdict
+
+When agents do real autonomous work (sending emails, modifying files), consider adding a lightweight **approval gate** — but it doesn't need to be a full LLM agent like Ishi. A rule-based pre-flight check (is this a destructive tool? is the message unusually long? has this agent sent >N messages this hour?) would be cheaper and more deterministic.
+
+---
+
+## Deep Dive: Heartbeat
+
+### How It Works in OpenClaw
+
+Every N minutes (default 30), the gateway sends the agent a "wake up" prompt. The agent reads a `HEARTBEAT.md` checklist from its workspace and checks for pending tasks — new emails, calendar events, CI failures, etc. If nothing needs attention, it replies `HEARTBEAT_OK` (silently suppressed). If something is urgent, it sends an alert to the user.
+
+**Key configuration:**
+
+- Interval: `30m` default (extends to `1h` with Anthropic OAuth)
+- Active hours: restrict to e.g. 09:00–22:00 with timezone
+- Per-agent: if any agent specifies heartbeat, only those agents run it
+- Delivery: `target: "last"` (last active channel), `"none"` (silent), or explicit channel
+- Cost optimization: if `HEARTBEAT.md` is empty, execution is skipped entirely
+
+**Two-tier cost optimization pattern:**
+
+- **Tier 1 (free)** — Lightweight rule-based checks via shell scripts/API calls: "Is the repo dirty? Are there open PRs? Did a job fail?" If nothing changed, output `HEARTBEAT_OK`.
+- **Tier 2 (paid)** — Only when Tier 1 detects changes, invoke an LLM to summarize alerts and recommend actions.
+
+### Do We Need Heartbeat?
+
+**No.** We already have the core capability, structured differently:
+
+| Capability | Annabelle (Inngest) | OpenClaw Heartbeat |
+| --- | --- | --- |
+| Periodic checks | Cron jobs (configurable schedule, timezone-aware) | Gateway heartbeat prompt every Nm |
+| Proactive actions | Cron triggers tool calls via Orchestrator | Agent reads HEARTBEAT.md, runs tools |
+| Notifications | Cron jobs send Telegram messages directly | Agent sends to last active channel |
+| Cost model | Tool calls only, **no LLM token cost** | Full LLM turn every heartbeat ($5-30/day on Opus) |
+
+Our Inngest cron jobs are **code-driven** (deterministic, free, no LLM tokens). OpenClaw's heartbeat is **LLM-driven** (flexible, expensive, can reason about what to check).
+
+### Pros of Adding Heartbeat
+
+1. **Flexible task discovery** — Instead of hardcoding "check email every hour" as a cron job, the agent decides what to check based on context. It might notice "user mentioned a meeting at 3pm" and proactively remind them.
+2. **Unified checklist** — One `HEARTBEAT.md` file instead of multiple cron job definitions. Easier for users to edit.
+3. **Context-aware** — The agent has conversation history, so it can prioritize checks based on what it knows about the user's current activity.
+
+### Cons of Adding Heartbeat
+
+1. **Token cost** — Every heartbeat is a full LLM turn. At 30min intervals, that's 48 turns/day per agent. With Groq it's cheap, but with cloud models it adds up fast.
+2. **Latency** — An LLM call to "check if anything needs doing" takes 2-5 seconds. Our Inngest cron fires instantly.
+3. **Unreliability** — LLM might forget to check something, hallucinate an alert, or misinterpret the checklist. Cron jobs are deterministic.
+4. **We already have the infrastructure** — Inngest cron + Orchestrator tool calls covers the same ground without LLM overhead.
+
+### Heartbeat Verdict
+
+Not needed now. If we want the "flexible reasoning about what to check" capability later, the cheapest path would be a **hybrid approach**:
+
+1. Add an Inngest cron job that runs every 30min
+2. It does cheap checks first (new emails? unread Telegram messages? upcoming calendar?)
+3. Only if something changed, dispatch to a Thinker agent for LLM-powered summarization
+
+This gives the two-tier pattern without the always-on LLM cost.
+
+---
+
 ## Missing / To Improve
 
 | Priority | Item | Notes |
