@@ -599,7 +599,17 @@ export class Orchestrator {
       );
     } else {
       this.logger.error(`Agent processing failed: ${result.error}`);
-      // Do NOT send error messages to chat — prevents feedback loops
+      // Send brief error notification — ChannelPoller filters by botUserId + botMessagePatterns
+      if (msg.channel === 'telegram') {
+        try {
+          await this.toolRouter.routeToolCall('telegram_send_message', {
+            chat_id: msg.chatId,
+            message: `Sorry, I couldn't complete that request. Please try again.`,
+          });
+        } catch {
+          // Best-effort notification
+        }
+      }
     }
   }
 

@@ -52,6 +52,7 @@ export class ChannelPoller {
     'rate limit issue cannot be resolved',
     'Invalid API Key',
     'I was unable to generate a response',
+    "Sorry, I couldn't complete that request",
   ];
 
   // Callback for dispatching discovered messages

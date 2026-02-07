@@ -48,6 +48,7 @@ export const ConfigSchema = z.object({
 
   // Orchestrator connection
   orchestratorUrl: z.string().url().default('http://localhost:8000'),
+  orchestratorTimeout: z.number().int().min(1000).default(30_000),
 
   // Thinker HTTP server
   thinkerPort: z.number().int().min(1).max(65535).default(8006),
@@ -120,6 +121,7 @@ export function loadConfig(): Config {
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
     ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2',
     orchestratorUrl: process.env.ORCHESTRATOR_URL || 'http://localhost:8000',
+    orchestratorTimeout: parseInteger(process.env.ORCHESTRATOR_TIMEOUT, 30000),
     thinkerPort: parseInteger(process.env.THINKER_PORT, 8006),
     sendResponseDirectly: parseBoolean(process.env.THINKER_SEND_RESPONSE_DIRECTLY, false),
     thinkerAgentId: process.env.THINKER_AGENT_ID || 'thinker',

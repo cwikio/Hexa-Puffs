@@ -18,11 +18,13 @@ import type {
 export class OrchestratorClient {
   private baseUrl: string;
   private agentId: string;
+  private timeout: number;
   private tools: Map<string, OrchestratorTool> = new Map();
 
   constructor(config: Config) {
     this.baseUrl = config.orchestratorUrl;
     this.agentId = config.thinkerAgentId;
+    this.timeout = config.orchestratorTimeout;
   }
 
   /**
@@ -45,6 +47,7 @@ export class OrchestratorClient {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(this.timeout),
     });
 
     if (!response.ok) {

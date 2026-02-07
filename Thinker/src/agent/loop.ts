@@ -347,6 +347,8 @@ export class Agent {
       const llmStartTime = Date.now();
 
       // Generate response using ReAct pattern (no retries to prevent runaway costs)
+      // 90s timeout leaves buffer within ThinkerClient's 120s limit
+      const agentAbort = AbortSignal.timeout(90_000);
       let result;
       let usedTextOnlyFallback = false;
       try {
@@ -356,6 +358,7 @@ export class Agent {
           messages: [...context.conversationHistory, { role: 'user', content: message.text }],
           tools: this.tools,
           maxSteps: 8,
+          abortSignal: agentAbort,
         });
       } catch (toolError) {
         // If function calling fails (malformed JSON from model), retry with tools once, then fallback
@@ -375,6 +378,7 @@ export class Agent {
               messages: [...context.conversationHistory, { role: 'user', content: message.text }],
               tools: this.tools,
               maxSteps: 8,
+              abortSignal: agentAbort,
             });
           } catch (retryError) {
             // Second attempt also failed - fall back to text-only with modified prompt
@@ -393,6 +397,7 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
               model: this.modelFactory.getModel(),
               system: textOnlyPrompt,
               messages: [...context.conversationHistory, { role: 'user', content: message.text }],
+              abortSignal: agentAbort,
             });
             usedTextOnlyFallback = true;
           }
@@ -636,6 +641,7 @@ Complete the task step by step, using your available tools. When done, provide a
         messages: [{ role: 'user', content: taskInstructions }],
         tools: this.tools,
         maxSteps,
+        abortSignal: AbortSignal.timeout(90_000),
       });
 
       // Record token usage in cost monitor
