@@ -9,6 +9,7 @@ console.log = () => {};
 import { createServer } from "./server.js";
 import { startTransport } from "@mcp/shared/Transport/dual-transport.js";
 import {
+  allTools,
   handleSendMessage,
   handleGetMessages,
   handleSearchMessages,
@@ -58,6 +59,11 @@ async function main() {
     transport: transport as "stdio" | "sse" | "http",
     port,
     serverName: "telegram-mcp",
+    tools: allTools.map(({ tool }) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    })),
     onToolCall: async (name: string, args: unknown) => {
       const handler = toolHandlers[name];
       if (!handler) {

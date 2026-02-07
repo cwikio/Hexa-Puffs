@@ -39,6 +39,11 @@ async function main(): Promise<void> {
     transport: config.transport as "stdio" | "sse" | "http",
     port: config.port,
     serverName: "gmail-mcp",
+    tools: allTools.map(({ tool }) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    })),
     onHealth: () => ({
       hasToken: hasValidToken(),
       toolCount: allTools.length,

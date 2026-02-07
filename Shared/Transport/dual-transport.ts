@@ -15,6 +15,12 @@ interface MCPServer {
   connect(transport: unknown): Promise<void>;
 }
 
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: unknown;
+}
+
 export interface TransportConfig {
   /** Transport type: 'stdio' (default) or 'sse'/'http' */
   transport: 'stdio' | 'sse' | 'http';
@@ -26,6 +32,8 @@ export interface TransportConfig {
   onHealth?: () => Record<string, unknown>;
   /** Optional: Tool call handler for /tools/call endpoint (for testing) */
   onToolCall?: (name: string, args: unknown) => Promise<unknown>;
+  /** Optional: Tool definitions for /tools/list endpoint (required for HTTP MCPs) */
+  tools?: ToolDefinition[];
   /** Optional: Shutdown callback */
   onShutdown?: () => void | Promise<void>;
   /** Optional: Custom logger (defaults to console.error) */
@@ -148,6 +156,14 @@ export async function startTransport(
       return;
     }
 
+    // Tool listing endpoint for HTTP MCP discovery
+    if (req.url === '/tools/list' && req.method === 'GET') {
+      const tools = config.tools ?? [];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ tools }));
+      return;
+    }
+
     // Not found
     res.writeHead(404);
     res.end('Not found');
@@ -160,6 +176,9 @@ export async function startTransport(
       log('  GET  /health - Health check');
       log('  GET  /sse    - SSE connection');
       log('  POST /message - SSE messages');
+      if (config.tools && config.tools.length > 0) {
+        log(`  GET  /tools/list - List available tools (${config.tools.length} tools)`);
+      }
       if (config.onToolCall) {
         log('  POST /tools/call - Direct tool calls');
       }
