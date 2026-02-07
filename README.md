@@ -38,17 +38,17 @@ to ad mcps cmd shift g and then ~/Library/Application Support/Claude/claude_desk
 
 ### Phase 1: MCP-First Architecture (Current)
 
-The current architecture uses **Orchestrator as a protocol bridge**:
+The current architecture uses **Orchestrator as an agent router and protocol bridge**:
 
 - **Claude Desktop/Code** connects via MCP stdio protocol
-- **Thinker** (autonomous AI agent) connects via HTTP REST API
+- **Thinker agents** are spawned and managed by Orchestrator's AgentManager
+- **Orchestrator** polls channels (Telegram), routes messages to the correct agent, enforces per-agent tool policies
 - **Downstream MCPs** are spawned by Orchestrator via stdio (no separate HTTP ports)
 
 ```mermaid
 flowchart TB
     subgraph UI["User Interface Layer"]
         Claude["Claude Desktop / Claude Code"]
-        Thinker["Thinker<br/>:8006<br/>(Autonomous AI Agent)"]
     end
 
     subgraph Orchestrator["Orchestrator MCP Server (:8010)"]
@@ -56,10 +56,21 @@ flowchart TB
         Tools["65+ Tools (passthrough)<br/>send_message, store_fact, send_email, etc."]
         Security["Security Coordinator<br/>(Guardian integration)"]
         HTTPAPI["HTTP REST API<br/>/tools/list, /tools/call"]
+        subgraph MultiAgent["Multi-Agent Layer"]
+            ChannelPoller["ChannelPoller<br/>(polls Telegram)"]
+            MsgRouter["MessageRouter<br/>(channel bindings)"]
+            AgentMgr["AgentManager<br/>(spawns + monitors)"]
+        end
         subgraph Jobs["Inngest Job System"]
             Cron["Cron Jobs"]
             Background["Background Tasks"]
         end
+    end
+
+    subgraph Agents["Thinker Agent Instances (spawned by Orchestrator)"]
+        Agent1["Thinker :8006<br/>(default agent)"]
+        Agent2["Thinker :8016<br/>(work agent)"]
+        AgentN["Thinker :801N<br/>(...)"]
     end
 
     subgraph MCPs["Downstream MCP Servers (spawned via stdio)"]
@@ -88,8 +99,11 @@ flowchart TB
     end
 
     Claude -->|"MCP Protocol (stdio)"| Orchestrator
-    Thinker -->|"HTTP REST API"| HTTPAPI
-    Thinker -->|"API calls"| LLM
+    ChannelPoller -->|"polls via ToolRouter"| Telegram
+    MsgRouter -->|"routes messages"| AgentMgr
+    AgentMgr -->|"HTTP POST /process-message"| Agents
+    Agents -->|"HTTP REST API"| HTTPAPI
+    Agents -->|"API calls"| LLM
     Orchestrator -->|stdio| Guardian
     Orchestrator -->|stdio| OnePass
     Orchestrator -->|stdio| Telegram
@@ -111,16 +125,13 @@ flowchart TB
 ┌─────────────────────────────────────────────────────────────────┐
 │                      USER INTERFACE LAYER                        │
 │                                                                  │
-│  ┌─────────────────────────┐    ┌─────────────────────────┐     │
-│  │  Claude Desktop/Code    │    │       THINKER           │     │
-│  │                         │    │      (:8006)            │     │
-│  │  (MCP client)           │    │  (Autonomous AI Agent)  │     │
-│  └───────────┬─────────────┘    └───────────┬─────────────┘     │
-│              │ stdio                        │ HTTP               │
-└──────────────┼──────────────────────────────┼───────────────────┘
-               │                              │
-               └──────────────┬───────────────┘
-                              ↓
+│  ┌─────────────────────────┐                                    │
+│  │  Claude Desktop/Code    │                                    │
+│  │  (MCP client)           │                                    │
+│  └───────────┬─────────────┘                                    │
+│              │ stdio                                            │
+└──────────────┼──────────────────────────────────────────────────┘
+               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │                   ORCHESTRATOR MCP SERVER (:8010)                │
 │                                                                  │
@@ -128,6 +139,22 @@ flowchart TB
 │  MCP stdio: Standard MCP protocol for Claude Desktop            │
 │                                                                  │
 │  65+ Tools (passthrough): send_message, store_fact, create_file │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  Multi-Agent Layer                                        │   │
+│  │  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐  │   │
+│  │  │ ChannelPoller │ │ MessageRouter │ │ AgentManager  │  │   │
+│  │  │ (polls TG)    │ │ (bindings)    │ │ (spawn/monitor│  │   │
+│  │  └───────────────┘ └───────────────┘ └───────┬───────┘  │   │
+│  └──────────────────────────────────────────────┼───────────┘   │
+│                                                  ↓               │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  THINKER AGENTS (spawned by AgentManager)                 │   │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐      │   │
+│  │  │  Default     │ │  Work Agent  │ │  Agent N     │      │   │
+│  │  │  (:8006)     │ │  (:8016)     │ │  (:801N)     │      │   │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘      │   │
+│  └──────────────────────────────────────────────────────────┘   │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    Inngest Job System                     │   │
@@ -201,12 +228,12 @@ The architecture supports **multiple AI backends** interchangeably:
 
 ### Phase 1: MCP Client Applications
 
-| Application        | AI Model              | Connection | Notes                              |
-| ------------------ | --------------------- | ---------- | ---------------------------------- |
-| **Claude Desktop** | Claude (cloud)        | MCP stdio  | Best tool use, paid                |
-| **Claude Code**    | Claude (cloud)        | MCP stdio  | Terminal-based                     |
-| **Thinker**        | Groq/LM Studio/Ollama | HTTP REST  | Autonomous agent, configurable LLM |
-| **LM Studio**      | Local models          | MCP stdio  | Free, private, variable quality    |
+| Application        | AI Model               | Connection      | Notes                                  |
+| ------------------ | ---------------------- | --------------- | -------------------------------------- |
+| **Claude Desktop** | Claude (cloud)         | MCP stdio       | Best tool use, paid                    |
+| **Claude Code**    | Claude (cloud)         | MCP stdio       | Terminal-based                         |
+| **Thinker agents** | Groq/LM Studio/Ollama  | Spawned by Orch | Per-agent LLM config, passive runtime  |
+| **LM Studio**      | Local models           | MCP stdio       | Free, private, variable quality        |
 
 All can connect to the Orchestrator and use your tools.
 
@@ -271,29 +298,18 @@ The orchestrator's core logic works with ANY model:
 
 **Specification:** `Orchestrator/ORCHESTRATION_LAYER_SPEC.md`
 
-The orchestrator is itself an **MCP server** that Claude Desktop/Code connects to. It exposes high-level tools and internally coordinates all other MCP servers.
-
-**Phase 1 (MCP Server):**
-
-- Claude Desktop/Code is the UI
-- Claude is the AI brain
-- Orchestrator provides tools to Claude
-- Tools internally coordinate security, memory, and other MCPs
-
-**Phase 2 (REST API - Future):**
-
-- Add custom web UI alongside Claude Desktop
-- REST API calls Claude API directly
-- Same core logic, new interface
+The orchestrator is itself an **MCP server** that Claude Desktop/Code connects to. It exposes high-level tools, manages multiple Thinker agent instances, and internally coordinates all other MCP servers.
 
 **Key Responsibilities:**
 
-- Expose passthrough tools to Claude (original MCP tool names like send_message, store_fact, create_file)
+- **Agent routing** - Spawns Thinker instances via AgentManager, routes incoming messages to the correct agent via MessageRouter
+- **Channel polling** - Polls Telegram for new messages via ChannelPoller (replaces Thinker's old direct polling)
+- **Tool policy enforcement** - Per-agent `allowedTools`/`deniedTools` glob patterns filter which tools each agent can use
+- **Per-agent Guardian overrides** - Agent-specific input/output scan flags merged on top of global defaults
+- Expose passthrough tools to Claude (original MCP tool names like `send_message`, `store_fact`, `create_file`)
 - Auto-discover tools from downstream MCPs via ToolRouter
 - Security enforcement via Guardian MCP
-- Memory coordination via Memory MCP
-- Tool execution via downstream MCPs
-- Session management
+- Session management (scoped by agentId)
 
 ### Memory MCP
 
@@ -377,33 +393,36 @@ Email management via Gmail API with OAuth2 authentication. Runs as an independen
 - Optional Telegram notifications for new emails
 - HTTP transport (not spawned by Orchestrator)
 
-### Thinker (Autonomous AI Agent)
+### Thinker (Agent Runtime)
 
 **Status:** ✅ Implemented
 **Specification:** `Thinker/ARCHITECTURE.md`
 
-Standalone AI reasoning engine that processes Telegram messages autonomously using LLM providers (Groq, LM Studio, Ollama).
+Passive AI reasoning engine that receives messages from Orchestrator via HTTP and processes them using LLM providers (Groq, LM Studio, Ollama). Orchestrator spawns one Thinker process per agent definition.
 
 **Key Features:**
 
-- **Dual connection** - Direct HTTP to Telegram MCP (:8002) for messaging, Orchestrator (:8010) for all other tools
-- **LLM abstraction** - Supports Groq (cloud), LM Studio (local), Ollama (local)
+- **Passive runtime** - Receives messages via `POST /process-message` from Orchestrator, returns responses (does not poll or send directly)
+- **LLM abstraction** - Supports Groq (cloud), LM Studio (local), Ollama (local), configurable per agent
 - **ReAct agent loop** - Multi-step reasoning with tool use via Vercel AI SDK (`maxSteps: 2`)
-- **Chat auto-discovery** - Calls `list_chats` to find private chats, always excludes bot's own Saved Messages
-- **Context management** - Loads persona and facts from Memory MCP
-- **Cost safeguards** - Timestamp filter (last 2 min only), per-cycle cap (3 messages), hardened circuit breaker, rate limiting
+- **Config-driven personality** - System prompt loaded from file path provided by Orchestrator at spawn
+- **Context management** - Loads persona and facts from Memory MCP via Orchestrator's tool API
+- **Per-agent tool filtering** - Discovers only tools allowed by agent's policy (via `agentId` query param)
 
 **Architecture:**
 
 ```
-Thinker (:8006) ──HTTP──→ Telegram MCP (:8002)    [direct: polling + sending]
+Orchestrator (:8010)
      │
-     ├──HTTP──→ Orchestrator (:8010) ──stdio──→ Memory, Filer, Guardian, etc.
-     │
-     └──→ LLM Provider (Groq/LM Studio/Ollama)
+     ├── spawns ──→ Thinker :8006 (default agent)
+     ├── spawns ──→ Thinker :8016 (work agent)
+     └── spawns ──→ Thinker :801N (...)
+                        │
+                        ├──HTTP──→ Orchestrator /tools/call (all tool access)
+                        └──→ LLM Provider (Groq/LM Studio/Ollama)
 ```
 
-**Port:** 8006
+**Default Port:** 8006 (each additional agent gets its own port)
 
 ### Inngest Job System
 
@@ -490,31 +509,36 @@ Execute tool calls via handler
 Execution complete
 ```
 
-### Pattern 3: Real-Time Telegram Message Flow (via Thinker)
+### Pattern 3: Real-Time Telegram Message Flow (via Orchestrator)
 
 ```mermaid
 sequenceDiagram
     participant User as Telegram User
     participant TG as Telegram Servers
     participant GramJS as GramJS Client (Telegram MCP)
+    participant Orch as Orchestrator
+    participant Router as MessageRouter
     participant Thinker as Thinker Agent
-    participant Orchestrator
-    participant Tools as MCP Tools (Memory, Filer, etc.)
 
     User->>TG: Sends message
     TG->>GramJS: MTProto update (instant)
     GramJS->>GramJS: Queue message
 
-    loop Every 10 seconds (Thinker poll)
-        Thinker->>GramJS: get_messages (direct HTTP)
-        GramJS-->>Thinker: Recent messages
-        Thinker->>Thinker: Filter (skip own, old, duplicates, max 3/cycle)
+    loop Every 10 seconds (ChannelPoller)
+        Orch->>GramJS: get_messages (via ToolRouter)
+        GramJS-->>Orch: Recent messages
+        Orch->>Orch: Filter (skip own, old, duplicates, max 3/cycle)
+        Orch->>Router: resolveAgents(channel, chatId)
+        Router-->>Orch: agentId
+        Orch->>Thinker: POST /process-message
         Thinker->>Thinker: LLM generates response (Groq, maxSteps: 2)
         opt Tool calls needed
-            Thinker->>Orchestrator: Call MCP tools
-            Orchestrator-->>Thinker: Tool results
+            Thinker->>Orch: GET /tools/list, POST /tools/call
+            Orch->>Orch: Enforce tool policy for agentId
+            Orch-->>Thinker: Tool results
         end
-        Thinker->>GramJS: send_message (direct HTTP)
+        Thinker-->>Orch: Response
+        Orch->>GramJS: send_message (via ToolRouter)
     end
 ```
 
@@ -525,22 +549,26 @@ Telegram User sends message
        ↓
 Telegram Servers (MTProto)
        ↓ (instant)
-GramJS NewMessage Event Handler (Telegram MCP :8002)
+GramJS NewMessage Event Handler (Telegram MCP, spawned via stdio)
        ↓
-Thinker polls get_messages (direct HTTP, every 10s)
+Orchestrator ChannelPoller polls get_messages (every 10s via ToolRouter)
        ↓
 Filter: skip bot's own messages, old messages (>2min), duplicates, max 3/cycle
        ↓
+MessageRouter resolves agentId from channel bindings
+       ↓
+POST /process-message to correct Thinker instance
+       ↓
 LLM processes message (Groq, maxSteps: 2)
        ↓ (if tools needed)
-Orchestrator routes tool calls to downstream MCPs
+Thinker calls Orchestrator /tools/call (policy-filtered per agent)
        ↓
-Thinker sends response via send_message (direct HTTP to Telegram MCP)
+Orchestrator sends response via send_message (ToolRouter → Telegram MCP)
 ```
 
-**Chat Discovery:** Thinker auto-discovers private chats via `list_chats`, excluding bot's own Saved Messages. Subscriptions refresh every 5 minutes.
+**Chat Discovery:** Orchestrator's ChannelPoller auto-discovers private chats via `list_chats`, excluding bot's own Saved Messages. Subscriptions refresh every 5 minutes.
 
-**Note:** Inngest also polls Telegram (every 60s) to store messages in Memory MCP for history, but Thinker handles all real-time responses.
+**Note:** Inngest also polls Telegram (every 60s) to store messages in Memory MCP for history, but the ChannelPoller handles all real-time responses.
 
 ### Pattern 4: Webhook Event Flow (Future)
 
@@ -564,49 +592,61 @@ Acknowledge webhook
 
 ## Agent Architecture
 
-### Phase 1: Single Agent (MVP)
+### Multi-Agent System (Implemented)
 
-One general-purpose agent called **"main"** handles all requests.
+Orchestrator spawns and manages multiple Thinker instances, each with its own LLM config, system prompt, tool permissions, and channel bindings.
 
+**Agent Configuration** (`agents.json`):
+
+```json
+{
+  "agents": [
+    {
+      "agentId": "annabelle",
+      "port": 8006,
+      "llmProvider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "systemPrompt": "You are Annabelle, a personal assistant...",
+      "allowedTools": ["*"],
+      "maxSteps": 5
+    },
+    {
+      "agentId": "work-assistant",
+      "port": 8016,
+      "llmProvider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "systemPrompt": "You are a professional work assistant...",
+      "allowedTools": ["gmail_*", "filer_*", "web_search"],
+      "deniedTools": ["telegram_*"],
+      "maxSteps": 3
+    }
+  ],
+  "bindings": [
+    { "channel": "telegram", "chatId": "12345", "agentId": "work-assistant" },
+    { "channel": "telegram", "chatId": "*", "agentId": "annabelle" }
+  ]
+}
 ```
-Agent: main
-├── Model: Claude Sonnet 4
-├── MCP Access: All servers
-├── Memory Scope: Global
-└── Capabilities: All tasks (code, research, communication, general)
-```
 
-**Why single agent first:**
+**How It Works:**
 
-- Simpler to build and debug
-- Proves orchestration works correctly
-- Easier to understand behavior
-- Foundation for multi-agent future
+1. **AgentManager** spawns one Thinker process per agent definition, passing env vars for port, LLM config, system prompt path, and agent ID
+2. **ChannelPoller** polls Telegram for new messages via the ToolRouter
+3. **MessageRouter** resolves which agent handles each message based on channel bindings (exact match → wildcard → default agent)
+4. Orchestrator dispatches the message to the correct Thinker via `POST /process-message`
+5. Thinker runs its ReAct loop, calling tools back through Orchestrator's `/tools/call` endpoint
+6. Orchestrator enforces **tool policy** — each agent only sees tools matching its `allowedTools`/`deniedTools` globs
+7. Orchestrator sends the response back to Telegram via the ToolRouter
 
-### Future: Multi-Agent Architecture
+**Single-Agent Fallback:** If no `agents.json` is configured, Orchestrator falls back to connecting to a single Thinker at `THINKER_URL` — identical to pre-multi-agent behavior.
 
-The system is **designed** for multiple specialized agents, but this is deferred.
+**Key Components:**
 
-```
-Planned Agents:
-├── main      → General coordinator, handles routing
-├── coder     → Technical specialist, code generation
-├── researcher → Deep analysis, information synthesis
-├── secretary → Communications, scheduling, contacts
-└── guardian  → Security monitoring (always-on observer)
-
-Agent Selection:
-├── Explicit: User says "@coder help me with Python"
-├── Automatic: System classifies intent and routes
-└── Delegation: Main agent consults specialists
-```
-
-**Architecture Readiness:**
-
-- Memory MCP supports per-agent memory scopes
-- Orchestrator config supports multiple agent definitions
-- Shared user profile across agents
-- Agent isolation with selective sharing
+- `AgentManager` — spawns processes, monitors health, auto-restarts crashed agents
+- `ChannelPoller` — polls Telegram via ToolRouter, deduplicates messages
+- `MessageRouter` — resolves `(channel, chatId)` → `agentId` via config-driven bindings
+- `ToolRouter.isToolAllowed()` — glob-based allow/deny filtering per agent
+- `getEffectiveScanFlags(agentId)` — per-agent Guardian scan overrides
 
 ---
 
@@ -716,12 +756,13 @@ Layer 6: Credential Separation
 
 **How it works:**
 
-- Orchestrator acts as a **protocol bridge**:
+- Orchestrator acts as an **agent router and protocol bridge**:
   - Accepts MCP stdio from Claude Desktop/Code
-  - Accepts HTTP REST from Thinker
+  - Spawns and manages Thinker agent instances via AgentManager
+  - Polls Telegram via ChannelPoller, routes messages to agents via MessageRouter
   - Spawns downstream MCPs via stdio (Guardian, Telegram, 1Password, Memory, Filer)
   - Connects to independent HTTP MCP services (Searcher :8007, Gmail :8008)
-- Thinker processes Telegram messages autonomously using Groq/LM Studio/Ollama
+- Thinker instances receive messages from Orchestrator, process via LLM, return responses
 - Inngest handles scheduled and background tasks
 
 **Key Files:**
@@ -764,11 +805,11 @@ Layer 6: Credential Separation
 
 **Add:**
 
-- Multi-agent support (coder, researcher, secretary)
+- ✅ Multi-agent support - Orchestrator spawns multiple Thinker instances with per-agent config, channel bindings, tool policies, and Guardian overrides
 - Obsidian workspace integration
 - ✅ Workflow engine (Inngest) - Complete
 - ✅ Scheduled tasks (Inngest cron) - Complete
-- ✅ Real-time Telegram messages - Complete
+- ✅ Real-time Telegram messages - Complete (now via Orchestrator's ChannelPoller)
 
 ---
 
@@ -799,7 +840,7 @@ Layer 6: Credential Separation
 - Examples: `security-mcp`, `memory-mcp`, `telegram-mcp`
 - **Ports (new architecture):**
   - Orchestrator HTTP: 8010
-  - Thinker: 8006
+  - Thinker default agent: 8006 (additional agents get their own ports)
   - Searcher HTTP: 8007
   - Gmail HTTP: 8008
   - Inngest Dev Server: 8288
@@ -809,9 +850,9 @@ Layer 6: Credential Separation
 
 ### Agents
 
-- Format: lowercase single word
-- Examples: `main`, `coder`, `researcher`
-- Reserved: `guardian` (security observer)
+- Format: lowercase, kebab-case
+- Examples: `annabelle`, `work-assistant`, `code-reviewer`
+- Configured in `agents.json` with per-agent port, LLM config, system prompt, tool policy
 
 ### Configuration Files
 
@@ -827,16 +868,16 @@ Layer 6: Credential Separation
 
 ## Key Design Decisions
 
-| Decision              | Choice             | Rationale                                                   |
-| --------------------- | ------------------ | ----------------------------------------------------------- |
-| MCP vs monolith       | MCP architecture   | Modularity, replaceability, security isolation              |
-| Single vs multi-user  | Single user        | Simpler, personal assistant focus                           |
-| AI model              | **Model-agnostic** | Works with Claude, LM Studio, Ollama, any OpenAI-compatible |
-| Default AI            | User choice        | Claude (quality) OR LM Studio (privacy/free)                |
-| Vector DB initially   | No                 | Simplicity first, add later if needed                       |
-| Memory transparency   | Yes                | User control over what AI knows                             |
-| Obsidian integration  | Deferred           | Nice-to-have, not core                                      |
-| Multi-agent initially | No                 | Single agent MVP, architecture ready                        |
+| Decision             | Choice                | Rationale                                                    |
+| -------------------- | --------------------- | ------------------------------------------------------------ |
+| MCP vs monolith      | MCP architecture      | Modularity, replaceability, security isolation               |
+| Single vs multi-user | Single user           | Simpler, personal assistant focus                            |
+| AI model             | **Model-agnostic**    | Works with Claude, LM Studio, Ollama, any OpenAI-compatible  |
+| Default AI           | User choice           | Claude (quality) OR LM Studio (privacy/free)                 |
+| Vector DB initially  | No                    | Simplicity first, add later if needed                        |
+| Memory transparency  | Yes                   | User control over what AI knows                              |
+| Obsidian integration | Deferred              | Nice-to-have, not core                                       |
+| Multi-agent          | **Yes (implemented)** | Orchestrator spawns agents, routes messages, enforces policy |
 
 ---
 

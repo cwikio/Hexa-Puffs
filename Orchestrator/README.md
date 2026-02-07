@@ -1,61 +1,66 @@
 # Annabelle Orchestrator MCP
 
-The central orchestration layer for Annabelle AI Assistant. The Orchestrator acts as a **protocol bridge** that:
+The central orchestration layer for Annabelle AI Assistant. The Orchestrator acts as an **agent router and protocol bridge** that:
 
 - Accepts MCP stdio connections from Claude Desktop/Code
-- Accepts HTTP REST API calls from Thinker (autonomous AI agent)
+- Spawns and manages multiple Thinker agent instances (multi-agent)
+- Polls Telegram channels and dispatches messages to agents via channel bindings
+- Enforces per-agent tool policies (allow/deny glob patterns)
 - Spawns and manages downstream MCPs via stdio
 - Connects to independent HTTP MCP services (Searcher, Gmail)
 
 ## Architecture
 
 ```
-┌─────────────────────────┐    ┌─────────────────────────┐
-│   Claude Desktop/Code   │    │        THINKER          │
-│                         │    │        (:8006)          │
-│   (MCP client)          │    │  (Autonomous AI Agent)  │
-└───────────┬─────────────┘    └───────────┬─────────────┘
-            │ stdio                        │ HTTP
-            └──────────────┬───────────────┘
-                           ↓
-┌─────────────────────────────────────────────────────────┐
-│              ORCHESTRATOR MCP (:8010)                    │
-│                                                          │
-│  HTTP REST API:                                          │
-│  - GET  /health         Health check                     │
-│  - GET  /tools/list     List all available tools         │
-│  - POST /tools/call     Execute a tool                   │
-│                                                          │
-│  MCP stdio:                                              │
-│  - Standard MCP protocol for Claude Desktop              │
-│                                                          │
-│  65+ Tools (passthrough from downstream MCPs):           │
-│  - send_message, list_chats (Telegram)                   │
-│  - store_fact, list_facts, get_profile (Memory)          │
-│  - create_file, read_file, list_files (Filer)            │
-│  - get_item, list_vaults (1Password)                     │
-│  - scan_content (Guardian)                               │
-│  - web_search, news_search (Searcher)                    │
-│  - list_emails, send_email, reply_email (Gmail)          │
-│  - get_status (built-in)                                 │
-└──────────────┬──────────────────────────┬───────────────┘
-               │ stdio (spawns children)  │ HTTP
-               ↓                          ↓
-┌──────────────────────────────┐ ┌────────────────────────┐
-│  STDIO MCP SERVERS (spawned) │ │  HTTP MCP SERVICES     │
-│  ┌────────┐ ┌────────┐      │ │  ┌──────────┐          │
-│  │Guardian│ │Telegram│      │ │  │ Searcher │          │
-│  │(stdio) │ │(stdio) │      │ │  │ (:8007)  │          │
-│  └────────┘ └────────┘      │ │  └──────────┘          │
-│  ┌────────┐ ┌────────┐      │ │  ┌──────────┐          │
-│  │1Pass   │ │ Filer  │      │ │  │  Gmail   │          │
-│  │(stdio) │ │(stdio) │      │ │  │ (:8008)  │          │
-│  └────────┘ └────────┘      │ │  └──────────┘          │
-│  ┌────────┐                  │ │                        │
-│  │Memory  │                  │ │                        │
-│  │(stdio) │                  │ │                        │
-│  └────────┘                  │ │                        │
-└──────────────────────────────┘ └────────────────────────┘
+┌─────────────────────────┐
+│   Claude Desktop/Code   │
+│   (MCP client)          │
+└───────────┬─────────────┘
+            │ stdio
+            ↓
+┌───────────────────────────────────────────────────────────────────┐
+│                   ORCHESTRATOR MCP (:8010)                         │
+│                                                                    │
+│  HTTP REST API: /health, /tools/list, /tools/call                 │
+│  MCP stdio: Standard MCP protocol for Claude Desktop              │
+│  65+ Tools (passthrough from downstream MCPs)                     │
+│                                                                    │
+│  ┌───────────────────────────────────────────────────────────┐    │
+│  │               MULTI-AGENT LAYER                            │    │
+│  │                                                            │    │
+│  │  ChannelPoller ──→ MessageRouter ──→ AgentManager          │    │
+│  │  (polls Telegram)  (channel→agent)  (spawn/health/restart) │    │
+│  │                                                            │    │
+│  │  Per-agent tool policies (allowedTools / deniedTools)      │    │
+│  │  Per-agent Guardian scan overrides                         │    │
+│  └───────────────────────────────┬───────────────────────────┘    │
+│                                  │ HTTP dispatch                   │
+│                        ┌─────────┼─────────┐                      │
+│                        ↓                   ↓                      │
+│                   ┌─────────┐         ┌─────────┐                 │
+│                   │ Thinker │         │ Thinker │  ...             │
+│                   │ :8006   │         │ :8007   │                  │
+│                   │ agent-1 │         │ agent-2 │                  │
+│                   └─────────┘         └─────────┘                 │
+│                                                                    │
+└───────────────┬──────────────────────────────┬────────────────────┘
+                │ stdio (spawns children)       │ HTTP
+                ↓                               ↓
+┌──────────────────────────────────┐  ┌────────────────────────┐
+│  STDIO MCP SERVERS (spawned)     │  │  HTTP MCP SERVICES     │
+│  ┌────────┐ ┌────────┐          │  │  ┌──────────┐          │
+│  │Guardian│ │Telegram│          │  │  │ Searcher │          │
+│  │(stdio) │ │(stdio) │          │  │  │ (:8007)  │          │
+│  └────────┘ └────────┘          │  │  └──────────┘          │
+│  ┌────────┐ ┌────────┐          │  │  ┌──────────┐          │
+│  │1Pass   │ │ Filer  │          │  │  │  Gmail   │          │
+│  │(stdio) │ │(stdio) │          │  │  │ (:8008)  │          │
+│  └────────┘ └────────┘          │  │  └──────────┘          │
+│  ┌────────┐                      │  │                        │
+│  │Memory  │                      │  │                        │
+│  │(stdio) │                      │  │                        │
+│  └────────┘                      │  │                        │
+└──────────────────────────────────┘  └────────────────────────┘
 ```
 
 ## Quick Start
@@ -77,10 +82,9 @@ cp .env.example .env
 
 The recommended way to start everything is using the launch script, which starts:
 
-- Orchestrator (port 8010) - spawns stdio MCPs, connects to HTTP MCPs
+- Orchestrator (port 8010) - spawns stdio MCPs, connects to HTTP MCPs, spawns Thinker agents
 - Searcher (port 8007) - web search (must be started separately)
 - Gmail (port 8008) - email management (must be started separately)
-- Thinker (port 8006) - autonomous AI agent
 - Inngest Dev Server (port 8288) - job management dashboard
 
 ```bash
@@ -94,7 +98,8 @@ This script:
 2. Starts Orchestrator with `TRANSPORT=http PORT=8010 MCP_CONNECTION_MODE=stdio`
 3. Orchestrator automatically spawns: Telegram, Memory, Filer, Guardian, 1Password MCPs
 4. Orchestrator connects to HTTP services: Searcher (:8007), Gmail (:8008)
-5. Starts Thinker connected to Orchestrator
+5. Orchestrator spawns Thinker agent(s) via AgentManager (or connects to single Thinker at `THINKER_URL`)
+6. If `CHANNEL_POLLING_ENABLED=true`, Orchestrator polls Telegram and dispatches messages to agents
 
 ### 4. Run Orchestrator manually (alternative)
 
@@ -146,20 +151,120 @@ Or using tsx for development:
 
 **Note:** With `MCP_CONNECTION_MODE=stdio`, Orchestrator spawns all downstream MCPs as child processes via stdio. No separate HTTP ports are needed for downstream MCPs.
 
-## Thinker Integration
+## Multi-Agent Architecture
 
-Thinker connects to Orchestrator via HTTP REST API:
+The Orchestrator manages multiple Thinker agent instances, each running as a separate process with its own LLM config, system prompt, and tool permissions.
 
-```bash
-# Thinker environment
-ORCHESTRATOR_URL=http://localhost:8010
+### Message Flow
+
+1. **Orchestrator polls Telegram** via `ChannelPoller` (replaces Thinker's old direct polling)
+2. **MessageRouter** resolves which agent handles each message based on channel bindings
+3. **AgentManager** spawns Thinker processes, monitors health, and auto-restarts crashed agents
+4. **Orchestrator dispatches** the message to the resolved agent via HTTP POST
+5. **Orchestrator delivers** the response back to Telegram and stores it in Memory
+
+```
+Telegram message arrives
+       ↓
+ChannelPoller picks it up
+       ↓
+MessageRouter resolves agent (exact chatId → wildcard → default)
+       ↓
+AgentManager.getClient(agentId).processMessage(msg)
+       ↓
+Thinker runs ReAct loop, calls tools via Orchestrator
+       ↓
+Orchestrator enforces tool policy (allowedTools/deniedTools)
+       ↓
+Response sent back to Telegram by Orchestrator
 ```
 
-Thinker uses these endpoints:
+### Agent Configuration
 
-- `GET /health` - Health check
-- `GET /tools/list` - Discover all available tools
-- `POST /tools/call` - Execute a tool with `{ name, arguments }`
+Agents are defined in a JSON config file (set via `AGENTS_CONFIG_PATH` env var):
+
+```json
+{
+  "agents": [
+    {
+      "agentId": "annabelle",
+      "enabled": true,
+      "port": 8006,
+      "llmProvider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "systemPrompt": "You are Annabelle, a personal AI assistant...",
+      "allowedTools": [],
+      "deniedTools": [],
+      "maxSteps": 8
+    },
+    {
+      "agentId": "work-assistant",
+      "enabled": true,
+      "port": 8007,
+      "llmProvider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "systemPrompt": "You are a work-focused assistant...",
+      "allowedTools": ["gmail_*", "memory_*", "filer_*"],
+      "deniedTools": ["telegram_*"],
+      "maxSteps": 10
+    }
+  ],
+  "bindings": [
+    { "channel": "telegram", "chatId": "12345", "agentId": "work-assistant" },
+    { "channel": "telegram", "chatId": "*", "agentId": "annabelle" }
+  ]
+}
+```
+
+**Agent definition fields:**
+
+| Field | Description |
+| ----- | ----------- |
+| `agentId` | Unique identifier |
+| `port` | HTTP port for this Thinker instance |
+| `llmProvider` | `groq`, `lmstudio`, or `ollama` |
+| `model` | Provider-specific model name |
+| `systemPrompt` | Custom persona/instructions |
+| `allowedTools` | Glob patterns of permitted tools (empty = all) |
+| `deniedTools` | Glob patterns of denied tools (evaluated after allow) |
+| `maxSteps` | Max ReAct steps per message (1-50) |
+
+### Channel Bindings
+
+Bindings map `(channel, chatId)` pairs to agents. Resolution order:
+
+1. **Exact match** — `channel` + `chatId` both match
+2. **Wildcard** — `channel` matches, `chatId` is `*`
+3. **Default** — falls back to the first available agent
+
+### Tool Policy Enforcement
+
+When a Thinker agent calls a tool via `POST /tools/call`, Orchestrator checks the agent's `allowedTools` and `deniedTools` before routing:
+
+- `allowedTools: ["telegram_*", "memory_*"]` — only these patterns are permitted
+- `deniedTools: ["telegram_delete_*"]` — these patterns are blocked even if allowed
+- Empty `allowedTools` = all tools permitted (only `deniedTools` evaluated)
+
+Glob matching uses `*` as a wildcard (e.g., `gmail_*` matches `gmail_send_email`).
+
+### Single-Agent Fallback
+
+If no `agents` config or `AGENTS_CONFIG_PATH` is set, Orchestrator falls back to connecting to a single Thinker at `THINKER_URL` (default `http://localhost:8006`). This preserves backward compatibility.
+
+## Thinker Integration
+
+Each Thinker instance is a passive agent runtime. It does NOT poll Telegram directly — Orchestrator handles all channel I/O.
+
+Thinker exposes these HTTP endpoints:
+
+- `POST /process-message` — Process a dispatched message (called by Orchestrator)
+- `POST /execute-skill` — Execute a proactive task
+- `GET /health` — Health check
+
+Thinker discovers tools from Orchestrator on startup:
+
+- `GET /tools/list` — Discover available tools (filtered by agent's policy)
+- `POST /tools/call` — Execute a tool (policy-checked by Orchestrator)
 
 ## Key Features
 
@@ -423,14 +528,18 @@ All Gmail tools route through to the Gmail MCP via HTTP:
 
 ## Environment Variables
 
-| Variable            | Default | Description                                                           |
-| ------------------- | ------- | --------------------------------------------------------------------- |
-| TRANSPORT           | stdio   | Transport mode: "stdio" or "http"                                     |
-| PORT                | 8010    | HTTP port (when TRANSPORT=http)                                       |
-| MCP_CONNECTION_MODE | stdio   | How to connect to downstream MCPs: "stdio" (spawn) or "http" (legacy) |
-| LOG_LEVEL           | info    | Log level: debug, info, warn, error                                   |
+| Variable | Default | Description |
+| --- | --- | --- |
+| TRANSPORT | stdio | Transport mode: "stdio" or "http" |
+| PORT | 8010 | HTTP port (when TRANSPORT=http) |
+| MCP_CONNECTION_MODE | stdio | How to connect to downstream MCPs: "stdio" (spawn) or "http" (legacy) |
+| LOG_LEVEL | info | Log level: debug, info, warn, error |
+| CHANNEL_POLLING_ENABLED | false | Enable Orchestrator-side Telegram polling |
+| CHANNEL_POLL_INTERVAL_MS | 10000 | Polling interval in milliseconds |
+| THINKER_URL | `http://localhost:8006` | Single-agent Thinker URL (fallback when no agents config) |
+| AGENTS_CONFIG_PATH | _(none)_ | Path to agents JSON config file (enables multi-agent mode) |
 
-> **Note:** Guardian security scanning is no longer configured via environment variables. It is controlled by `Orchestrator/src/config/guardian.ts` — see [Security — Guardian Pass-Through](#security--guardian-pass-through) below.
+> **Note:** Guardian security scanning is configured in `Orchestrator/src/config/guardian.ts` — see [Security — Guardian Pass-Through](#security--guardian-pass-through) below.
 
 **Legacy HTTP mode variables** (only used when `MCP_CONNECTION_MODE=http`):
 
@@ -553,14 +662,33 @@ Caller → Orchestrator → [GuardedMCPClient] → Guardian scan → Downstream 
 
 ### What Gets Scanned
 
-| MCP        | Input | Output | Rationale                            |
-| ---------- | ----- | ------ | ------------------------------------ |
-| Telegram   | Yes   | No     | Catch injection in outgoing messages |
-| 1Password  | Yes   | Yes    | Protect credentials from leakage     |
-| Filer      | Yes   | Yes    | Scan file content both ways          |
-| Gmail      | Yes   | Yes    | Scan email content both ways         |
-| Memory     | Yes   | No     | Protect stored facts from injection  |
-| Searcher   | No    | No     | Search queries are low-risk          |
+| MCP | Input | Output | Rationale |
+| --- | --- | --- | --- |
+| Telegram | Yes | No | Catch injection in outgoing messages |
+| 1Password | Yes | Yes | Protect credentials from leakage |
+| Filer | Yes | Yes | Scan file content both ways |
+| Gmail | Yes | Yes | Scan email content both ways |
+| Memory | Yes | No | Protect stored facts from injection |
+| Searcher | No | No | Search queries are low-risk |
+
+### Per-Agent Guardian Overrides
+
+Each agent can override global scan flags. This allows stricter scanning for untrusted agents or relaxed scanning for trusted ones.
+
+```typescript
+// In Orchestrator/src/config/guardian.ts
+agentOverrides: {
+  'work-assistant': {
+    input: { memory: false },    // Skip input scanning on memory for this agent
+    output: { gmail: false },    // Skip output scanning on gmail
+  },
+  'code-reviewer': {
+    output: { telegram: true },  // Enable output scanning on telegram (globally off)
+  },
+},
+```
+
+Use `getEffectiveScanFlags(agentId)` to resolve the merged flags for a specific agent. Unlisted MCPs inherit the global defaults.
 
 ## Future Enhancements
 
