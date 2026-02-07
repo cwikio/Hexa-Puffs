@@ -71,6 +71,27 @@ async function main(): Promise<void> {
           return;
         }
 
+        // REST API: Resume a cost-paused agent
+        const resumeMatch = req.url?.match(/^\/agents\/([^/]+)\/resume$/);
+        if (resumeMatch && req.method === 'POST') {
+          const agentId = resumeMatch[1];
+          const agentManager = orchestrator.getAgentManager();
+          if (!agentManager) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, message: 'Agent manager not available (single-agent mode)' }));
+            return;
+          }
+          let body = '';
+          req.on('data', (chunk: Buffer) => { body += chunk; });
+          req.on('end', async () => {
+            const resetWindow = body ? JSON.parse(body)?.resetWindow === true : false;
+            const result = await agentManager.resumeAgent(agentId, resetWindow);
+            res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          });
+          return;
+        }
+
         // SSE endpoint
         if (req.url === '/sse' && req.method === 'GET') {
           logger.debug('SSE connection established');
@@ -97,6 +118,7 @@ async function main(): Promise<void> {
         logger.info(`  GET  /health      - Health check`);
         logger.info(`  GET  /tools/list  - List available tools (REST API)`);
         logger.info(`  POST /tools/call  - Execute a tool (REST API)`);
+        logger.info(`  POST /agents/:id/resume - Resume a cost-paused agent`);
         logger.info(`  GET  /sse         - SSE connection`);
         logger.info(`  POST /message     - SSE messages`);
       });

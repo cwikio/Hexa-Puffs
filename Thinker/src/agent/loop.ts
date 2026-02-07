@@ -9,6 +9,8 @@ import { OrchestratorClient } from '../orchestrator/client.js';
 import { createEssentialTools, createToolsFromOrchestrator } from '../orchestrator/tools.js';
 import { ModelFactory } from '../llm/factory.js';
 import { sanitizeResponseText } from '../utils/sanitize.js';
+import { CostMonitor } from '../cost/index.js';
+import type { CostStatus } from '../cost/types.js';
 import type { IncomingMessage, ProcessingResult, AgentContext, AgentState } from './types.js';
 import { PlaybookCache } from './playbook-cache.js';
 import { classifyMessage } from './playbook-classifier.js';
@@ -120,11 +122,20 @@ export class Agent {
   private maxConsecutiveErrors = 5;
   private circuitBreakerTripped = false;
 
+  // Cost controls
+  private costMonitor: CostMonitor | null = null;
+
   constructor(config: Config) {
     this.config = config;
     this.orchestrator = new OrchestratorClient(config);
     this.modelFactory = new ModelFactory(config);
     this.playbookCache = new PlaybookCache(this.orchestrator, config.thinkerAgentId);
+
+    // Initialize cost monitor if enabled
+    if (config.costControl?.enabled) {
+      this.costMonitor = new CostMonitor(config.costControl);
+      console.log(`Cost monitor enabled (spike: ${config.costControl.spikeMultiplier}x, hard cap: ${config.costControl.hardCapTokensPerHour} tokens/hr)`);
+    }
   }
 
   /**
@@ -302,6 +313,18 @@ export class Agent {
         };
       }
 
+      // Cost control pause check
+      if (this.costMonitor?.paused) {
+        console.warn('Agent paused by cost controls - skipping message processing');
+        return {
+          success: false,
+          toolsUsed: [],
+          totalSteps: 0,
+          error: `Agent paused: ${this.costMonitor.pauseReason || 'cost limit exceeded'}`,
+          paused: true,
+        };
+      }
+
       // Rate limiting - ensure minimum interval between API calls
       const now = Date.now();
       const timeSinceLastCall = now - this.lastApiCallTime;
@@ -383,14 +406,19 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
 
       // Log LLM call complete
       const llmDuration = Date.now() - llmStartTime;
+      const promptTokens = result.usage?.promptTokens || 0;
+      const completionTokens = result.usage?.completionTokens || 0;
       await this.logger.logLLMCallComplete(
         trace,
         providerInfo.provider,
         providerInfo.model,
-        result.usage?.promptTokens || 0,
-        result.usage?.completionTokens || 0,
+        promptTokens,
+        completionTokens,
         llmDuration
       );
+
+      // Record token usage in cost monitor
+      this.costMonitor?.recordUsage(promptTokens, completionTokens);
 
       // Extract and sanitize response text (removes any leaked function call syntax)
       let responseText = sanitizeResponseText(result.text || '');
@@ -446,6 +474,11 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
                   { role: 'user', content: `Here are the results from the tools that were called:\n\n${resultsText}` },
                 ],
               });
+              // Record summarization call tokens
+              this.costMonitor?.recordUsage(
+                summary.usage?.promptTokens || 0,
+                summary.usage?.completionTokens || 0
+              );
               if (summary.text) {
                 responseText = sanitizeResponseText(summary.text);
               }
@@ -551,6 +584,19 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
 
     const providerInfo = this.modelFactory.getProviderInfo();
 
+    // Cost control pause check
+    if (this.costMonitor?.paused) {
+      console.warn('Agent paused by cost controls - skipping proactive task');
+      return {
+        success: false,
+        summary: 'Agent paused by cost controls',
+        toolsUsed: [],
+        totalSteps: 0,
+        error: `Agent paused: ${this.costMonitor.pauseReason || 'cost limit exceeded'}`,
+        paused: true,
+      };
+    }
+
     try {
       // Rate limiting
       const now = Date.now();
@@ -591,6 +637,12 @@ Complete the task step by step, using your available tools. When done, provide a
         tools: this.tools,
         maxSteps,
       });
+
+      // Record token usage in cost monitor
+      this.costMonitor?.recordUsage(
+        result.usage?.promptTokens || 0,
+        result.usage?.completionTokens || 0
+      );
 
       const responseText = sanitizeResponseText(result.text || 'Task completed without summary.');
       const toolsUsed = result.steps
@@ -654,5 +706,29 @@ Complete the task step by step, using your available tools. When done, provide a
         this.conversationStates.delete(chatId);
       }
     }
+  }
+
+  // ─── Cost Control API ───────────────────────────────────────────
+
+  /**
+   * Get current cost monitor status (for /cost-status endpoint).
+   */
+  getCostStatus(): CostStatus | null {
+    return this.costMonitor?.getStatus() ?? null;
+  }
+
+  /**
+   * Resume from a cost-control pause (for /cost-resume endpoint).
+   */
+  resumeFromCostPause(resetWindow = false): { success: boolean; message: string } {
+    if (!this.costMonitor) {
+      return { success: false, message: 'Cost controls not enabled' };
+    }
+    if (!this.costMonitor.paused) {
+      return { success: false, message: 'Agent is not paused' };
+    }
+    this.costMonitor.resume(resetWindow);
+    console.log(`Agent resumed from cost pause (resetWindow=${resetWindow})`);
+    return { success: true, message: 'Agent resumed' };
   }
 }

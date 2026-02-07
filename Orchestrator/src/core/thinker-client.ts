@@ -114,4 +114,40 @@ export class ThinkerClient {
       return false;
     }
   }
+
+  // ─── Cost Control Endpoints ─────────────────────────────────────
+
+  /**
+   * Get cost monitor status from a Thinker instance.
+   */
+  async getCostStatus(): Promise<Record<string, unknown> | null> {
+    try {
+      const response = await fetch(`${this.baseUrl}/cost-status`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) return null;
+      return (await response.json()) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resume a Thinker instance that was paused by cost controls.
+   */
+  async resumeCostPause(resetWindow = false): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/cost-resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resetWindow }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) return false;
+      const data = (await response.json()) as { success: boolean };
+      return data.success;
+    } catch {
+      return false;
+    }
+  }
 }

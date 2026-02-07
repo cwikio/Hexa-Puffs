@@ -153,6 +153,7 @@ async function main() {
         toolsUsed: result.toolsUsed,
         totalSteps: result.totalSteps,
         error: result.error,
+        ...(result.paused ? { paused: true } : {}),
       });
     } catch (error) {
       console.error('Error processing dispatched message:', error);
@@ -203,6 +204,22 @@ async function main() {
         summary: 'Skill execution failed',
       });
     }
+  });
+
+  // Cost control endpoints
+  app.get('/cost-status', (_req: Request, res: Response) => {
+    const status = agent.getCostStatus();
+    if (!status) {
+      res.json({ enabled: false });
+      return;
+    }
+    res.json(status);
+  });
+
+  app.post('/cost-resume', (req: Request, res: Response) => {
+    const resetWindow = req.body?.resetWindow === true;
+    const result = agent.resumeFromCostPause(resetWindow);
+    res.json(result);
   });
 
   // Thinker is now a passive agent runtime — Orchestrator dispatches messages via HTTP

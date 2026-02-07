@@ -504,6 +504,22 @@ export class Orchestrator {
       }
     }
 
+    // Pre-dispatch: check if agent is already paused by cost controls
+    if (this.agentManager?.isAgentPaused(targetAgentId)) {
+      this.logger.warn(`Dropping message for cost-paused agent "${targetAgentId}"`);
+      if (msg.channel === 'telegram') {
+        try {
+          await this.toolRouter.routeToolCall('telegram_send_message', {
+            chat_id: msg.chatId,
+            message: `Agent is currently paused due to cost controls and is not processing messages.`,
+          });
+        } catch {
+          // Best-effort notification
+        }
+      }
+      return;
+    }
+
     // Resolve which client to use
     const client = this.resolveClient(targetAgentId);
     if (!client) {
@@ -514,6 +530,29 @@ export class Orchestrator {
     this.logger.info(`Dispatching to agent: chat=${msg.chatId}, agent=${targetAgentId}`);
 
     const result = await client.processMessage(msg);
+
+    // Handle cost-control pause signal from Thinker
+    if (result.paused) {
+      this.logger.warn(`Agent "${targetAgentId}" paused by cost controls: ${result.error}`);
+
+      if (this.agentManager) {
+        this.agentManager.markPaused(targetAgentId, result.error || 'Cost limit exceeded');
+      }
+
+      // Send Telegram notification
+      const agentDef = this.agentDefinitions.get(targetAgentId);
+      const notifyChatId = agentDef?.costControls?.notifyChatId || msg.chatId;
+      try {
+        await this.toolRouter.routeToolCall('telegram_send_message', {
+          chat_id: notifyChatId,
+          message: `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nReason: ${result.error}\n\nThe agent will not process messages until resumed.`,
+        });
+      } catch (notifyError) {
+        this.logger.error('Failed to send cost pause notification', { error: notifyError });
+      }
+
+      return;
+    }
 
     if (result.success && result.response) {
       // Send response back to the originating channel

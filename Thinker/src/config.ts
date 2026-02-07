@@ -1,10 +1,22 @@
 import { z } from 'zod';
+import type { CostControlConfig } from './cost/types.js';
 
 /**
  * LLM Provider types supported by Thinker
  */
 export const LLMProviderSchema = z.enum(['groq', 'lmstudio', 'ollama']);
 export type LLMProvider = z.infer<typeof LLMProviderSchema>;
+
+/**
+ * Cost control configuration schema (parsed from env vars set by Orchestrator)
+ */
+export const CostControlSchema = z.object({
+  enabled: z.boolean(),
+  shortWindowMinutes: z.number().int().min(1).max(30).default(2),
+  spikeMultiplier: z.number().min(1.5).max(10).default(3.0),
+  hardCapTokensPerHour: z.number().int().min(10000).default(500_000),
+  minimumBaselineTokens: z.number().int().min(100).default(1000),
+});
 
 /**
  * Log level options
@@ -61,6 +73,9 @@ export const ConfigSchema = z.object({
   // Logging
   logLevel: LogLevelSchema.default('info'),
   traceLogPath: z.string().default('~/.annabelle/logs/traces.jsonl'),
+
+  // Cost controls (optional, configured via Orchestrator env vars)
+  costControl: CostControlSchema.optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -79,6 +94,15 @@ function parseBoolean(value: string | undefined, defaultValue: boolean): boolean
 function parseInteger(value: string | undefined, defaultValue: number): number {
   if (value === undefined) return defaultValue;
   const parsed = parseInt(value, 10);
+  return isNaN(parsed) ? defaultValue : parsed;
+}
+
+/**
+ * Parse float from environment variable
+ */
+function parseNumber(value: string | undefined, defaultValue: number): number {
+  if (value === undefined) return defaultValue;
+  const parsed = Number(value);
   return isNaN(parsed) ? defaultValue : parsed;
 }
 
@@ -105,6 +129,17 @@ export function loadConfig(): Config {
     userTimezone: process.env.USER_TIMEZONE || 'Europe/Warsaw',
     logLevel: process.env.LOG_LEVEL || 'info',
     traceLogPath: process.env.TRACE_LOG_PATH || '~/.annabelle/logs/traces.jsonl',
+
+    // Cost controls — only built when explicitly enabled via env var
+    ...(parseBoolean(process.env.THINKER_COST_CONTROL_ENABLED, false) ? {
+      costControl: {
+        enabled: true,
+        shortWindowMinutes: parseInteger(process.env.THINKER_COST_SHORT_WINDOW_MINUTES, 2),
+        spikeMultiplier: parseNumber(process.env.THINKER_COST_SPIKE_MULTIPLIER, 3.0),
+        hardCapTokensPerHour: parseInteger(process.env.THINKER_COST_HARD_CAP_PER_HOUR, 500_000),
+        minimumBaselineTokens: parseInteger(process.env.THINKER_COST_MIN_BASELINE_TOKENS, 1000),
+      },
+    } : {}),
   };
 
   const result = ConfigSchema.safeParse(rawConfig);

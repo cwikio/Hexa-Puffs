@@ -11,6 +11,32 @@ import { z } from 'zod';
 export const AgentLLMProviderSchema = z.enum(['groq', 'lmstudio', 'ollama']);
 
 /**
+ * Cost controls for an agent — anomaly-based rate limiting that detects
+ * abnormal token consumption spikes and pauses the agent.
+ */
+export const CostControlsSchema = z.object({
+  /** Enable cost controls for this agent */
+  enabled: z.boolean().default(false),
+
+  /** Short window size for spike detection (minutes) */
+  shortWindowMinutes: z.number().int().min(1).max(30).default(2),
+
+  /** Spike threshold: short-window rate must exceed baseline × this multiplier */
+  spikeMultiplier: z.number().min(1.5).max(10).default(3.0),
+
+  /** Absolute safety cap: max tokens in any 60-minute window */
+  hardCapTokensPerHour: z.number().int().min(10000).default(500_000),
+
+  /** Minimum baseline tokens before spike detection activates (prevents cold-start false positives) */
+  minimumBaselineTokens: z.number().int().min(100).default(1000),
+
+  /** Telegram chat ID to send cost alert notifications to (falls back to message sender) */
+  notifyChatId: z.string().optional(),
+});
+
+export type CostControls = z.infer<typeof CostControlsSchema>;
+
+/**
  * Schema for a single agent definition
  */
 export const AgentDefinitionSchema = z.object({
@@ -40,6 +66,9 @@ export const AgentDefinitionSchema = z.object({
 
   /** Maximum ReAct steps per message */
   maxSteps: z.number().int().min(1).max(50).default(8),
+
+  /** LLM cost controls — anomaly-based spike detection with pause/resume */
+  costControls: CostControlsSchema.optional(),
 });
 
 export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>;

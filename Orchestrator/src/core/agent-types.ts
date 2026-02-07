@@ -28,6 +28,8 @@ export const ProcessingResponseSchema = z.object({
   toolsUsed: z.array(z.string()),
   totalSteps: z.number(),
   error: z.string().optional(),
+  /** Set to true when cost controls have paused this agent */
+  paused: z.boolean().optional(),
 });
 
 export type ProcessingResponse = z.infer<typeof ProcessingResponseSchema>;

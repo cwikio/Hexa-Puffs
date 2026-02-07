@@ -18,6 +18,8 @@ export interface ProcessingResult {
   toolsUsed: string[];
   totalSteps: number;
   error?: string;
+  /** Set to true when cost controls have paused this agent */
+  paused?: boolean;
 }
 
 /**

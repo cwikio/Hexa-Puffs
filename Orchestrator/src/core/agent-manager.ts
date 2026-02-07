@@ -27,6 +27,8 @@ interface ManagedAgent {
   promptFilePath: string | null;
   restartCount: number;
   lastRestartAt: number;
+  paused: boolean;
+  pauseReason: string | null;
 }
 
 export interface AgentStatus {
@@ -35,6 +37,8 @@ export interface AgentStatus {
   port: number;
   restartCount: number;
   pid: number | null;
+  paused: boolean;
+  pauseReason: string | null;
 }
 
 export class AgentManager {
@@ -122,6 +126,8 @@ export class AgentManager {
       promptFilePath,
       restartCount: 0,
       lastRestartAt: Date.now(),
+      paused: false,
+      pauseReason: null,
     };
 
     this.agents.set(agentId, managed);
@@ -212,6 +218,15 @@ export class AgentManager {
       env.ORCHESTRATOR_URL = 'http://localhost:8000';
     }
 
+    // Cost control settings
+    if (definition.costControls?.enabled) {
+      env.THINKER_COST_CONTROL_ENABLED = 'true';
+      env.THINKER_COST_SHORT_WINDOW_MINUTES = String(definition.costControls.shortWindowMinutes);
+      env.THINKER_COST_SPIKE_MULTIPLIER = String(definition.costControls.spikeMultiplier);
+      env.THINKER_COST_HARD_CAP_PER_HOUR = String(definition.costControls.hardCapTokensPerHour);
+      env.THINKER_COST_MIN_BASELINE_TOKENS = String(definition.costControls.minimumBaselineTokens);
+    }
+
     return env;
   }
 
@@ -256,6 +271,8 @@ export class AgentManager {
       port: managed.definition.port,
       restartCount: managed.restartCount,
       pid: managed.process?.pid ?? null,
+      paused: managed.paused,
+      pauseReason: managed.pauseReason,
     }));
   }
 
@@ -365,6 +382,51 @@ export class AgentManager {
     } catch (error) {
       this.logger.error(`Failed to restart agent "${agentId}"`, { error });
     }
+  }
+
+  // ─── Cost Control Pause / Resume ────────────────────────────────
+
+  /**
+   * Mark an agent as paused (called when Thinker reports cost-control pause).
+   */
+  markPaused(agentId: string, reason: string): void {
+    const managed = this.agents.get(agentId);
+    if (managed) {
+      managed.paused = true;
+      managed.pauseReason = reason;
+      this.logger.warn(`Agent "${agentId}" marked as paused: ${reason}`);
+    }
+  }
+
+  /**
+   * Check if an agent is paused by cost controls.
+   */
+  isAgentPaused(agentId: string): boolean {
+    return this.agents.get(agentId)?.paused ?? false;
+  }
+
+  /**
+   * Resume a paused agent by calling its /cost-resume endpoint.
+   */
+  async resumeAgent(agentId: string, resetWindow = false): Promise<{ success: boolean; message: string }> {
+    const managed = this.agents.get(agentId);
+    if (!managed) {
+      return { success: false, message: `Agent "${agentId}" not found` };
+    }
+    if (!managed.paused) {
+      return { success: false, message: `Agent "${agentId}" is not paused` };
+    }
+
+    const resumed = await managed.client.resumeCostPause(resetWindow);
+    if (resumed) {
+      managed.paused = false;
+      managed.pauseReason = null;
+      this.logger.info(`Agent "${agentId}" resumed from cost pause`);
+      return { success: true, message: `Agent "${agentId}" resumed` };
+    }
+
+    this.logger.error(`Failed to resume agent "${agentId}" — Thinker did not acknowledge`);
+    return { success: false, message: `Failed to resume agent "${agentId}"` };
   }
 
   /**
