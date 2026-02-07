@@ -10,6 +10,9 @@ import { createEssentialTools, createToolsFromOrchestrator } from '../orchestrat
 import { ModelFactory } from '../llm/factory.js';
 import { sanitizeResponseText } from '../utils/sanitize.js';
 import type { IncomingMessage, ProcessingResult, AgentContext, AgentState } from './types.js';
+import { PlaybookCache } from './playbook-cache.js';
+import { classifyMessage } from './playbook-classifier.js';
+import { seedPlaybooks } from './playbook-seed.js';
 
 /**
  * Default system prompt for the agent
@@ -110,6 +113,7 @@ export class Agent {
   private botUserId: string | null = null;
   private monitoredChatIds: string[] = [];
   private lastChatRefresh = 0;
+  private playbookCache: PlaybookCache;
 
   // Rate limiting
   private lastApiCallTime = 0;
@@ -134,6 +138,7 @@ export class Agent {
     this.config = config;
     this.orchestrator = new OrchestratorClient(config);
     this.modelFactory = new ModelFactory(config);
+    this.playbookCache = new PlaybookCache(this.orchestrator, config.thinkerAgentId);
 
     // Initialize direct Telegram client if enabled and URL provided
     if (config.telegramDirectEnabled && config.telegramDirectUrl) {
@@ -194,6 +199,15 @@ export class Agent {
     this.tools = { ...dynamicTools, ...essentialTools };
 
     console.log(`Total tools available: ${Object.keys(this.tools).length}`);
+
+    // Seed default playbooks (idempotent) and initialize cache
+    try {
+      await seedPlaybooks(this.orchestrator, this.config.thinkerAgentId);
+      await this.playbookCache.initialize();
+      console.log(`Playbook cache loaded: ${this.playbookCache.getPlaybooks().length} playbook(s)`);
+    } catch (error) {
+      console.warn('Failed to initialize playbooks (non-fatal):', error);
+    }
   }
 
   /**
@@ -243,6 +257,16 @@ export class Agent {
     }
 
     // Note: tool schemas are passed to the LLM via Vercel AI SDK, no need to list them in the prompt
+
+    // Inject matching domain playbooks
+    await this.playbookCache.refreshIfNeeded(trace);
+    const matchedPlaybooks = classifyMessage(userMessage, this.playbookCache.getPlaybooks());
+    if (matchedPlaybooks.length > 0) {
+      const section = matchedPlaybooks
+        .map((pb) => `### Playbook: ${pb.name}\n${pb.instructions}`)
+        .join('\n\n');
+      systemPrompt += `\n\n## Workflow Guidance\nFollow these steps when relevant:\n\n${section}`;
+    }
 
     // Add current date/time context
     const now = new Date();
@@ -495,6 +519,12 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
         undefined,
         trace
       );
+
+      // Invalidate playbook cache if any skill-modifying tools were called
+      const skillTools = ['memory_store_skill', 'memory_update_skill', 'memory_delete_skill'];
+      if (toolsUsed.some((t) => skillTools.includes(t))) {
+        this.playbookCache.invalidate();
+      }
 
       // Log completion
       await this.logger.logComplete(trace, toolsUsed, result.steps.length);

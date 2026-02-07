@@ -307,6 +307,35 @@ export class OrchestratorClient {
   }
 
   /**
+   * List skills from Memory MCP
+   */
+  async listSkills(
+    agentId: string,
+    triggerType?: string,
+    enabled?: boolean,
+    trace?: TraceContext
+  ): Promise<{ skills: Array<Record<string, unknown>>; total_count: number }> {
+    const args: Record<string, unknown> = { agent_id: agentId };
+    if (triggerType !== undefined) args.trigger_type = triggerType;
+    if (enabled !== undefined) args.enabled = enabled;
+
+    const response = await this.executeTool('memory_list_skills', args, trace);
+
+    if (!response.success || !response.result) {
+      return { skills: [], total_count: 0 };
+    }
+
+    const result = response.result as {
+      skills?: Array<Record<string, unknown>>;
+      total_count?: number;
+    };
+    return {
+      skills: result.skills ?? [],
+      total_count: result.total_count ?? 0,
+    };
+  }
+
+  /**
    * Search conversations in Memory MCP
    */
   async searchConversations(
