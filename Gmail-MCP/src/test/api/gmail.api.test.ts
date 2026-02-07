@@ -35,7 +35,7 @@ import {
   handleDeleteDraft,
 } from "../../tools/drafts.js";
 
-// Handlers — filters (throws instead of returning StandardResponse)
+// Handlers — filters
 import { handleListFilters } from "../../tools/filters.js";
 
 // Helper
@@ -259,12 +259,11 @@ describe.skipIf(!tokenExists)("Gmail API Integration", () => {
 
   describe("list_filters", () => {
     it("should list filters and return an array", async () => {
-      // Filters handler returns { filters } directly, not StandardResponse.
-      // It throws on error rather than returning createError().
       const result = await handleListFilters();
+      const data = expectSuccess(result);
 
-      expect(result).toHaveProperty("filters");
-      expect(Array.isArray(result.filters)).toBe(true);
+      expect(data).toHaveProperty("filters");
+      expect(Array.isArray(data.filters)).toBe(true);
     });
   });
 

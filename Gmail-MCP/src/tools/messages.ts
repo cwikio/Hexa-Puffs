@@ -49,7 +49,7 @@ export const listEmailsTool = {
   },
 };
 
-const ListEmailsInputSchema = z.object({
+export const ListEmailsInputSchema = z.object({
   query: z.string().optional(),
   max_results: z.number().min(1).max(100).optional(),
   label_ids: z.array(z.string()).optional(),
@@ -101,7 +101,7 @@ export const getEmailTool = {
   },
 };
 
-const GetEmailInputSchema = z.object({
+export const GetEmailInputSchema = z.object({
   message_id: z.string().min(1),
 });
 
@@ -162,7 +162,7 @@ export const sendEmailTool = {
   },
 };
 
-const SendEmailInputSchema = z.object({
+export const SendEmailInputSchema = z.object({
   to: z.string().min(1),
   subject: z.string(),
   body: z.string().min(1),
@@ -226,7 +226,7 @@ export const replyEmailTool = {
   },
 };
 
-const ReplyEmailInputSchema = z.object({
+export const ReplyEmailInputSchema = z.object({
   message_id: z.string().min(1),
   body: z.string().min(1),
   is_html: z.boolean().optional(),
@@ -271,7 +271,7 @@ export const deleteEmailTool = {
   },
 };
 
-const DeleteEmailInputSchema = z.object({
+export const DeleteEmailInputSchema = z.object({
   message_id: z.string().min(1),
 });
 
@@ -316,7 +316,7 @@ export const markReadTool = {
   },
 };
 
-const MarkReadInputSchema = z.object({
+export const MarkReadInputSchema = z.object({
   message_id: z.string().min(1),
   read: z.boolean(),
 });
@@ -370,7 +370,7 @@ export const modifyLabelsTool = {
   },
 };
 
-const ModifyLabelsInputSchema = z.object({
+export const ModifyLabelsInputSchema = z.object({
   message_id: z.string().min(1),
   add_label_ids: z.array(z.string()).optional(),
   remove_label_ids: z.array(z.string()).optional(),
@@ -416,7 +416,7 @@ export const getNewEmailsTool = {
   },
 };
 
-const GetNewEmailsInputSchema = z.object({
+export const GetNewEmailsInputSchema = z.object({
   clear: z.boolean().optional(),
 });
 

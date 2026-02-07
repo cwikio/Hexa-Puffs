@@ -8,10 +8,28 @@
  * - Tool annotations support
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
 import type { StandardResponse } from '../Types/StandardResponse.js';
+
+/**
+ * Structural interface for McpServer — avoids concrete class import
+ * so that packages with different SDK versions still type-check.
+ * Uses permissive `(...args: unknown[]) => unknown` so that any
+ * SDK version's registerTool signature is assignable.
+ */
+interface McpServerLike {
+  registerTool(...args: unknown[]): unknown;
+}
+
+/**
+ * Tool annotations matching the MCP spec.
+ */
+interface ToolAnnotations extends Record<string, unknown> {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
 
 /**
  * Register a tool on McpServer with project conventions.
@@ -23,7 +41,7 @@ import type { StandardResponse } from '../Types/StandardResponse.js';
  * The wrapper handles MCP content formatting and error wrapping.
  */
 export function registerTool(
-  server: McpServer,
+  server: McpServerLike,
   config: {
     name: string;
     description: string;

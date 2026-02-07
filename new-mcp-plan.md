@@ -6,7 +6,7 @@ Migrate all MCPs from deprecated `server.tool()` / `server.setRequestHandler()` 
 ## Key Design Decisions
 
 1. **No service-prefixed tool names** — Orchestrator's ToolRouter already handles namespacing; prefixing would cause double-namespacing and break existing references
-2. **Shared `registerTool` helper** — thin wrapper standardizing StandardResponse wrapping + error handling
+2. **Shared `registerTool` helper** — thin wrapper standardizing StandardResponse wrapping + error handling; uses structural `McpServerLike` interface to avoid SDK version conflicts across packages
 3. **Orchestrator stays on low-level `Server`** — it proxies tools, doesn't register them; only type updates needed
 4. **Guardian response shape changes** — currently returns raw JSON, will switch to StandardResponse (tests must update)
 
@@ -63,33 +63,49 @@ Migrate all MCPs from deprecated `server.tool()` / `server.setRequestHandler()` 
 
 ---
 
-## Phase 3: Gmail (27 tools) + Telegram (~16 tools) + Memorizer (17 tools)
-**DEFERRED** — These use low-level `Server` + `setRequestHandler()`. Migration to `McpServer` is higher risk.
+## Phase 3: Gmail (30 tools) + Telegram (16 tools) + Memorizer (17 tools) ✅ DONE
 
-### Gmail (`Gmail-MCP/src/server.ts`)
-- [ ] Change `Server` → `McpServer`
-- [ ] Remove `setRequestHandler()` handlers
-- [ ] Loop through `allTools`, call `server.registerTool()` for each
-- [ ] Add `annotations` field to each tool entry in `Gmail-MCP/src/tools/index.ts`
-- [ ] Update Gmail unit test mocks for `McpServer`
-- [ ] Verify: `cd Gmail-MCP && npx tsc --noEmit && npx vitest run`
-
-### Telegram (`Telegram-MCP/src/server.ts`)
-- [ ] Same pattern as Gmail — `Server` → `McpServer`, loop allTools, add annotations
-- [ ] Verify: `cd Telegram-MCP && npx tsc --noEmit && npx vitest run`
+All three MCPs migrated from `Server` + `setRequestHandler()` to `McpServer` + shared `registerTool()`.
 
 ### Memorizer (`Memorizer-MCP/src/server.ts`)
-- [ ] Change `Server` → `McpServer`
-- [ ] Remove `setRequestHandler()` + switch/case dispatcher
-- [ ] Create `allTools` array, register each via `server.registerTool()`
-- [ ] All tools: `openWorldHint: false` (local SQLite)
-- [ ] Update `startTransport()` call in index.ts
-- [ ] Verify: `cd Memorizer-MCP && npx tsc --noEmit && npx vitest run`
+- [x] Change `Server` → `McpServer`
+- [x] Remove `setRequestHandler()` + switch/case dispatcher
+- [x] Register 17 tools via shared `registerTool()` with annotations
+- [x] All tools: `openWorldHint: false` (local SQLite)
+- [x] Export Zod schemas from all tool files
+- [x] Migrate `index.ts` to shared `startTransport()`
+- [x] Add server unit test (InMemoryTransport, 8 tests)
+- [x] Verify: `npx tsc --noEmit` ✅ `npx vitest run tests/unit/` ✅ (8/8)
+
+### Telegram (`Telegram-MCP/src/server.ts`)
+- [x] Change `Server` → `McpServer`
+- [x] Remove `setRequestHandler()` + switch/case dispatcher
+- [x] Register 16 tools via shared `registerTool()` with annotations
+- [x] All tools: `openWorldHint: true` (external Telegram API)
+- [x] Export Zod schemas from all tool files
+- [x] Migrate `index.ts` to shared `startTransport()`
+- [x] Add server unit test (InMemoryTransport, 8 tests)
+- [x] Verify: `npx tsc --noEmit` ✅ `npx vitest run tests/unit/` ✅ (8/8)
+
+### Gmail (`Gmail-MCP/src/server.ts`)
+- [x] Change `Server` → `McpServer`
+- [x] Remove `setRequestHandler()` handlers
+- [x] Register 30 tools via shared `registerTool()` with annotations
+- [x] All tools: `openWorldHint: true` (external Gmail/Calendar API)
+- [x] Export/create 30 Zod schemas across 6 tool files
+- [x] Rewrite `filters.ts` with proper Zod validation + safeParse + StandardResponse (previously had none)
+- [x] Migrate `index.ts` to shared `startTransport()` (preserving polling lifecycle)
+- [x] Update API test for new filter StandardResponse return type
+- [x] Add server unit test (InMemoryTransport, 8 tests)
+- [x] Verify: `npx tsc --noEmit` ✅ `npx vitest run tests/unit/` ✅ (8/8)
+
+### Shared fix during Phase 3
+- [x] `Shared/Utils/register-tool.ts` — Changed `McpServer` concrete type → `McpServerLike` structural interface to fix SDK version mismatch (Gmail had SDK 1.26.0 vs Shared's 1.25.3)
 
 ---
 
 ## Phase 4: Orchestrator Passthrough Verification
-**DEFERRED** — Run after Phase 3.
+**TODO** — Run after Phase 3.
 
 - [ ] `Orchestrator/src/tools/status.ts` — add annotations to `get_status`
 - [ ] Verify `listTools` includes annotations for proxied tools
@@ -105,21 +121,42 @@ Migrate all MCPs from deprecated `server.tool()` / `server.setRequestHandler()` 
 
 ---
 
+## Known Issue: Legacy Integration Tests
+
+Filer, Memorizer, Guardian, and Gmail now run as **stdio processes** spawned by the Orchestrator — they no longer expose standalone HTTP ports. The following test suites still target dead ports and need migration:
+
+| Test Suite | Dead Port | Fix |
+|---|---|---|
+| `Filer-MCP/tests/integration/` | 8004 | Route through Orchestrator (8010) or convert to InMemoryTransport unit tests |
+| `Memorizer-MCP/tests/integration/` | 8005 | Same |
+| `Gmail-MCP/src/test/api/` | 8008 | Same |
+| `Orchestrator/tests/integration/filer.test.ts` | 8004 | Route through Orchestrator (8010) |
+| `Orchestrator/tests/integration/memory.test.ts` | 8005 | Route through Orchestrator (8010) |
+| `Orchestrator/tests/integration/orchestrator.test.ts` | 8002/8004/8005 | Route through Orchestrator (8010) |
+| `Orchestrator/tests/integration/workflow-filer-memory.test.ts` | 8004/8005 | Route through Orchestrator (8010) |
+| `Orchestrator/tests/integration/workflow-guardian-telegram.test.ts` | 8003 | Route through Orchestrator (8010) |
+| `Orchestrator/tests/integration/workflow-jobs.test.ts` | — | `create_job` tool not registered in Orchestrator |
+
+Tests that still work as-is: `stdio-mode.test.ts` (8010), `telegram.test.ts` (8002), `searcher.test.ts` (8007), `thinker.test.ts` (8006).
+
+---
+
 ## Execution Order
 
 ```
 Phase 0 (Shared)                                    ✅ DONE
   └→ Phase 1 (Guardian + 1Password)                 ✅ DONE
       └→ Phase 2 (Searcher + Filer)                 ✅ DONE
-          └→ Phase 3 (Gmail + Telegram + Memorizer)  ← LATER
-              └→ Phase 4 (Orchestrator verification)  ← LATER
+          └→ Phase 3 (Gmail + Telegram + Memorizer)  ✅ DONE
+              └→ Phase 4 (Orchestrator verification)  ← NEXT
                   └→ Phase 5 (Description pass)       ← LATER
 ```
 
 ## Verification
 After all phases:
-1. `npx tsc --noEmit` in every package ✅ (Shared, Guardian, 1Password, Searcher, Filer, Orchestrator all pass)
-2. `npx vitest run` in every package (requires running servers — manual step)
-3. `./test-all.sh` full stack (requires running servers — manual step)
-4. Manual: connect via Claude Code, verify `listTools` shows annotations
-5. Manual: call a read-only tool and a destructive tool, confirm annotation behavior
+1. `npx tsc --noEmit` in every package ✅ (all packages pass)
+2. Unit tests via InMemoryTransport ✅ (Memorizer 8/8, Telegram 8/8, Gmail 8/8)
+3. `npx vitest run` integration tests (requires running servers + legacy test migration)
+4. `./test-all.sh` full stack (requires legacy test migration)
+5. Manual: connect via Claude Code, verify `listTools` shows annotations
+6. Manual: call a read-only tool and a destructive tool, confirm annotation behavior

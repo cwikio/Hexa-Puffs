@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:api": "vitest run --config vitest.api.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run --config tests/vitest.unit.config.ts"
   },
   "keywords": [
     "mcp",
@@ -24,6 +25,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@mcp/shared": "file:../Shared",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "dotenv": "^17.2.3",
     "googleapis": "^140.0.0",

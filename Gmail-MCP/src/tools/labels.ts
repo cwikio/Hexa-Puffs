@@ -20,6 +20,8 @@ export const listLabelsTool = {
   },
 };
 
+export const ListLabelsInputSchema = z.object({});
+
 export async function handleListLabels(): Promise<StandardResponse<Label[]>> {
   try {
     const labels = await listLabels();
@@ -49,7 +51,7 @@ export const createLabelTool = {
   },
 };
 
-const CreateLabelInputSchema = z.object({
+export const CreateLabelInputSchema = z.object({
   name: z.string().min(1),
 });
 
@@ -90,7 +92,7 @@ export const deleteLabelTool = {
   },
 };
 
-const DeleteLabelInputSchema = z.object({
+export const DeleteLabelInputSchema = z.object({
   label_id: z.string().min(1),
 });
 
