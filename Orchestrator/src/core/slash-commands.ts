@@ -57,6 +57,9 @@ export class SlashCommandHandler {
         case '/delete':
           return { handled: true, response: await this.handleDelete(msg.chatId, args) };
 
+        case '/info':
+          return { handled: true, response: await this.handleInfo() };
+
         case '/help':
           return { handled: true, response: this.handleHelp() };
 
@@ -255,10 +258,72 @@ export class SlashCommandHandler {
     return totalDeleted;
   }
 
+  private async handleInfo(): Promise<string> {
+    const status = this.orchestrator.getStatus();
+    const tools = this.orchestrator.getAvailableTools();
+
+    // Group tools by MCP
+    const toolsByMcp = new Map<string, string[]>();
+    for (const toolName of tools) {
+      const prefix = toolName.includes('_') ? toolName.split('_')[0] : 'other';
+      const list = toolsByMcp.get(prefix) ?? [];
+      list.push(toolName);
+      toolsByMcp.set(prefix, list);
+    }
+
+    let output = 'Annabelle Info\n\n';
+
+    // Slash commands
+    output += 'Commands:\n';
+    output += '  /status — System status (MCPs, agents, uptime)\n';
+    output += '  /info — This info page (commands, tools, skills)\n';
+    output += '  /delete — Delete messages (today | <N>h | <N>)\n';
+    output += '  /help — Short command list\n';
+
+    // MCP services + tool counts
+    output += '\nMCP Services:\n';
+    const mcpEntries = Object.entries(status.mcpServers);
+    for (const [name, info] of mcpEntries) {
+      const state = info.available ? 'up' : 'DOWN';
+      const count = toolsByMcp.get(name)?.length ?? 0;
+      output += `  ${name}: ${state} (${count} tools)\n`;
+    }
+    output += `  Total: ${tools.length} tools\n`;
+
+    // Skills from memory
+    try {
+      const result = await this.toolRouter.routeToolCall('memory_list_skills', {
+        agent_id: 'annabelle',
+        enabled: true,
+      });
+
+      if (result.success) {
+        const data = this.extractData<{ skills: Array<{ name: string; description?: string; trigger_type: string }> }>(result);
+        const skills = data?.skills ?? [];
+
+        if (skills.length > 0) {
+          output += '\nSkills:\n';
+          for (const skill of skills) {
+            const trigger = skill.trigger_type === 'cron' ? 'cron' : skill.trigger_type;
+            const desc = skill.description ? ` — ${skill.description}` : '';
+            output += `  ${skill.name} [${trigger}]${desc}\n`;
+          }
+        } else {
+          output += '\nSkills: (none)\n';
+        }
+      }
+    } catch {
+      output += '\nSkills: (unavailable)\n';
+    }
+
+    return output;
+  }
+
   private handleHelp(): string {
     return [
       'Available commands:',
       '  /status — System status (MCPs, agents, tools)',
+      '  /info — Commands, tools, and skills overview',
       '  /delete today — Delete messages from today',
       '  /delete <N>h — Delete messages from last N hours',
       '  /delete <N> — Delete last N messages',
@@ -292,7 +357,12 @@ export class SlashCommandHandler {
       };
       const text = mcpResponse?.content?.[0]?.text;
       if (!text) return null;
-      return JSON.parse(text) as T;
+      const parsed = JSON.parse(text) as { success?: boolean; data?: T } & T;
+      // Unwrap StandardResponse envelope if present
+      if (parsed.data !== undefined && 'success' in parsed) {
+        return parsed.data;
+      }
+      return parsed;
     } catch {
       return null;
     }
