@@ -166,7 +166,7 @@ export class OrchestratorClient {
     trace?: TraceContext
   ): Promise<TelegramMessage[]> {
     const response = await this.executeTool(
-      'get_new_messages',
+      'telegram_get_new_messages',
       { peek },
       trace
     );
@@ -214,7 +214,7 @@ export class OrchestratorClient {
       args.reply_to = replyTo;
     }
 
-    const response = await this.executeTool('send_message', args, trace);
+    const response = await this.executeTool('telegram_send_message', args, trace);
     return response.success;
   }
 
@@ -228,7 +228,7 @@ export class OrchestratorClient {
     trace?: TraceContext
   ): Promise<boolean> {
     const response = await this.executeTool(
-      'store_fact',
+      'memory_store_fact',
       { agent_id: agentId, fact, category },
       trace
     );
@@ -245,7 +245,7 @@ export class OrchestratorClient {
     trace?: TraceContext
   ): Promise<{ facts: MemoryFact[]; conversations: ConversationEntry[] }> {
     const response = await this.executeTool(
-      'retrieve_memories',
+      'memory_retrieve_memories',
       { agent_id: agentId, query, limit, include_conversations: true },
       trace
     );
@@ -270,7 +270,7 @@ export class OrchestratorClient {
    */
   async getProfile(agentId: string, trace?: TraceContext): Promise<AgentProfile | null> {
     const response = await this.executeTool(
-      'get_profile',
+      'memory_get_profile',
       { agent_id: agentId },
       trace
     );
@@ -302,7 +302,7 @@ export class OrchestratorClient {
       args.session_id = sessionId;
     }
 
-    const response = await this.executeTool('store_conversation', args, trace);
+    const response = await this.executeTool('memory_store_conversation', args, trace);
     return response.success;
   }
 
@@ -316,7 +316,7 @@ export class OrchestratorClient {
     trace?: TraceContext
   ): Promise<ConversationEntry[]> {
     const response = await this.executeTool(
-      'search_conversations',
+      'memory_search_conversations',
       { agent_id: agentId, query, limit },
       trace
     );

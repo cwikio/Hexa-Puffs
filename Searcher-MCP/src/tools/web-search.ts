@@ -32,9 +32,8 @@ export const webSearchSchema = z.object({
   query: z.string().describe("Search query"),
   count: z
     .coerce.number()
-    .min(1)
-    .max(20)
     .default(10)
+    .transform((v) => Math.max(1, Math.min(20, v)))
     .describe("Number of results (1-20)"),
   freshness: z
     .string()
