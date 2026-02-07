@@ -55,6 +55,10 @@ export const ConfigSchema = z.object({
   // Agent settings
   thinkerAgentId: z.string().default('thinker'),
 
+  // Path to a file containing the system prompt (overrides built-in DEFAULT_SYSTEM_PROMPT)
+  // Set by Orchestrator's AgentManager when spawning agents with custom prompts
+  systemPromptPath: z.string().optional(),
+
   // Proactive tasks
   proactiveTasksEnabled: z.boolean().default(true),
   defaultNotifyChatId: z.string().optional(),
@@ -107,6 +111,7 @@ export function loadConfig(): Config {
     telegramPollIntervalMs: parseInteger(process.env.TELEGRAM_POLL_INTERVAL_MS, 10000),
     sendResponseDirectly: parseBoolean(process.env.THINKER_SEND_RESPONSE_DIRECTLY, true),
     thinkerAgentId: process.env.THINKER_AGENT_ID || 'thinker',
+    systemPromptPath: process.env.THINKER_SYSTEM_PROMPT_PATH || undefined,
     proactiveTasksEnabled: parseBoolean(process.env.PROACTIVE_TASKS_ENABLED, true),
     defaultNotifyChatId: process.env.DEFAULT_NOTIFY_CHAT_ID || undefined,
     userTimezone: process.env.USER_TIMEZONE || 'Europe/Warsaw',

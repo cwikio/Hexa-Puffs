@@ -17,10 +17,12 @@ import type {
  */
 export class OrchestratorClient {
   private baseUrl: string;
+  private agentId: string;
   private tools: Map<string, OrchestratorTool> = new Map();
 
   constructor(config: Config) {
     this.baseUrl = config.orchestratorUrl;
+    this.agentId = config.thinkerAgentId;
   }
 
   /**
@@ -35,6 +37,7 @@ export class OrchestratorClient {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'X-Agent-Id': this.agentId,
       ...(trace ? createTraceHeaders(trace) : {}),
     };
 

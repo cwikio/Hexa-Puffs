@@ -1,4 +1,4 @@
-import { getConfig, type Config } from '../config/index.js';
+import { getConfig, type Config, type AgentDefinition, getDefaultAgent, loadAgentsFromFile } from '../config/index.js';
 import { guardianConfig } from '../config/guardian.js';
 import { GuardianMCPClient } from '../mcp-clients/guardian.js';
 import { StdioGuardianClient } from '../mcp-clients/stdio-guardian.js';
@@ -31,6 +31,7 @@ import { ToolExecutor, type ToolRegistry } from './tools.js';
 import { ToolRouter } from './tool-router.js';
 import { ChannelPoller } from './channel-poller.js';
 import { ThinkerClient } from './thinker-client.js';
+import { AgentManager, type AgentStatus } from './agent-manager.js';
 import type { IncomingAgentMessage } from './agent-types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
@@ -45,6 +46,7 @@ export interface OrchestratorStatus {
   ready: boolean;
   uptime: number;
   mcpServers: Record<string, MCPServerStatus>;
+  agents: AgentStatus[];
   sessions: { activeSessions: number; totalTurns: number };
   security: { blockedCount: number };
 }
@@ -72,8 +74,10 @@ export class Orchestrator {
   private tools: ToolExecutor | null = null;
   private toolRouter: ToolRouter;
 
-  // Channel polling & Thinker dispatch (Phase 1 multi-agent)
+  // Channel polling & agent dispatch (multi-agent)
   private channelPoller: ChannelPoller | null = null;
+  private agentManager: AgentManager | null = null;
+  // Fallback single-agent client (used when no agents config is provided)
   private thinkerClient: ThinkerClient | null = null;
 
   private initialized: boolean = false;
@@ -239,7 +243,10 @@ export class Orchestrator {
       this.startHealthMonitoring();
     }
 
-    // Start channel polling if enabled (dispatches messages to Thinker)
+    // Initialize agents (multi-agent or single-agent fallback)
+    await this.initializeAgents();
+
+    // Start channel polling if enabled (dispatches messages to agents)
     if (this.config.channelPolling.enabled) {
       await this.startChannelPolling();
     }
@@ -412,24 +419,49 @@ export class Orchestrator {
     }
   }
 
-  // ─── Channel Polling & Thinker Dispatch ────────────────────────────
+  // ─── Agent Management ────────────────────────────────────────────
 
   /**
-   * Start polling channels and dispatching messages to the Thinker.
+   * Initialize agents: either multi-agent via AgentManager or single-agent fallback.
+   */
+  private async initializeAgents(): Promise<void> {
+    // Try to load agents config from file
+    let agentDefs: AgentDefinition[] | undefined = this.config.agents;
+
+    if (!agentDefs && this.config.agentsConfigPath) {
+      const loaded = await loadAgentsFromFile(this.config.agentsConfigPath);
+      if (loaded) {
+        agentDefs = loaded.agents;
+        this.logger.info(`Loaded ${agentDefs.length} agent definition(s) from ${this.config.agentsConfigPath}`);
+      } else {
+        this.logger.warn(`Could not load agents config from ${this.config.agentsConfigPath} — falling back to single agent`);
+      }
+    }
+
+    if (agentDefs && agentDefs.length > 0) {
+      // Multi-agent mode: spawn Thinker instances via AgentManager
+      this.agentManager = new AgentManager();
+      await this.agentManager.initializeAll(agentDefs);
+      this.logger.info(`AgentManager initialized: ${this.agentManager.getAvailableCount()} agent(s) available`);
+    } else {
+      // Single-agent fallback: use thinkerUrl directly (backward compatible)
+      this.thinkerClient = new ThinkerClient(this.config.thinkerUrl);
+      const healthy = await this.thinkerClient.healthCheck();
+      if (healthy) {
+        this.logger.info(`Single-agent Thinker connected at ${this.config.thinkerUrl}`);
+      } else {
+        this.logger.warn(`Single-agent Thinker at ${this.config.thinkerUrl} is not responding`);
+      }
+    }
+  }
+
+  // ─── Channel Polling & Agent Dispatch ──────────────────────────────
+
+  /**
+   * Start polling channels and dispatching messages to agents.
    */
   private async startChannelPolling(): Promise<void> {
     this.logger.info('Starting channel polling...');
-
-    // Create Thinker client
-    this.thinkerClient = new ThinkerClient(this.config.thinkerUrl);
-
-    // Check Thinker health before starting
-    const thinkerHealthy = await this.thinkerClient.healthCheck();
-    if (!thinkerHealthy) {
-      this.logger.warn(`Thinker at ${this.config.thinkerUrl} is not responding — polling will start but dispatch may fail`);
-    } else {
-      this.logger.info(`Thinker connected at ${this.config.thinkerUrl}`);
-    }
 
     // Create and initialize channel poller
     this.channelPoller = new ChannelPoller(this.toolRouter, {
@@ -457,17 +489,19 @@ export class Orchestrator {
   }
 
   /**
-   * Dispatch a message to the Thinker and relay the response back to the channel.
+   * Dispatch a message to the appropriate agent and relay the response back to the channel.
    */
   private async dispatchMessage(msg: IncomingAgentMessage): Promise<void> {
-    if (!this.thinkerClient) {
-      this.logger.error('Cannot dispatch message — ThinkerClient not initialized');
+    // Resolve which client to use
+    const client = this.resolveClient(msg.agentId);
+    if (!client) {
+      this.logger.error(`Cannot dispatch message — no agent available for agentId="${msg.agentId}"`);
       return;
     }
 
-    this.logger.info(`Dispatching to Thinker: chat=${msg.chatId}, agent=${msg.agentId}`);
+    this.logger.info(`Dispatching to agent: chat=${msg.chatId}, agent=${msg.agentId}`);
 
-    const result = await this.thinkerClient.processMessage(msg);
+    const result = await client.processMessage(msg);
 
     if (result.success && result.response) {
       // Send response back to the originating channel
@@ -489,16 +523,41 @@ export class Orchestrator {
         `Response delivered: chat=${msg.chatId}, steps=${result.totalSteps}, tools=${result.toolsUsed.join(', ') || 'none'}`
       );
     } else {
-      this.logger.error(`Thinker processing failed: ${result.error}`);
+      this.logger.error(`Agent processing failed: ${result.error}`);
       // Do NOT send error messages to chat — prevents feedback loops
     }
   }
 
   /**
-   * Get the Thinker client (for Inngest skill execution passthrough).
+   * Resolve a ThinkerClient for the given agentId.
+   * In multi-agent mode: looks up via AgentManager.
+   * In single-agent mode: returns the fallback thinkerClient.
    */
-  getThinkerClient(): ThinkerClient | null {
+  private resolveClient(agentId?: string): ThinkerClient | null {
+    if (this.agentManager) {
+      // Try specific agent first, then fall back to default
+      if (agentId) {
+        const client = this.agentManager.getClient(agentId);
+        if (client) return client;
+      }
+      return this.agentManager.getDefaultClient();
+    }
     return this.thinkerClient;
+  }
+
+  /**
+   * Get a Thinker client for a specific agent (for Inngest skill execution passthrough).
+   * Falls back to default agent if agentId not found.
+   */
+  getThinkerClient(agentId?: string): ThinkerClient | null {
+    return this.resolveClient(agentId);
+  }
+
+  /**
+   * Get the AgentManager (for status reporting, etc.)
+   */
+  getAgentManager(): AgentManager | null {
+    return this.agentManager;
   }
 
   // ─── HTTP Mode Helpers ────────────────────────────────────────────
@@ -627,6 +686,7 @@ export class Orchestrator {
       ready: this.initialized,
       uptime,
       mcpServers,
+      agents: this.agentManager?.getStatus() ?? [],
       sessions: this.sessions.getStats(),
       security: {
         blockedCount,

@@ -1,3 +1,4 @@
+import { readFile } from 'fs/promises';
 import { generateText, type CoreMessage, type CoreTool } from 'ai';
 import type { LanguageModelV1 } from 'ai';
 import type { Config } from '../config.js';
@@ -114,6 +115,7 @@ export class Agent {
   private monitoredChatIds: string[] = [];
   private lastChatRefresh = 0;
   private playbookCache: PlaybookCache;
+  private customSystemPrompt: string | null = null;
 
   // Rate limiting
   private lastApiCallTime = 0;
@@ -151,6 +153,17 @@ export class Agent {
    */
   async initialize(): Promise<void> {
     console.log('Initializing agent...');
+
+    // Load custom system prompt from file if configured
+    if (this.config.systemPromptPath) {
+      try {
+        this.customSystemPrompt = await readFile(this.config.systemPromptPath, 'utf-8');
+        console.log(`Loaded custom system prompt from ${this.config.systemPromptPath} (${this.customSystemPrompt.length} chars)`);
+      } catch (error) {
+        console.error(`Failed to load system prompt from ${this.config.systemPromptPath}:`, error);
+        // Fall through to DEFAULT_SYSTEM_PROMPT
+      }
+    }
 
     // Check Orchestrator health
     const healthy = await this.orchestrator.healthCheck();
@@ -249,8 +262,8 @@ export class Agent {
 
     await this.logger.logContextLoaded(trace, memories.facts.length, !!profile);
 
-    // Build system prompt
-    let systemPrompt = DEFAULT_SYSTEM_PROMPT;
+    // Build system prompt (priority: custom file > profile override > built-in default)
+    let systemPrompt = this.customSystemPrompt || DEFAULT_SYSTEM_PROMPT;
 
     if (profile?.profile_data?.persona?.system_prompt) {
       systemPrompt = profile.profile_data.persona.system_prompt;

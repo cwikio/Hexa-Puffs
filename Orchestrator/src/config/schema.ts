@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AgentDefinitionSchema } from './agents.js';
 
 // Stdio-based MCP server config (spawns process)
 export const StdioMCPServerConfigSchema = z.object({
@@ -89,8 +90,14 @@ export const ConfigSchema = z.object({
   // Channel polling (Orchestrator polls Telegram and dispatches to Thinker)
   channelPolling: ChannelPollingConfigSchema.default({}),
 
-  // Thinker URL for skill execution and message dispatch
+  // Thinker URL for skill execution and message dispatch (single-agent fallback)
   thinkerUrl: z.string().default('http://localhost:8006'),
+
+  // Multi-agent: agent definitions (when set, overrides thinkerUrl)
+  agents: z.array(AgentDefinitionSchema).optional(),
+
+  // Path to agents config JSON file (alternative to inline agents array)
+  agentsConfigPath: z.string().optional(),
 
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });

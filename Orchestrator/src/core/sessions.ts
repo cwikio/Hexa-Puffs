@@ -10,6 +10,7 @@ export interface SessionTurn {
 
 export interface Session {
   id: string;
+  agentId: string;
   createdAt: Date;
   lastActivityAt: Date;
   history: SessionTurn[];
@@ -27,33 +28,45 @@ export class SessionManager {
     this.logger = logger.child('sessions');
   }
 
-  getOrCreate(sessionId?: string): Session {
+  /**
+   * Build the compound key for session storage: agentId:sessionId
+   */
+  private buildKey(agentId: string, sessionId: string): string {
+    return `${agentId}:${sessionId}`;
+  }
+
+  getOrCreate(sessionId?: string, agentId: string = 'main'): Session {
     // Clean up expired sessions
     this.cleanupExpired();
 
-    if (sessionId && this.sessions.has(sessionId)) {
-      const session = this.sessions.get(sessionId)!;
+    const resolvedSessionId = sessionId || `sess_${randomUUID().replace(/-/g, '').substring(0, 12)}`;
+    const key = this.buildKey(agentId, resolvedSessionId);
+
+    if (this.sessions.has(key)) {
+      const session = this.sessions.get(key)!;
       session.lastActivityAt = new Date();
-      this.logger.debug('Resumed existing session', { sessionId });
+      this.logger.debug('Resumed existing session', { sessionId: resolvedSessionId, agentId });
       return session;
     }
 
     const newSession: Session = {
-      id: sessionId || `sess_${randomUUID().replace(/-/g, '').substring(0, 12)}`,
+      id: resolvedSessionId,
+      agentId,
       createdAt: new Date(),
       lastActivityAt: new Date(),
       history: [],
     };
 
-    this.sessions.set(newSession.id, newSession);
-    this.logger.debug('Created new session', { sessionId: newSession.id });
+    this.sessions.set(key, newSession);
+    this.logger.debug('Created new session', { sessionId: newSession.id, agentId });
     return newSession;
   }
 
-  addTurn(sessionId: string, turn: Omit<SessionTurn, 'timestamp'>): void {
-    const session = this.sessions.get(sessionId);
+  addTurn(sessionId: string, turn: Omit<SessionTurn, 'timestamp'>, agentId: string = 'main'): void {
+    const key = this.buildKey(agentId, sessionId);
+    const session = this.sessions.get(key);
     if (!session) {
-      this.logger.warn('Session not found for addTurn', { sessionId });
+      this.logger.warn('Session not found for addTurn', { sessionId, agentId });
       return;
     }
 
@@ -70,14 +83,15 @@ export class SessionManager {
     session.lastActivityAt = new Date();
   }
 
-  getSession(sessionId: string): Session | undefined {
-    return this.sessions.get(sessionId);
+  getSession(sessionId: string, agentId: string = 'main'): Session | undefined {
+    return this.sessions.get(this.buildKey(agentId, sessionId));
   }
 
-  deleteSession(sessionId: string): boolean {
-    const deleted = this.sessions.delete(sessionId);
+  deleteSession(sessionId: string, agentId: string = 'main'): boolean {
+    const key = this.buildKey(agentId, sessionId);
+    const deleted = this.sessions.delete(key);
     if (deleted) {
-      this.logger.debug('Deleted session', { sessionId });
+      this.logger.debug('Deleted session', { sessionId, agentId });
     }
     return deleted;
   }

@@ -141,6 +141,9 @@ export function loadConfig(): Config {
 
     thinkerUrl: getEnvString('THINKER_URL', 'http://localhost:8006'),
 
+    // Multi-agent config: loaded from file if AGENTS_CONFIG_PATH is set
+    agentsConfigPath: process.env.AGENTS_CONFIG_PATH || undefined,
+
     logLevel: getEnvString('LOG_LEVEL', 'info'),
   };
 
@@ -173,3 +176,10 @@ export {
   type SecurityConfig,
   type ChannelPollingConfig,
 } from './schema.js';
+
+export {
+  type AgentDefinition,
+  type AgentsConfig,
+  getDefaultAgent,
+  loadAgentsFromFile,
+} from './agents.js';
