@@ -131,6 +131,44 @@ run_mcp_tests() {
   cd "$MCP_DIR"
 }
 
+run_mcp_unit_tests() {
+  local name=$1
+  local dir=$2
+
+  if [ ! -d "$dir" ]; then
+    echo -e "  ${YELLOW}⚠ $name directory not found - skipping${RESET}"
+    ((SKIPPED++)) || true
+    return
+  fi
+
+  if [ ! -f "$dir/package.json" ]; then
+    echo -e "  ${YELLOW}⚠ $name has no package.json - skipping${RESET}"
+    ((SKIPPED++)) || true
+    return
+  fi
+
+  # Check if test:unit script exists
+  if ! grep -q '"test:unit"' "$dir/package.json"; then
+    echo -e "  ${YELLOW}⚠ $name has no test:unit script - skipping${RESET}"
+    ((SKIPPED++)) || true
+    return
+  fi
+
+  echo -e "  Running ${BOLD}$name${RESET} unit tests..."
+
+  cd "$dir"
+
+  if npm run test:unit 2>&1; then
+    echo -e "  ${GREEN}✓ $name unit tests passed${RESET}"
+    ((PASSED++)) || true
+  else
+    echo -e "  ${RED}✗ $name unit tests failed${RESET}"
+    ((FAILED++)) || true
+  fi
+
+  cd "$MCP_DIR"
+}
+
 test_curl() {
   local name=$1
   local url=$2
@@ -142,6 +180,24 @@ test_curl() {
   RESPONSE=$(curl -s -X POST "$url" \
     -H "Content-Type: application/json" \
     -d "$data" 2>/dev/null || echo "FAILED")
+
+  if echo "$RESPONSE" | grep -q "$expected"; then
+    echo -e "${GREEN}✓${RESET}"
+    ((CURL_PASSED++)) || true
+  else
+    echo -e "${RED}✗${RESET}"
+    ((CURL_FAILED++)) || true
+  fi
+}
+
+test_curl_get() {
+  local name=$1
+  local url=$2
+  local expected=$3
+
+  echo -n "  $name... "
+
+  RESPONSE=$(curl -s "$url" 2>/dev/null || echo "FAILED")
 
   if echo "$RESPONSE" | grep -q "$expected"; then
     echo -e "${GREEN}✓${RESET}"
@@ -212,14 +268,13 @@ if [ "$RUN_CURL" = true ]; then
     echo -e "\n  ${BOLD}Orchestrator (stdio mode - routes to all MCPs):${RESET}"
     test_curl "Get status" "http://localhost:8010/tools/call" \
       '{"name": "get_status", "arguments": {}}' "ready"
-    test_curl "List tools" "http://localhost:8010/tools/list" \
-      '{}' "name"
+    test_curl_get "List tools" "http://localhost:8010/tools/list" "name"
     test_curl "List chats (via Telegram)" "http://localhost:8010/tools/call" \
-      '{"name": "list_chats", "arguments": {"limit": 5}}' "content"
+      '{"name": "telegram_list_chats", "arguments": {"limit": 5}}' "success"
     test_curl "Get memory stats (via Memory)" "http://localhost:8010/tools/call" \
-      '{"name": "get_memory_stats", "arguments": {}}' "content"
+      '{"name": "memory_get_memory_stats", "arguments": {}}' "success"
     test_curl "Get workspace info (via Filer)" "http://localhost:8010/tools/call" \
-      '{"name": "get_workspace_info", "arguments": {}}' "content"
+      '{"name": "filer_get_workspace_info", "arguments": {}}' "success"
   fi
 
   # Thinker tests (if running)
@@ -279,24 +334,42 @@ fi
 # =============================================================================
 
 if [ "$RUN_VITEST" = true ]; then
-  print_section "Section 3: Vitest Integration Tests"
+  # =====================================================
+  # Section 3: Unit Tests (no running server required)
+  # =====================================================
+  # Stdio MCPs (Filer, Memorizer, Guardian, 1Password) are spawned by
+  # Orchestrator — they don't have standalone HTTP ports. Only unit
+  # tests (InMemoryTransport) run here. Integration coverage comes
+  # from Orchestrator tests in Section 5.
+  print_section "Section 3: Unit Tests (per-MCP)"
 
-  echo -e "Running vitest for each MCP with tests...\n"
+  run_mcp_unit_tests "Memorizer" "$MCP_DIR/Memorizer-MCP"
+  run_mcp_unit_tests "Gmail" "$MCP_DIR/Gmail-MCP"
+  run_mcp_unit_tests "Filer" "$MCP_DIR/Filer-MCP"
+  run_mcp_unit_tests "Guardian" "$MCP_DIR/Guardian"
 
-  # Run tests for each MCP
-  run_mcp_tests "Filer" "$MCP_DIR/Filer-MCP"
-  run_mcp_tests "Memorizer" "$MCP_DIR/Memorizer-MCP"
+  # =====================================================
+  # Section 4: Standalone HTTP MCP Tests
+  # =====================================================
+  # Telegram (8002) and Searcher (8007) still run their own HTTP
+  # servers — full test suites run against their standalone ports.
+  print_section "Section 4: HTTP MCP Tests (standalone servers)"
+
   run_mcp_tests "Telegram" "$MCP_DIR/Telegram-MCP"
-  run_mcp_tests "Guardian" "$MCP_DIR/Guardian"
   run_mcp_tests "Searcher" "$MCP_DIR/Searcher-MCP"
-  run_mcp_tests "Gmail" "$MCP_DIR/Gmail-MCP"
 
-  # Orchestrator tests (Level 2 + Level 3 workflows + stdio mode)
-  print_section "Section 4: Orchestrator Tests"
+  # =====================================================
+  # Section 5: Orchestrator Integration Tests
+  # =====================================================
+  # Routes through Orchestrator (8010) to all downstream MCPs.
+  # Covers tool routing, workflows, jobs, and lifecycle tests.
+  print_section "Section 5: Orchestrator Integration Tests"
   run_mcp_tests "Orchestrator" "$MCP_DIR/Orchestrator"
 
-  # Thinker tests (if available)
-  print_section "Section 5: Thinker Tests"
+  # =====================================================
+  # Section 6: Thinker Tests
+  # =====================================================
+  print_section "Section 6: Thinker Tests"
   run_mcp_tests "Thinker" "$MCP_DIR/Thinker"
 fi
 

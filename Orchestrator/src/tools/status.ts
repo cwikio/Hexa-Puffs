@@ -10,6 +10,11 @@ export const statusToolDefinition = {
     properties: {},
     required: [] as string[],
   },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
 };
 
 export async function handleStatus(): Promise<StandardResponse> {

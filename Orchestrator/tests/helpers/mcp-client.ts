@@ -64,11 +64,13 @@ export class MCPTestClient {
   private baseUrl: string
   private name: string
   private timeout: number
+  private toolPrefix: string
 
-  constructor(name: string, baseUrl: string, timeout = 10000) {
+  constructor(name: string, baseUrl: string, timeout = 10000, toolPrefix = '') {
     this.name = name
     this.baseUrl = baseUrl
     this.timeout = timeout
+    this.toolPrefix = toolPrefix
   }
 
   async healthCheck(): Promise<MCPHealthResult> {
@@ -104,13 +106,14 @@ export class MCPTestClient {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), this.timeout)
 
+      const prefixedName = this.toolPrefix ? `${this.toolPrefix}${toolName}` : toolName
       const response = await fetch(`${this.baseUrl}/tools/call`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: toolName,
+          name: prefixedName,
           arguments: args,
         }),
         signal: controller.signal,
@@ -153,41 +156,47 @@ export class MCPTestClient {
   }
 }
 
-// Pre-configured clients for each MCP
-// Note: With stdio mode, Orchestrator (8010) spawns downstream MCPs internally
-// The legacy ports (8002-8005) are for backwards compatibility when running MCPs individually
+// URL configuration
 export const MCP_URLS = {
-  // Legacy individual MCP ports (HTTP mode)
-  telegram: process.env.TELEGRAM_URL || 'http://localhost:8002',
-  filer: process.env.FILER_URL || 'http://localhost:8004',
-  memory: process.env.MEMORY_URL || 'http://localhost:8005',
-  guardian: process.env.GUARDIAN_URL || 'http://localhost:8003',
-  onepassword: process.env.ONEPASSWORD_URL || 'http://localhost:8001',
-  searcher: process.env.SEARCHER_URL || 'http://localhost:8007',
-  // Orchestrator (stdio mode with HTTP transport for clients)
+  // Orchestrator (stdio mode — routes to all downstream MCPs)
   orchestrator: process.env.ORCHESTRATOR_URL || 'http://localhost:8010',
+  // Standalone HTTP MCPs (still running their own servers)
+  telegram: process.env.TELEGRAM_URL || 'http://localhost:8002',
+  searcher: process.env.SEARCHER_URL || 'http://localhost:8007',
   // Thinker (connects to Orchestrator via HTTP)
   thinker: process.env.THINKER_URL || 'http://localhost:8006',
 }
 
+// Primary factory functions — route through Orchestrator with prefixed tool names.
+// All stdio MCPs (Telegram, Memory, Filer, Guardian, 1Password, Searcher, Gmail)
+// are accessed via the Orchestrator on port 8010.
+
 export function createTelegramClient(): MCPTestClient {
-  return new MCPTestClient('Telegram', MCP_URLS.telegram)
+  return new MCPTestClient('Telegram', MCP_URLS.orchestrator, 10000, 'telegram_')
 }
 
 export function createFilerClient(): MCPTestClient {
-  return new MCPTestClient('Filer', MCP_URLS.filer)
+  return new MCPTestClient('Filer', MCP_URLS.orchestrator, 10000, 'filer_')
 }
 
 export function createMemoryClient(): MCPTestClient {
-  return new MCPTestClient('Memory', MCP_URLS.memory)
+  return new MCPTestClient('Memory', MCP_URLS.orchestrator, 10000, 'memory_')
 }
 
 export function createGuardianClient(): MCPTestClient {
-  return new MCPTestClient('Guardian', MCP_URLS.guardian)
+  return new MCPTestClient('Guardian', MCP_URLS.orchestrator, 10000, 'guardian_')
 }
 
 export function createOnePasswordClient(): MCPTestClient {
-  return new MCPTestClient('1Password', MCP_URLS.onepassword)
+  return new MCPTestClient('1Password', MCP_URLS.orchestrator, 10000, 'onepassword_')
+}
+
+export function createSearcherClient(): MCPTestClient {
+  return new MCPTestClient('Searcher', MCP_URLS.orchestrator, 10000, 'searcher_')
+}
+
+export function createGmailClient(): MCPTestClient {
+  return new MCPTestClient('Gmail', MCP_URLS.orchestrator, 10000, 'gmail_')
 }
 
 export function createOrchestratorClient(): MCPTestClient {
@@ -196,10 +205,6 @@ export function createOrchestratorClient(): MCPTestClient {
 
 export function createThinkerClient(): MCPTestClient {
   return new MCPTestClient('Thinker', MCP_URLS.thinker)
-}
-
-export function createSearcherClient(): MCPTestClient {
-  return new MCPTestClient('Searcher', MCP_URLS.searcher)
 }
 
 /**

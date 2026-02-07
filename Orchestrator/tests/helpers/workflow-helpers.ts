@@ -128,7 +128,7 @@ export async function waitForJobCompletion(
   const startTime = Date.now()
 
   while (Date.now() - startTime < maxWaitMs) {
-    const result = await client.callTool('get_task_status', { taskId })
+    const result = await client.callTool('get_job_status', { taskId })
 
     if (result.success) {
       const parsed = parseJsonContent<{ status: string }>(result)

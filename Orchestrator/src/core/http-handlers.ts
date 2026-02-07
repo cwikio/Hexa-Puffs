@@ -4,11 +4,17 @@ import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   statusToolDefinition,
   handleStatus,
+  jobToolDefinitions,
+  handleCreateJob,
+  handleQueueTask,
+  handleListJobs,
+  handleGetJobStatus,
+  handleDeleteJob,
   type StandardResponse,
 } from '../tools/index.js';
 
 // Custom tools that are not passthrough (orchestrator-specific)
-const customToolDefinitions = [statusToolDefinition];
+const customToolDefinitions = [statusToolDefinition, ...jobToolDefinitions];
 
 // Custom tool handlers
 const customToolHandlers: Record<
@@ -16,6 +22,11 @@ const customToolHandlers: Record<
   (args: unknown) => Promise<StandardResponse>
 > = {
   get_status: handleStatus,
+  create_job: handleCreateJob,
+  queue_task: handleQueueTask,
+  list_jobs: handleListJobs,
+  get_job_status: handleGetJobStatus,
+  delete_job: handleDeleteJob,
 };
 
 /**
