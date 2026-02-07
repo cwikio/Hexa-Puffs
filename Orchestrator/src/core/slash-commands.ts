@@ -60,9 +60,6 @@ export class SlashCommandHandler {
         case '/info':
           return { handled: true, response: await this.handleInfo() };
 
-        case '/help':
-          return { handled: true, response: this.handleHelp() };
-
         default:
           return { handled: false };
       }
@@ -317,18 +314,6 @@ export class SlashCommandHandler {
     }
 
     return output;
-  }
-
-  private handleHelp(): string {
-    return [
-      'Available commands:',
-      '  /status — System status (MCPs, agents, tools)',
-      '  /info — Commands, tools, and skills overview',
-      '  /delete today — Delete messages from today',
-      '  /delete <N>h — Delete messages from last N hours',
-      '  /delete <N> — Delete last N messages',
-      '  /help — Show this help',
-    ].join('\n');
   }
 
   private formatUptime(ms: number): string {
