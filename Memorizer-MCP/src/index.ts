@@ -48,6 +48,10 @@ const toolHandlers: Record<string, (input: unknown) => Promise<StandardResponse<
 };
 
 async function main(): Promise<void> {
+  // Identify this service in logs so its output is distinguishable
+  // when spawned as a stdio child of the Orchestrator
+  logger.setContext('memorizer');
+
   const config = getConfig();
 
   logger.info('Starting Annabelle Memory MCP', {

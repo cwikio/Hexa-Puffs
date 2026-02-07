@@ -75,6 +75,14 @@ export class Logger {
   }
 
   /**
+   * Set the context prefix (e.g. service name) for this logger and future children.
+   * Call early at startup so child loggers inherit the correct prefix.
+   */
+  setContext(context: string): void {
+    this.context = context;
+  }
+
+  /**
    * Set the log level dynamically
    */
   setLevel(level: LogLevel): void {
