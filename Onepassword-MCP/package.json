@@ -27,5 +27,10 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "annabelle": {
+    "mcpName": "onepassword",
+    "transport": "stdio",
+    "sensitive": true
   }
 }

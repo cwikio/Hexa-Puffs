@@ -59,29 +59,12 @@ export const ConfigSchema = z.object({
   mcpConnectionMode: z.enum(['stdio', 'http']).default('stdio'),
 
   // Stdio-based MCP server configs (used when mcpConnectionMode = 'stdio')
-  mcpServersStdio: z
-    .object({
-      guardian: StdioMCPServerConfigSchema.optional(),
-      telegram: StdioMCPServerConfigSchema.optional(),
-      onepassword: StdioMCPServerConfigSchema.optional(),
-      memory: StdioMCPServerConfigSchema.optional(),
-      filer: StdioMCPServerConfigSchema.optional(),
-      searcher: StdioMCPServerConfigSchema.optional(),
-    })
-    .optional(),
+  // Dynamic: keys are auto-discovered from sibling MCP directories
+  mcpServersStdio: z.record(z.string(), StdioMCPServerConfigSchema).optional(),
 
-  // HTTP-based MCP server configs (used when mcpConnectionMode = 'http', for backwards compat)
-  mcpServers: z
-    .object({
-      guardian: MCPServerConfigSchema,
-      telegram: MCPServerConfigSchema,
-      onepassword: MCPServerConfigSchema,
-      memory: MCPServerConfigSchema,
-      filer: MCPServerConfigSchema,
-      searcher: MCPServerConfigSchema.optional(),
-      gmail: MCPServerConfigSchema.optional(),
-    })
-    .optional(),
+  // HTTP-based MCP server configs (used when mcpConnectionMode = 'http' or for HTTP-only MCPs)
+  // Dynamic: keys are auto-discovered from sibling MCP directories
+  mcpServers: z.record(z.string(), MCPServerConfigSchema).optional(),
 
   security: SecurityConfigSchema,
 

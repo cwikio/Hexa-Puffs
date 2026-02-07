@@ -25,3 +25,12 @@ All MCP tools follow this pattern:
 - Memorizer-MCP uses SQLite via better-sqlite3
 - Orchestrator passthrough tools must stay in sync with downstream MCPs
 - Each MCP should expose a `/health` endpoint (HTTP) or respond to health tool calls (stdio)
+
+## Auto-Discovery
+New MCPs are auto-discovered at Orchestrator startup via the `"annabelle"` field in `package.json`:
+- Required field: `mcpName` — the logical name the Orchestrator uses
+- Stdio MCPs (default): drop the folder, `npm run build`, restart Orchestrator
+- HTTP MCPs: also set `transport: "http"` and `httpPort`
+- Disable via env: `${NAME}_MCP_ENABLED=false` (e.g. `FILER_MCP_ENABLED=false`)
+- Override timeout via env: `${NAME}_MCP_TIMEOUT=60000`
+- See `Orchestrator/README.md` → "Adding a New MCP" for full guide

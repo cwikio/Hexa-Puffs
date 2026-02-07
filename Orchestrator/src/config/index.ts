@@ -1,5 +1,5 @@
 import { config as dotenvConfig } from 'dotenv';
-import { ConfigSchema, type Config } from './schema.js';
+import { ConfigSchema, type Config, type StdioMCPServerConfig, type MCPServerConfig } from './schema.js';
 import { ConfigurationError } from '../utils/errors.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
@@ -9,6 +9,7 @@ import {
 } from '@mcp/shared/Utils/config.js';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { scanForMCPs } from './scanner.js';
 
 // Load .env file
 dotenvConfig();
@@ -23,101 +24,49 @@ const mcpsRoot = resolve(__dirname, '../../../');
 export function loadConfig(): Config {
   const mcpConnectionMode = getEnvString('MCP_CONNECTION_MODE', 'stdio') as 'stdio' | 'http';
 
+  // Auto-discover MCPs from sibling directories
+  const discovered = scanForMCPs(mcpsRoot);
+
+  // Build stdio configs from discovered MCPs
+  const mcpServersStdio: Record<string, StdioMCPServerConfig> = {};
+  const mcpServersHttp: Record<string, MCPServerConfig> = {};
+
+  for (const mcp of discovered) {
+    const envPrefix = mcp.name.toUpperCase();
+    const timeout = getEnvNumber(`${envPrefix}_MCP_TIMEOUT`, mcp.timeout);
+
+    if (mcp.transport === 'stdio') {
+      mcpServersStdio[mcp.name] = {
+        command: 'node',
+        args: [mcp.entryPoint],
+        cwd: mcp.dir,
+        timeout: timeout ?? mcp.timeout,
+        required: mcp.required,
+        sensitive: mcp.sensitive,
+      };
+    }
+
+    if (mcp.transport === 'http') {
+      const port = mcp.httpPort ?? 8000;
+      const envPort = getEnvNumber(`${envPrefix}_MCP_PORT`, port) ?? port;
+      const defaultUrl = `http://localhost:${envPort}`;
+      mcpServersHttp[mcp.name] = {
+        url: getEnvString(`${envPrefix}_MCP_URL`, defaultUrl) ?? defaultUrl,
+        timeout: timeout ?? mcp.timeout,
+        required: mcp.required,
+        sensitive: mcp.sensitive,
+      };
+    }
+  }
+
   const rawConfig = {
     transport: getEnvString('TRANSPORT', 'stdio'),
     port: getEnvNumber('PORT', 8000),
     mcpConnectionMode,
 
-    // Stdio-based MCP configs (spawn processes)
-    mcpServersStdio: {
-      guardian: {
-        command: 'node',
-        args: [resolve(mcpsRoot, 'Guardian/dist/index.js')],
-        cwd: resolve(mcpsRoot, 'Guardian'),
-        timeout: getEnvNumber('GUARDIAN_MCP_TIMEOUT', 30000),
-        required: false,
-        sensitive: false,
-      },
-      telegram: {
-        command: 'node',
-        args: [resolve(mcpsRoot, 'Telegram-MCP/dist/src/index.js')],
-        cwd: resolve(mcpsRoot, 'Telegram-MCP'),
-        timeout: getEnvNumber('TELEGRAM_MCP_TIMEOUT', 30000),
-        required: false,
-        sensitive: true,
-      },
-      onepassword: {
-        command: 'node',
-        args: [resolve(mcpsRoot, 'Onepassword-MCP/dist/index.js')],
-        cwd: resolve(mcpsRoot, 'Onepassword-MCP'),
-        timeout: getEnvNumber('ONEPASSWORD_MCP_TIMEOUT', 30000),
-        required: false,
-        sensitive: true,
-      },
-      memory: {
-        command: 'node',
-        args: [resolve(mcpsRoot, 'Memorizer-MCP/dist/index.js')],
-        cwd: resolve(mcpsRoot, 'Memorizer-MCP'),
-        timeout: getEnvNumber('MEMORY_MCP_TIMEOUT', 30000),
-        required: false,
-        sensitive: false,
-      },
-      filer: {
-        command: 'node',
-        args: [resolve(mcpsRoot, 'Filer-MCP/dist/index.js')],
-        cwd: resolve(mcpsRoot, 'Filer-MCP'),
-        timeout: getEnvNumber('FILER_MCP_TIMEOUT', 30000),
-        required: false,
-        sensitive: true,
-      },
-      // Searcher runs as independent HTTP service, not spawned via stdio
-    },
-
-    // HTTP-based MCP configs (for backwards compatibility)
-    mcpServers: {
-      guardian: {
-        url: getEnvString('GUARDIAN_MCP_URL', 'http://localhost:8003'),
-        timeout: getEnvNumber('GUARDIAN_MCP_TIMEOUT', 5000),
-        required: false,
-        sensitive: false,
-      },
-      telegram: {
-        url: getEnvString('TELEGRAM_MCP_URL', 'http://localhost:8002'),
-        timeout: getEnvNumber('TELEGRAM_MCP_TIMEOUT', 5000),
-        required: false,
-        sensitive: true,
-      },
-      onepassword: {
-        url: getEnvString('ONEPASSWORD_MCP_URL', 'http://localhost:8001'),
-        timeout: getEnvNumber('ONEPASSWORD_MCP_TIMEOUT', 10000),
-        required: false,
-        sensitive: true,
-      },
-      memory: {
-        url: getEnvString('MEMORY_MCP_URL', 'http://localhost:8005'),
-        timeout: getEnvNumber('MEMORY_MCP_TIMEOUT', 10000),
-        required: false,
-        sensitive: false,
-      },
-      filer: {
-        url: getEnvString('FILER_MCP_URL', 'http://localhost:8004'),
-        timeout: getEnvNumber('FILER_MCP_TIMEOUT', 10000),
-        required: false,
-        sensitive: true,
-      },
-      searcher: {
-        url: getEnvString('SEARCHER_MCP_URL', 'http://localhost:8007'),
-        timeout: getEnvNumber('SEARCHER_MCP_TIMEOUT', 10000),
-        required: false,
-        sensitive: false,
-      },
-      gmail: {
-        url: getEnvString('GMAIL_MCP_URL', 'http://localhost:8008'),
-        timeout: getEnvNumber('GMAIL_MCP_TIMEOUT', 10000),
-        required: false,
-        sensitive: true,
-      },
-    },
+    // Auto-discovered MCP configs
+    mcpServersStdio: Object.keys(mcpServersStdio).length > 0 ? mcpServersStdio : undefined,
+    mcpServers: Object.keys(mcpServersHttp).length > 0 ? mcpServersHttp : undefined,
 
     security: {
       scanAllInputs: getEnvBoolean('SCAN_ALL_INPUTS', true),
@@ -155,7 +104,11 @@ export function loadConfig(): Config {
     throw new ConfigurationError('Invalid configuration', errors);
   }
 
-  logger.info('Configuration loaded successfully', { mcpConnectionMode });
+  logger.info('Configuration loaded successfully', {
+    mcpConnectionMode,
+    stdioMCPs: Object.keys(mcpServersStdio),
+    httpMCPs: Object.keys(mcpServersHttp),
+  });
   return result.data;
 }
 

@@ -33,5 +33,10 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "annabelle": {
+    "mcpName": "filer",
+    "transport": "stdio",
+    "sensitive": true
   }
 }

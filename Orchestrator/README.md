@@ -8,6 +8,7 @@ The central orchestration layer for Annabelle AI Assistant. The Orchestrator act
 - Enforces per-agent tool policies (allow/deny glob patterns)
 - Spawns and manages downstream MCPs via stdio
 - Connects to independent HTTP MCP services (Searcher, Gmail)
+- Auto-discovers new MCPs from sibling directories via `annabelle` manifest in `package.json`
 
 ## Architecture
 
@@ -62,6 +63,84 @@ The central orchestration layer for Annabelle AI Assistant. The Orchestrator act
 │  └────────┘                      │  │                        │
 └──────────────────────────────────┘  └────────────────────────┘
 ```
+
+## Adding a New MCP
+
+The Orchestrator **auto-discovers** MCP servers from sibling directories at startup. No hardcoded config changes needed.
+
+### Steps
+
+1. **Create your MCP directory** as a sibling folder (e.g., `MCPs/MyNewMCP/`)
+2. **Add an `annabelle` manifest** to your `package.json`:
+
+```json
+{
+  "name": "my-new-mcp",
+  "main": "dist/index.js",
+  "annabelle": {
+    "mcpName": "mynewmcp"
+  }
+}
+```
+
+3. **Set the `main` field** to point to your compiled entry point
+4. **Build** your MCP: `npm run build`
+5. **Restart Orchestrator** — it auto-discovers the MCP and registers its tools
+
+### Manifest Fields
+
+| Field | Required | Default | Description |
+|---|---|---|---|
+| `mcpName` | Yes | — | Logical name used by Orchestrator (e.g., `filer`, `memory`) |
+| `transport` | No | `"stdio"` | `"stdio"` (spawned by Orchestrator) or `"http"` (independent service) |
+| `sensitive` | No | `false` | Whether Guardian should wrap this MCP for security scanning |
+| `role` | No | — | Set to `"guardian"` only for the Guardian MCP |
+| `timeout` | No | `30000` | Default timeout in milliseconds |
+| `required` | No | `false` | If `true`, Orchestrator fails startup when this MCP is unavailable |
+| `httpPort` | No | — | Port for HTTP transport MCPs (ignored for stdio) |
+
+### HTTP MCP Example
+
+For MCPs that run as independent HTTP services (rare — only needed for webhooks, OAuth, or long-running connections):
+
+```json
+{
+  "name": "my-http-mcp",
+  "main": "dist/index.js",
+  "annabelle": {
+    "mcpName": "myhttp",
+    "transport": "http",
+    "httpPort": 8009
+  }
+}
+```
+
+HTTP MCPs must be started separately before the Orchestrator.
+
+### Environment Variable Overrides
+
+Each discovered MCP supports env var overrides using the uppercase MCP name as prefix:
+
+| Variable | Description |
+|---|---|
+| `${NAME}_MCP_ENABLED` | Set to `false` to disable a discovered MCP |
+| `${NAME}_MCP_TIMEOUT` | Override the default timeout (ms) |
+| `${NAME}_MCP_PORT` | Override the HTTP port (HTTP MCPs only) |
+| `${NAME}_MCP_URL` | Override the full URL (HTTP MCPs only) |
+
+Example: `SEARCHER_MCP_ENABLED=false` disables the Searcher MCP.
+
+### How Discovery Works
+
+At startup, the Orchestrator's scanner:
+
+1. Reads each sibling directory's `package.json`
+2. Skips directories without an `annabelle.mcpName` field (Orchestrator, Shared, Thinker, etc.)
+3. Resolves the entry point from the `main` field
+4. Builds stdio or HTTP client configs based on `transport`
+5. Guardian (if present) is always initialized first so it can wrap other MCPs
+
+---
 
 ## Quick Start
 

@@ -40,5 +40,10 @@
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "annabelle": {
+    "mcpName": "telegram",
+    "transport": "stdio",
+    "sensitive": true
   }
 }

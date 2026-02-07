@@ -21,8 +21,7 @@ import {
   type ImportMemoryResult,
 } from '../mcp-clients/memory.js';
 import { FilerMCPClient } from '../mcp-clients/filer.js';
-import { SearcherMCPClient } from '../mcp-clients/searcher.js';
-import { GmailMCPClient } from '../mcp-clients/gmail.js';
+import { HttpMCPClient } from '../mcp-clients/http-client.js';
 import { StdioMCPClient } from '../mcp-clients/stdio-client.js';
 import type { IMCPClient } from '../mcp-clients/types.js';
 import { SecurityCoordinator } from './security.js';
@@ -57,17 +56,17 @@ export class Orchestrator {
   private logger: Logger;
   private startTime: Date;
 
-  // MCP Clients (HTTP mode)
+  // MCP Clients (HTTP mode — legacy)
   private guardian: GuardianMCPClient | null = null;
   private telegram: TelegramMCPClient | null = null;
   private onepassword: OnePasswordMCPClient | null = null;
   private memory: MemoryMCPClient | null = null;
   private filer: FilerMCPClient | null = null;
-  private searcher: SearcherMCPClient | null = null;
-  private gmail: GmailMCPClient | null = null;
 
   // MCP Clients (stdio mode)
   private stdioClients: Map<string, StdioMCPClient> = new Map();
+  // HTTP MCP clients active in stdio mode (auto-discovered)
+  private httpClients: Map<string, HttpMCPClient> = new Map();
 
   // Core components
   private security: SecurityCoordinator | null = null;
@@ -129,16 +128,9 @@ export class Orchestrator {
       }
     }
 
-    // Register downstream MCPs — conditionally wrap with Guardian
-    const stdioMcps: Array<{ name: string; config: typeof stdioConfigs.telegram }> = [
-      { name: 'telegram', config: stdioConfigs.telegram },
-      { name: 'onepassword', config: stdioConfigs.onepassword },
-      { name: 'memory', config: stdioConfigs.memory },
-      { name: 'filer', config: stdioConfigs.filer },
-    ];
-
-    for (const { name, config: mcpConfig } of stdioMcps) {
-      if (!mcpConfig) continue;
+    // Register all non-guardian stdio MCPs dynamically
+    for (const [name, mcpConfig] of Object.entries(stdioConfigs)) {
+      if (name === 'guardian') continue; // Already handled above
 
       const raw = new StdioMCPClient(name, mcpConfig);
       this.stdioClients.set(name, raw);
@@ -147,17 +139,19 @@ export class Orchestrator {
       this.toolRouter.registerMCP(name, client);
     }
 
-    // Searcher and Gmail run as independent HTTP services (not spawned via stdio)
+    // Register HTTP-only MCPs (auto-discovered with transport: "http")
     const httpConfigs = this.config.mcpServers;
-    if (httpConfigs?.searcher) {
-      this.searcher = new SearcherMCPClient(httpConfigs.searcher);
-      const client = this.maybeGuard('searcher', this.searcher);
-      this.toolRouter.registerMCP('searcher', client);
-    }
-    if (httpConfigs?.gmail) {
-      this.gmail = new GmailMCPClient(httpConfigs.gmail);
-      const client = this.maybeGuard('gmail', this.gmail);
-      this.toolRouter.registerMCP('gmail', client);
+    if (httpConfigs) {
+      for (const [name, httpConfig] of Object.entries(httpConfigs)) {
+        // Skip if already registered as stdio
+        if (this.stdioClients.has(name)) continue;
+
+        const raw = new HttpMCPClient(name, httpConfig);
+        this.httpClients.set(name, raw);
+
+        const client = this.maybeGuard(name, raw);
+        this.toolRouter.registerMCP(name, client);
+      }
     }
   }
 
@@ -264,14 +258,10 @@ export class Orchestrator {
       initPromises.push(client.initialize());
     }
 
-    // Initialize HTTP clients (run as independent services)
-    if (this.searcher) {
-      this.logger.info('Connecting to Searcher MCP via HTTP...');
-      initPromises.push(this.searcher.initialize());
-    }
-    if (this.gmail) {
-      this.logger.info('Connecting to Gmail MCP via HTTP...');
-      initPromises.push(this.gmail.initialize());
+    // Initialize HTTP clients (auto-discovered, run as independent services)
+    for (const [name, client] of this.httpClients) {
+      this.logger.info(`Connecting to ${name} MCP via HTTP...`);
+      initPromises.push(client.initialize());
     }
 
     await Promise.all(initPromises);
@@ -290,14 +280,10 @@ export class Orchestrator {
 
     // Log HTTP client status
     const httpConfigs = this.config.mcpServers;
-    if (this.searcher) {
+    for (const [name, client] of this.httpClients) {
+      const url = httpConfigs?.[name]?.url ?? 'unknown';
       this.logger.info(
-        `  searcher: ${this.searcher.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (http: ${httpConfigs?.searcher?.url})`
-      );
-    }
-    if (this.gmail) {
-      this.logger.info(
-        `  gmail: ${this.gmail.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (http: ${httpConfigs?.gmail?.url})`
+        `  ${name}: ${client.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (http: ${url})`
       );
     }
   }
@@ -670,21 +656,13 @@ export class Orchestrator {
         };
       }
 
-      // HTTP MCPs (searcher, gmail) — also active in stdio mode
-      if (this.searcher) {
-        mcpServers['searcher'] = {
-          available: this.searcher.isAvailable,
-          required: this.searcher.isRequired,
+      // HTTP MCPs (auto-discovered) — also active in stdio mode
+      for (const [name, client] of this.httpClients) {
+        mcpServers[name] = {
+          available: client.isAvailable,
+          required: client.isRequired,
           type: 'http',
-          port: httpConfigs?.searcher ? this.extractPort(httpConfigs.searcher.url) : undefined,
-        };
-      }
-      if (this.gmail) {
-        mcpServers['gmail'] = {
-          available: this.gmail.isAvailable,
-          required: this.gmail.isRequired,
-          type: 'http',
-          port: httpConfigs?.gmail ? this.extractPort(httpConfigs.gmail.url) : undefined,
+          port: httpConfigs?.[name] ? this.extractPort(httpConfigs[name].url) : undefined,
         };
       }
     } else {

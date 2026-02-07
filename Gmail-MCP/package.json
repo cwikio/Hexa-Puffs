@@ -39,5 +39,11 @@
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "annabelle": {
+    "mcpName": "gmail",
+    "transport": "http",
+    "sensitive": true,
+    "httpPort": 8008
   }
 }
