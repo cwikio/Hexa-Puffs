@@ -273,6 +273,89 @@ User asks to classify, label, organize, sort, or categorize their emails.
     max_steps: 10,
     notify_on_completion: false,
   },
+  {
+    name: 'system-health-check',
+    description: 'Check system status, what services are running, what is broken',
+    trigger_type: 'event',
+    trigger_config: {
+      keywords: [
+        "what's broken",
+        'what is broken',
+        'system status',
+        'health check',
+        'are you ok',
+        'are you working',
+        'is everything running',
+        "what's running",
+        'what is running',
+        'service status',
+        'any issues',
+        'any problems',
+        'diagnostics',
+      ],
+      priority: 15,
+    },
+    instructions: `## WHEN TO USE
+User asks about system health, what's working/broken, or general diagnostics.
+
+## STEPS
+1. Call get_status to get full system status
+2. Check each MCP service for availability
+3. Check agent status (paused, restart count, availability)
+4. Present a clear summary:
+   - Services that are UP
+   - Services that are DOWN or degraded
+   - Agents that are paused or restarting
+   - Overall assessment (all good, or specific issues)
+
+## NOTES
+- If everything is healthy, say so concisely
+- If something is down, highlight it prominently
+- Mention cost-paused agents explicitly with their pause reason
+- The /status slash command provides the same info faster without using tokens`,
+    required_tools: ['get_status'],
+    max_steps: 4,
+    notify_on_completion: false,
+  },
+  {
+    name: 'message-cleanup',
+    description: 'Clean up, delete, or purge messages from a chat',
+    trigger_type: 'event',
+    trigger_config: {
+      keywords: [
+        'clean up messages',
+        'clean up',
+        'cleanup messages',
+        'cleanup',
+        'delete messages',
+        'clear messages',
+        'purge messages',
+        'remove messages',
+        'clear chat',
+        'clean test messages',
+        'delete test messages',
+      ],
+      priority: 10,
+    },
+    instructions: `## WHEN TO USE
+User asks to clean up, delete, or purge messages from a Telegram chat.
+
+## STEPS
+1. Ask the user for scope if not specified: how many messages, or what time range
+2. Call get_telegram_messages to fetch the messages in scope
+3. Confirm with the user how many messages will be deleted
+4. Call telegram_delete_messages with the message IDs
+5. Report how many were deleted
+
+## NOTES
+- Always confirm before deleting
+- For large deletions, process in batches of 100
+- The /delete slash command is faster for deterministic deletions (e.g. /delete today, /delete 50)
+- get_telegram_messages max is 100 per call — paginate with offset_id if needed`,
+    required_tools: ['telegram_get_messages', 'telegram_delete_messages'],
+    max_steps: 8,
+    notify_on_completion: false,
+  },
 ];
 
 /**

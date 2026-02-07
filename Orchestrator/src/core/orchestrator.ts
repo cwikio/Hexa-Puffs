@@ -32,6 +32,7 @@ import { ChannelPoller } from './channel-poller.js';
 import { ThinkerClient } from './thinker-client.js';
 import { AgentManager, type AgentStatus } from './agent-manager.js';
 import { MessageRouter } from './message-router.js';
+import { SlashCommandHandler } from './slash-commands.js';
 import type { IncomingAgentMessage } from './agent-types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
@@ -82,6 +83,8 @@ export class Orchestrator {
   private agentDefinitions: Map<string, AgentDefinition> = new Map();
   // Fallback single-agent client (used when no agents config is provided)
   private thinkerClient: ThinkerClient | null = null;
+  // Slash command handler (intercepts /commands before LLM)
+  private slashCommands: SlashCommandHandler;
 
   private initialized: boolean = false;
   private connectionMode: 'stdio' | 'http';
@@ -95,6 +98,7 @@ export class Orchestrator {
     this.connectionMode = this.config.mcpConnectionMode;
     this.sessions = new SessionManager();
     this.toolRouter = new ToolRouter({ alwaysPrefix: true, separator: '_' });
+    this.slashCommands = new SlashCommandHandler(this.toolRouter, this);
 
     if (this.connectionMode === 'stdio') {
       this.initializeStdioClients();
@@ -495,6 +499,26 @@ export class Orchestrator {
    * Uses MessageRouter to resolve which agent handles the message.
    */
   private async dispatchMessage(msg: IncomingAgentMessage): Promise<void> {
+    // Slash command interception — handle before LLM (no tokens)
+    if (msg.text.startsWith('/')) {
+      const result = await this.slashCommands.tryHandle(msg);
+      if (result.handled) {
+        const response = result.response || result.error || 'Command processed.';
+        if (msg.channel === 'telegram') {
+          try {
+            await this.toolRouter.routeToolCall('telegram_send_message', {
+              chat_id: msg.chatId,
+              message: response,
+            });
+          } catch (error) {
+            this.logger.error('Failed to send slash command response', { error });
+          }
+        }
+        this.logger.info(`Slash command handled: ${msg.text.split(' ')[0]}`);
+        return;
+      }
+    }
+
     // Resolve agent via MessageRouter (if available), otherwise use msg.agentId
     let targetAgentId = msg.agentId;
     if (this.messageRouter) {

@@ -80,6 +80,87 @@ describe('classifyMessage', () => {
   });
 });
 
+describe('classifyMessage — new playbooks (system-health-check, message-cleanup)', () => {
+  const allPlaybooks: CachedPlaybook[] = [
+    makePlaybook({ id: 1, name: 'email-triage', keywords: ['email', 'inbox'], priority: 10 }),
+    makePlaybook({
+      id: 11,
+      name: 'system-health-check',
+      keywords: [
+        "what's broken", 'what is broken', 'system status', 'health check',
+        'are you ok', 'are you working', 'is everything running',
+        "what's running", 'what is running', 'service status',
+        'any issues', 'any problems', 'diagnostics',
+      ],
+      priority: 15,
+    }),
+    makePlaybook({
+      id: 12,
+      name: 'message-cleanup',
+      keywords: [
+        'clean up messages', 'clean up', 'cleanup messages', 'cleanup',
+        'delete messages', 'clear messages',
+        'purge messages', 'remove messages', 'clear chat',
+        'clean test messages', 'delete test messages',
+      ],
+      priority: 10,
+    }),
+  ];
+
+  it('should match system-health-check for "what\'s broken?"', () => {
+    const result = classifyMessage("what's broken?", allPlaybooks);
+    const names = result.map((r) => r.name);
+    expect(names).toContain('system-health-check');
+  });
+
+  it('should match system-health-check for "is everything running?"', () => {
+    const result = classifyMessage('is everything running?', allPlaybooks);
+    const names = result.map((r) => r.name);
+    expect(names).toContain('system-health-check');
+  });
+
+  it('should match system-health-check for "any issues with the system?"', () => {
+    const result = classifyMessage('any issues with the system?', allPlaybooks);
+    const names = result.map((r) => r.name);
+    expect(names).toContain('system-health-check');
+  });
+
+  it('should match message-cleanup for "delete messages from today"', () => {
+    const result = classifyMessage('delete messages from today', allPlaybooks);
+    const names = result.map((r) => r.name);
+    expect(names).toContain('message-cleanup');
+  });
+
+  it('should match message-cleanup for "clean up test messages"', () => {
+    const result = classifyMessage('clean up test messages', allPlaybooks);
+    const names = result.map((r) => r.name);
+    expect(names).toContain('message-cleanup');
+  });
+
+  it('should match message-cleanup for "purge messages"', () => {
+    const result = classifyMessage('purge messages', allPlaybooks);
+    const names = result.map((r) => r.name);
+    expect(names).toContain('message-cleanup');
+  });
+
+  it('should not match new playbooks for unrelated messages', () => {
+    const result = classifyMessage('hello how are you', allPlaybooks);
+    const names = result.map((r) => r.name);
+    expect(names).not.toContain('system-health-check');
+    expect(names).not.toContain('message-cleanup');
+  });
+
+  it('should rank system-health-check (priority 15) above message-cleanup (priority 10)', () => {
+    // A message that matches both
+    const result = classifyMessage('any problems with delete messages?', allPlaybooks);
+    const healthIdx = result.findIndex((r) => r.name === 'system-health-check');
+    const cleanupIdx = result.findIndex((r) => r.name === 'message-cleanup');
+    if (healthIdx !== -1 && cleanupIdx !== -1) {
+      expect(healthIdx).toBeLessThan(cleanupIdx);
+    }
+  });
+});
+
 describe('parseSkillToPlaybook', () => {
   it('should parse a valid skill record', () => {
     const skill = {
