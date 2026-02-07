@@ -14,12 +14,10 @@
         "enabled": true,
         "shortWindowMinutes": 2,
         "spikeMultiplier": 3.0,
-        "hardCapTokensPerHour": 500000,
+        "hardCapTokensPerHour": 250000,
         "minimumBaselineTokens": 1000
       }
     }
   ],
-  "bindings": [
-    { "channel": "telegram", "chatId": "*", "agentId": "annabelle" }
-  ]
+  "bindings": [{ "channel": "telegram", "chatId": "*", "agentId": "annabelle" }]
 }

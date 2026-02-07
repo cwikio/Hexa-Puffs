@@ -185,6 +185,9 @@ function parseLlamaGuardResponse(content: string): {
  * Send content to Groq for security scanning.
  * Wraps content with context about what we're scanning for.
  */
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 3000;
+
 export async function scanWithGuardian(
   content: string,
   context?: string
@@ -194,47 +197,59 @@ export async function scanWithGuardian(
   }
 
   const sourceContext = context ? ` (source: ${context})` : "";
-
-  const response = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${GROQ_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: MODEL_NAME,
-      messages: [
-        {
-          role: "user",
-          content: `${content}${sourceContext}`,
-        },
-      ],
-      temperature: 0,
-    }),
-    signal: AbortSignal.timeout(15000),
+  const requestBody = JSON.stringify({
+    model: MODEL_NAME,
+    messages: [
+      {
+        role: "user",
+        content: `${content}${sourceContext}`,
+      },
+    ],
+    temperature: 0,
   });
 
-  if (!response.ok) {
-    const errorBody = await response.text().catch(() => "");
-    throw new GroqClientError(
-      `Groq API error: ${response.status} ${errorBody}`,
-      response.status
-    );
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+      },
+      body: requestBody,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (response.status === 429 && attempt < MAX_RETRIES) {
+      console.warn(`[Guardian] Groq 429 rate limit — retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      continue;
+    }
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => "");
+      throw new GroqClientError(
+        `Groq API error: ${response.status} ${errorBody}`,
+        response.status
+      );
+    }
+
+    const data = (await response.json()) as GroqChatResponse;
+    const responseText = data.choices?.[0]?.message?.content || "";
+
+    const { safe, threats, categories } = parseLlamaGuardResponse(responseText);
+
+    return {
+      safe,
+      confidence: 0.95,
+      threats,
+      explanation: safe
+        ? "Content appears safe"
+        : `Llama Guard flagged categories: ${categories.join(", ")}`,
+    };
   }
 
-  const data = (await response.json()) as GroqChatResponse;
-  const responseText = data.choices?.[0]?.message?.content || "";
-
-  const { safe, threats, categories } = parseLlamaGuardResponse(responseText);
-
-  return {
-    safe,
-    confidence: 0.95,
-    threats,
-    explanation: safe
-      ? "Content appears safe"
-      : `Llama Guard flagged categories: ${categories.join(", ")}`,
-  };
+  // All retries exhausted (shouldn't reach here, but satisfies TypeScript)
+  throw new GroqClientError("Groq API rate limit exceeded after all retries", 429);
 }
 
 /**
