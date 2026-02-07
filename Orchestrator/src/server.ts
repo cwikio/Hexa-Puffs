@@ -35,6 +35,29 @@ const customToolHandlers: Record<
   delete_job: handleDeleteJob,
 };
 
+/**
+ * Inject workflow hints into a successful MCP response JSON string.
+ * If the response isn't valid JSON, appends hints as a text footer.
+ */
+function enrichWithHints(innerText: string, toolRouter: ToolRouter, toolName: string): string {
+  const hints = toolRouter.getResponseHints(toolName);
+  if (!hints) return innerText;
+
+  try {
+    const parsed: unknown = JSON.parse(innerText);
+    if (parsed && typeof parsed === 'object') {
+      (parsed as Record<string, unknown>)._hints = hints;
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Not JSON — append as text footer
+  }
+  const footer = hints.tip
+    ? `\n[Hints: suggest=${hints.suggest.join(', ')} — ${hints.tip}]`
+    : `\n[Hints: suggest=${hints.suggest.join(', ')}]`;
+  return innerText + footer;
+}
+
 export function createServerWithRouter(toolRouter: ToolRouter): Server {
   const server = new Server(
     {
@@ -91,8 +114,9 @@ export function createServerWithRouter(toolRouter: ToolRouter): Server {
           };
           const innerText = mcpResponse?.content?.[0]?.text;
           if (innerText) {
+            const enriched = enrichWithHints(innerText, toolRouter, name);
             return {
-              content: [{ type: 'text' as const, text: innerText }],
+              content: [{ type: 'text' as const, text: enriched }],
             };
           }
           // Fallback for non-standard responses

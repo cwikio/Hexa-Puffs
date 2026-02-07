@@ -23,6 +23,11 @@ export interface ToolGroup {
   tools: string[]; // Tool names (original, before prefixing) that belong to this group
 }
 
+export interface ResponseHint {
+  suggest: string[];    // Tool names worth calling next
+  tip?: string;         // Short workflow guidance for the LLM
+}
+
 export interface ToolRouterConfig {
   // When true, always prefix tool names with MCP name (e.g., telegram.send_message)
   alwaysPrefix?: boolean;
@@ -30,6 +35,8 @@ export interface ToolRouterConfig {
   separator?: string;
   // Tool groups for contextual hints in descriptions
   toolGroups?: ToolGroup[];
+  // Response hints per tool (overrides defaults)
+  responseHints?: Record<string, ResponseHint>;
 }
 
 export class ToolRouter {
@@ -135,6 +142,48 @@ export class ToolRouter {
       tools: ['send_media', 'download_media'],
     },
   ];
+
+  /** Workflow hints: after calling tool X, suggest tools Y and Z */
+  private static readonly DEFAULT_RESPONSE_HINTS: Record<string, ResponseHint> = {
+    // Communication — after sending, consider logging
+    send_message:     { suggest: ['store_conversation'], tip: 'Consider logging this exchange to memory' },
+    send_email:       { suggest: ['store_conversation'], tip: 'Consider logging this exchange to memory' },
+    reply_email:      { suggest: ['store_conversation'] },
+
+    // Reading messages — after reading, consider replying or saving
+    get_messages:     { suggest: ['send_message', 'store_fact'], tip: 'Reply or save key info to memory' },
+    get_new_messages: { suggest: ['send_message', 'store_fact'], tip: 'Reply or save key info to memory' },
+    get_email:        { suggest: ['reply_email', 'store_fact'], tip: 'Reply or save key info to memory' },
+    list_emails:      { suggest: ['get_email'] },
+    get_new_emails:   { suggest: ['get_email', 'reply_email'] },
+
+    // Search — after finding info, share or store it
+    web_search:       { suggest: ['store_fact', 'send_message', 'send_email'], tip: 'Save findings or share them' },
+    news_search:      { suggest: ['store_fact', 'send_message'] },
+    search_messages:  { suggest: ['send_message', 'store_fact'] },
+
+    // Memory — after recalling, act on it
+    retrieve_memories: { suggest: ['send_message', 'send_email', 'web_search'], tip: 'Use recalled info to take action' },
+    search_conversations: { suggest: ['retrieve_memories', 'send_message'] },
+
+    // Files — suggest related file ops
+    read_file:        { suggest: ['update_file', 'store_fact'] },
+    list_files:       { suggest: ['read_file'] },
+    search_files:     { suggest: ['read_file'] },
+    create_file:      { suggest: ['read_file'] },
+
+    // Calendar — after checking schedule, communicate
+    list_events:      { suggest: ['create_event', 'send_message'], tip: 'Create event or notify someone' },
+    find_free_time:   { suggest: ['create_event', 'send_message'] },
+    create_event:     { suggest: ['send_message', 'send_email'], tip: 'Notify attendees' },
+
+    // Drafts — natural flow
+    create_draft:     { suggest: ['send_draft'] },
+    update_draft:     { suggest: ['send_draft'] },
+
+    // Secrets — after reading a secret, use it
+    read_secret:      { suggest: ['store_fact'], tip: 'Never send secrets via message — store reference only' },
+  };
 
   private getServiceLabel(mcpName: string): string {
     return ToolRouter.SERVICE_LABELS[mcpName] ?? mcpName;
@@ -251,6 +300,40 @@ export class ToolRouter {
       ? `[${serviceLabel} | ${groupLabel}]`
       : `[${serviceLabel}]`;
     return original ? `${tag} ${original}` : tag;
+  }
+
+  /**
+   * Get workflow hints for a tool (uses original name for lookup, resolves suggestions to exposed names)
+   */
+  getResponseHints(exposedToolName: string): ResponseHint | null {
+    const route = this.routes.get(exposedToolName);
+    if (!route) return null;
+
+    const hints = this.config.responseHints ?? ToolRouter.DEFAULT_RESPONSE_HINTS;
+    const hint = hints[route.originalName];
+    if (!hint) return null;
+
+    // Resolve suggested tool names to exposed names (they may be prefixed)
+    const resolvedSuggest = hint.suggest
+      .filter((name) => this.routes.has(name) || this.findExposedName(name) !== null)
+      .map((name) => this.routes.has(name) ? name : this.findExposedName(name)!);
+
+    if (resolvedSuggest.length === 0 && !hint.tip) return null;
+
+    return {
+      suggest: resolvedSuggest,
+      ...(hint.tip ? { tip: hint.tip } : {}),
+    };
+  }
+
+  /**
+   * Find the exposed name for an original tool name (handles prefixed names)
+   */
+  private findExposedName(originalName: string): string | null {
+    for (const [exposed, route] of this.routes) {
+      if (route.originalName === originalName) return exposed;
+    }
+    return null;
   }
 
   /**

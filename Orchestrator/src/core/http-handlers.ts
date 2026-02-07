@@ -30,6 +30,28 @@ const customToolHandlers: Record<
 };
 
 /**
+ * Inject workflow hints into a successful MCP response JSON string.
+ */
+function enrichWithHints(innerText: string, toolRouter: ToolRouter, toolName: string): string {
+  const hints = toolRouter.getResponseHints(toolName);
+  if (!hints) return innerText;
+
+  try {
+    const parsed: unknown = JSON.parse(innerText);
+    if (parsed && typeof parsed === 'object') {
+      (parsed as Record<string, unknown>)._hints = hints;
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Not JSON — append as text footer
+  }
+  const footer = hints.tip
+    ? `\n[Hints: suggest=${hints.suggest.join(', ')} — ${hints.tip}]`
+    : `\n[Hints: suggest=${hints.suggest.join(', ')}]`;
+  return innerText + footer;
+}
+
+/**
  * Handle GET /tools/list - List all available tools
  */
 export async function handleListTools(
@@ -91,10 +113,11 @@ export async function handleCallTool(
           };
           const innerText = mcpResponse?.content?.[0]?.text;
           if (innerText) {
+            const enriched = enrichWithHints(innerText, toolRouter, name);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(
               JSON.stringify({
-                content: [{ type: 'text', text: innerText }],
+                content: [{ type: 'text', text: enriched }],
               })
             );
             return;
