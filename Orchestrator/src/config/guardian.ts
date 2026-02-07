@@ -10,7 +10,7 @@
 
 export const guardianConfig = {
   /** Global kill switch — set to true to enable Guardian scanning */
-  enabled: false,
+  enabled: true,
 
   /** What to do when Guardian MCP is unavailable:
    *  'closed' = block all requests (secure default)
@@ -19,30 +19,38 @@ export const guardianConfig = {
   failMode: 'closed' as const,
 
   /**
-   * Scan tool arguments BEFORE they reach the downstream MCP.
-   * Catches prompt injection in inputs (e.g., malicious message before sending to Telegram).
+   * Scan the ARGUMENTS going into an MCP (→ direction).
+   * When Thinker/Claude calls a tool, this checks what's being sent
+   * BEFORE it reaches the target MCP.
+   *
+   * Example: Thinker sends a message via Telegram — input scan checks
+   * the message text before Telegram MCP receives it.
    */
   input: {
     telegram: true,
     onepassword: true,
     memory: true,
     filer: true,
-    searcher: false,
+    searcher: true,
     gmail: true,
   } as Record<string, boolean>,
 
   /**
-   * Scan tool results BEFORE returning to the caller.
-   * Catches malicious content in responses (e.g., credential leakage, injected payloads).
+   * Scan the RESULTS coming back from an MCP (← direction).
+   * After an MCP processes a tool call, this checks what it returned
+   * BEFORE Thinker/Claude sees the response.
+   *
+   * Example: Gmail returns email content — output scan checks it
+   * for malicious payloads before Thinker receives it.
    */
   output: {
     telegram: false,
     onepassword: true,
     memory: false,
     filer: true,
-    searcher: false,
+    searcher: true,
     gmail: true,
   } as Record<string, boolean>,
-};
+}
 
-export type GuardianConfig = typeof guardianConfig;
+export type GuardianConfig = typeof guardianConfig
