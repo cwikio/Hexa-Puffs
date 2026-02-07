@@ -18,6 +18,19 @@ function isValidLogLevel(value: string | undefined): value is LogLevel {
   return value !== undefined && VALID_LOG_LEVELS.includes(value as LogLevel);
 }
 
+/**
+ * JSON replacer that serializes Error objects (whose properties are non-enumerable).
+ */
+function errorReplacer(_key: string, value: unknown): unknown {
+  if (value instanceof Error) {
+    const obj: Record<string, unknown> = { message: value.message, name: value.name };
+    if (value.stack) obj.stack = value.stack;
+    if ('code' in value) obj.code = (value as NodeJS.ErrnoException).code;
+    return obj;
+  }
+  return value;
+}
+
 export class Logger {
   private level: LogLevel;
   private context: string;
@@ -36,7 +49,7 @@ export class Logger {
     const timestamp = new Date().toISOString();
     const base = `[${timestamp}] [${level.toUpperCase()}] [${this.context}] ${message}`;
     if (data !== undefined) {
-      return `${base} ${JSON.stringify(data)}`;
+      return `${base} ${JSON.stringify(data, errorReplacer)}`;
     }
     return base;
   }

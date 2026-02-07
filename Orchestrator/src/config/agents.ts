@@ -55,8 +55,8 @@ export const AgentDefinitionSchema = z.object({
   /** Model name (provider-specific) */
   model: z.string().min(1),
 
-  /** System prompt for this agent */
-  systemPrompt: z.string().min(1),
+  /** System prompt for this agent (empty = Thinker uses its built-in default) */
+  systemPrompt: z.string(),
 
   /** Glob patterns for allowed tools (e.g., ['gmail_*', 'memory_*']). Empty = all tools allowed */
   allowedTools: z.array(z.string()).default([]),
