@@ -17,11 +17,19 @@ export interface RoutedTool {
   definition: MCPToolDefinition;
 }
 
+export interface ToolGroup {
+  label: string;
+  description: string;
+  tools: string[]; // Tool names (original, before prefixing) that belong to this group
+}
+
 export interface ToolRouterConfig {
   // When true, always prefix tool names with MCP name (e.g., telegram.send_message)
   alwaysPrefix?: boolean;
   // Custom prefix separator (default: '.')
   separator?: string;
+  // Tool groups for contextual hints in descriptions
+  toolGroups?: ToolGroup[];
 }
 
 export class ToolRouter {
@@ -41,8 +49,112 @@ export class ToolRouter {
     gmail: 'Gmail',
   };
 
+  private static readonly DEFAULT_TOOL_GROUPS: ToolGroup[] = [
+    {
+      label: 'Communication',
+      description: 'Send and receive messages across platforms',
+      tools: [
+        'send_message', 'get_messages', 'search_messages', 'delete_messages',
+        'mark_read', 'get_new_messages', 'subscribe_chat', 'send_media',
+        'send_email', 'reply_email', 'get_email', 'list_emails',
+        'get_new_emails', 'delete_email', 'modify_labels',
+      ],
+    },
+    {
+      label: 'Contacts & Chats',
+      description: 'Manage contacts, chats, and groups',
+      tools: [
+        'list_chats', 'get_chat', 'create_group',
+        'list_contacts', 'add_contact', 'search_users', 'get_me',
+      ],
+    },
+    {
+      label: 'Drafts & Composition',
+      description: 'Draft and manage email drafts before sending',
+      tools: [
+        'list_drafts', 'create_draft', 'update_draft', 'send_draft', 'delete_draft',
+      ],
+    },
+    {
+      label: 'Calendar',
+      description: 'Schedule and manage calendar events',
+      tools: [
+        'list_calendars', 'list_events', 'get_event',
+        'create_event', 'update_event', 'delete_event',
+        'quick_add_event', 'find_free_time',
+      ],
+    },
+    {
+      label: 'Email Management',
+      description: 'Organize email with labels and filters',
+      tools: [
+        'list_labels', 'create_label', 'delete_label',
+        'list_filters', 'get_filter', 'create_filter', 'delete_filter',
+        'list_attachments', 'get_attachment',
+      ],
+    },
+    {
+      label: 'Knowledge & Memory',
+      description: 'Store, recall, and manage personal knowledge',
+      tools: [
+        'store_fact', 'list_facts', 'delete_fact', 'update_fact',
+        'store_conversation', 'search_conversations',
+        'get_profile', 'update_profile', 'retrieve_memories',
+        'get_memory_stats', 'export_memory', 'import_memory',
+        'store_skill', 'list_skills', 'get_skill', 'update_skill', 'delete_skill',
+      ],
+    },
+    {
+      label: 'File Management',
+      description: 'Read, write, and organize workspace files',
+      tools: [
+        'create_file', 'read_file', 'list_files', 'update_file',
+        'delete_file', 'move_file', 'copy_file', 'search_files',
+        'check_grant', 'request_grant', 'list_grants',
+        'get_workspace_info', 'get_audit_log',
+      ],
+    },
+    {
+      label: 'Web Search',
+      description: 'Search the web and news',
+      tools: ['web_search', 'news_search'],
+    },
+    {
+      label: 'Security',
+      description: 'Content scanning and security checks',
+      tools: ['scan_content', 'get_scan_log'],
+    },
+    {
+      label: 'Secrets',
+      description: 'Read-only access to 1Password vaults and items',
+      tools: ['list_vaults', 'list_items', 'get_item', 'read_secret'],
+    },
+    {
+      label: 'Media',
+      description: 'Send and download media files',
+      tools: ['send_media', 'download_media'],
+    },
+  ];
+
   private getServiceLabel(mcpName: string): string {
     return ToolRouter.SERVICE_LABELS[mcpName] ?? mcpName;
+  }
+
+  /**
+   * Build a lookup from original tool name → group label
+   */
+  private buildGroupIndex(): Map<string, string> {
+    const groups = this.config.toolGroups ?? ToolRouter.DEFAULT_TOOL_GROUPS;
+    const index = new Map<string, string>();
+    for (const group of groups) {
+      for (const toolName of group.tools) {
+        // First match wins — a tool belongs to one primary group
+        if (!index.has(toolName)) {
+          index.set(toolName, group.label);
+        }
+      }
+    }
+    return index;
   }
 
   constructor(config: ToolRouterConfig = {}) {
@@ -70,6 +182,7 @@ export class ToolRouter {
     this.routes.clear();
     this.toolDefinitions.clear();
 
+    const groupIndex = this.buildGroupIndex();
     const toolsByName = new Map<string, Array<{ mcpName: string; tool: MCPToolDefinition }>>();
 
     // Phase 1: Collect all tools from all MCPs
@@ -89,15 +202,20 @@ export class ToolRouter {
       }
     }
 
-    // Phase 2: Build routing table with conflict resolution
+    // Phase 2: Build routing table with conflict resolution + group tagging
     for (const [toolName, sources] of toolsByName) {
+      const groupLabel = groupIndex.get(toolName);
+
       if (sources.length === 1 && !this.config.alwaysPrefix) {
         // No conflict - use original name
         const { mcpName, tool } = sources[0];
         const client = this.mcpClients.get(mcpName);
         if (client) {
           this.routes.set(toolName, { mcp: client, originalName: toolName });
-          this.toolDefinitions.set(toolName, tool);
+          this.toolDefinitions.set(toolName, {
+            ...tool,
+            description: this.tagDescription(tool.description, this.getServiceLabel(mcpName), groupLabel),
+          });
           this.logger.debug(`Registered tool: ${toolName} → ${mcpName}`);
         }
       } else {
@@ -110,7 +228,7 @@ export class ToolRouter {
             this.toolDefinitions.set(prefixedName, {
               ...tool,
               name: prefixedName,
-              description: `[${this.getServiceLabel(mcpName)}] ${tool.description}`,
+              description: this.tagDescription(tool.description, this.getServiceLabel(mcpName), groupLabel),
             });
             this.logger.debug(`Registered tool with prefix: ${prefixedName} → ${mcpName}.${toolName}`);
           }
@@ -119,6 +237,20 @@ export class ToolRouter {
     }
 
     this.logger.info(`Tool discovery complete: ${this.routes.size} tools registered`);
+  }
+
+  /**
+   * Build a tagged description: [Service | Group] original description
+   */
+  private tagDescription(
+    original: string | undefined,
+    serviceLabel: string,
+    groupLabel: string | undefined
+  ): string {
+    const tag = groupLabel
+      ? `[${serviceLabel} | ${groupLabel}]`
+      : `[${serviceLabel}]`;
+    return original ? `${tag} ${original}` : tag;
   }
 
   /**
