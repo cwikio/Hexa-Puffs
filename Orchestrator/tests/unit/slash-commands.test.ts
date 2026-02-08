@@ -640,7 +640,7 @@ describe('SlashCommandHandler', () => {
         const { handler } = createMocks();
         const result = await handler.tryHandle(makeMsg('/logs'));
 
-        expect(result.response).toContain('Cannot read log directory');
+        expect(result.response).toContain('Cannot read log directory: ~/.annabelle/logs/');
       });
     });
 

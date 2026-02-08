@@ -494,12 +494,12 @@ export class SlashCommandHandler {
       );
       files = stats.sort((a, b) => b.size - a.size);
     } catch {
-      return `Cannot read log directory: ${LOGS_DIR}`;
+      return 'Cannot read log directory: ~/.annabelle/logs/';
     }
 
     if (files.length === 0) return 'No log files found.';
 
-    let output = `System Logs (${LOGS_DIR})\n\n`;
+    let output = 'System Logs (~/.annabelle/logs/)\n\n';
     let totalSize = 0;
 
     for (const file of files) {
