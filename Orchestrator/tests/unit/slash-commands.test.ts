@@ -757,6 +757,7 @@ describe('SlashCommandHandler', () => {
       expect(result.response).toContain('MCP: up (stdio)');
       expect(result.response).toContain('Tabs (2)');
       expect(result.response).toContain('https://example.com');
+      expect(mockToolRouter.routeToolCall).toHaveBeenCalledWith('web_browser_tabs', { action: 'list' });
     });
 
     it('should show offline when MCP is unavailable', async () => {
@@ -798,6 +799,7 @@ describe('SlashCommandHandler', () => {
       expect(result.handled).toBe(true);
       expect(result.response).toContain('Browser Status');
       expect(result.response).toContain('No active browser session');
+      expect(mockToolRouter.routeToolCall).toHaveBeenCalledWith('web_browser_tabs', { action: 'list' });
     });
 
     it('should show proxy config when enabled', async () => {
@@ -817,6 +819,7 @@ describe('SlashCommandHandler', () => {
       const result = await handler.tryHandle(makeMsg('/browser'));
 
       expect(result.response).toContain('http://proxy.example.com:8080');
+      expect(mockToolRouter.routeToolCall).toHaveBeenCalledWith('web_browser_tabs', { action: 'list' });
 
       process.env.BROWSER_PROXY_ENABLED = original.BROWSER_PROXY_ENABLED;
       process.env.BROWSER_PROXY_SERVER = original.BROWSER_PROXY_SERVER;
@@ -842,6 +845,7 @@ describe('SlashCommandHandler', () => {
       const result = await handler.tryHandle(makeMsg('/status'));
 
       expect(result.response).toContain('Browser: 1 instance, 1 tab');
+      expect(mockToolRouter.routeToolCall).toHaveBeenCalledWith('web_browser_tabs', { action: 'list' });
     });
 
     it('should show browser offline when web MCP is down', async () => {

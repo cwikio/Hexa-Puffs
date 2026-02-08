@@ -193,7 +193,7 @@ export class SlashCommandHandler {
         let browserLine = 'Browser: 1 instance';
         try {
           const tabResult = await Promise.race([
-            this.toolRouter.routeToolCall('web_browser_tabs', {}),
+            this.toolRouter.routeToolCall('web_browser_tabs', { action: 'list' }),
             new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
           ]);
           if (tabResult) {
@@ -673,7 +673,7 @@ Keep it concise. No markdown formatting — plain text only.`;
 
     // Try to get tab listing from the browser
     try {
-      const result = await this.toolRouter.routeToolCall('web_browser_tabs', {});
+      const result = await this.toolRouter.routeToolCall('web_browser_tabs', { action: 'list' });
       const tabText = this.extractMcpText(result);
 
       if (tabText) {
