@@ -85,6 +85,11 @@ function createMocks(statusOverrides?: Partial<OrchestratorStatus>) {
     routeToolCall: vi.fn().mockResolvedValue({ success: true }),
   } as unknown as ToolRouter;
 
+  const mockHaltManager = {
+    isTargetHalted: vi.fn().mockReturnValue(false),
+    isHalted: vi.fn().mockReturnValue(false),
+  };
+
   const mockOrchestrator = {
     getStatus: vi.fn().mockReturnValue(makeStatus(statusOverrides)),
     getAvailableTools: vi.fn().mockReturnValue([
@@ -93,6 +98,8 @@ function createMocks(statusOverrides?: Partial<OrchestratorStatus>) {
       'memory_store_fact',
     ]),
     callGuardianTool: vi.fn().mockResolvedValue(null),
+    getHaltManager: vi.fn().mockReturnValue(mockHaltManager),
+    getChannelPoller: vi.fn().mockReturnValue({}),
   } as unknown as Orchestrator;
 
   const handler = new SlashCommandHandler(mockToolRouter, mockOrchestrator);

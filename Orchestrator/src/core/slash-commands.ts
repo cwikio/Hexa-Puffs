@@ -12,7 +12,9 @@ import type { AgentStatus } from './agent-manager.js';
 import type { IncomingAgentMessage } from './agent-types.js';
 import { guardianConfig } from '../config/guardian.js';
 import { JobStorage } from '../jobs/storage.js';
-import type { JobDefinition } from '../jobs/types.js';
+import type { JobDefinition, TaskDefinition } from '../jobs/types.js';
+import { getConfig } from '../config/index.js';
+import { Cron } from 'croner';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export interface SlashCommandResult {
@@ -109,6 +111,9 @@ export class SlashCommandHandler {
         case '/resume':
           return { handled: true, response: await this.handleResume(args) };
 
+        case '/cron':
+          return { handled: true, response: await this.handleCron() };
+
         default:
           return { handled: false };
       }
@@ -179,6 +184,9 @@ export class SlashCommandHandler {
     const client = this.orchestrator.getThinkerClient();
     if (!client) return 'Thinker is unavailable — cannot generate summary.';
 
+    const summaryConfig = getConfig();
+    const summaryJobsConfig = summaryConfig.jobs ?? { inngestUrl: 'http://localhost:8288', port: 3000 };
+
     // Gather all data in parallel
     const [
       statusData,
@@ -188,6 +196,9 @@ export class SlashCommandHandler {
       fileAuditResult,
       cronJobs,
       cronSkillsResult,
+      backgroundTasks,
+      inngestServerUp,
+      inngestEndpointUp,
     ] = await Promise.all([
       Promise.resolve(this.orchestrator.getStatus()),
       this.parseRecentLogIssues(),
@@ -196,6 +207,9 @@ export class SlashCommandHandler {
       this.toolRouter.routeToolCall('filer_get_audit_log', { limit: 20 }).catch(() => null),
       new JobStorage().listJobs().catch(() => []),
       this.toolRouter.routeToolCall('memory_list_skills', { agent_id: 'thinker', enabled: true, trigger_type: 'cron' }).catch(() => null),
+      new JobStorage().listTasks().catch(() => []),
+      this.checkHealth(summaryJobsConfig.inngestUrl),
+      this.checkHealth(`http://localhost:${summaryJobsConfig.port}/health`),
     ]);
 
     // Build data bundle
@@ -228,6 +242,10 @@ export class SlashCommandHandler {
 
     const toolCount = this.orchestrator.getAvailableTools().length;
     bundle += `Tools: ${toolCount} | Sessions: ${statusData.sessions.activeSessions} active | Blocked: ${statusData.security.blockedCount}\n`;
+
+    const summaryHaltManager = this.orchestrator.getHaltManager();
+    const summaryInngestHalted = summaryHaltManager.isTargetHalted('inngest');
+    bundle += `Inngest: ${summaryInngestHalted ? 'halted' : 'active'} | Server: ${inngestServerUp ? 'up' : 'DOWN'} | Endpoint: ${inngestEndpointUp ? 'up' : 'DOWN'}\n`;
 
     // --- Cron jobs ---
     bundle += '\n=== CRON JOBS ===\n';
@@ -328,6 +346,22 @@ export class SlashCommandHandler {
       bundle += '(unavailable)\n';
     }
 
+    // --- Background tasks ---
+    bundle += '\n=== BACKGROUND TASKS ===\n';
+    if (backgroundTasks.length === 0) {
+      bundle += '(none)\n';
+    } else {
+      const recentTasks = backgroundTasks
+        .sort((a: TaskDefinition, b: TaskDefinition) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 10);
+      for (const task of recentTasks) {
+        const ts = this.formatShortTimestamp(task.createdAt);
+        const dur = task.duration ? ` (${this.formatDuration(task.duration)})` : '';
+        const err = task.status === 'failed' && task.error ? ` — ${task.error.slice(0, 80)}` : '';
+        bundle += `[${ts}] ${task.name} — ${task.status}${dur}${err}\n`;
+      }
+    }
+
     // Send to Thinker for analysis
     const instructions = `You are performing a system health audit. Below is a snapshot of all system data gathered just now.
 
@@ -335,7 +369,7 @@ ${bundle}
 ---
 Analyze this data and produce a concise Telegram-friendly summary:
 1. First: briefly confirm what is running and healthy (one or two lines)
-2. Then: list any anomalies — errors, failed cron jobs/skills, security threats, unusual patterns, DOWN services
+2. Then: list any anomalies — errors, failed cron jobs/skills, failed background tasks, Inngest DOWN, security threats, unusual patterns, DOWN services
    - IMPORTANT: every anomaly MUST include its date/time in brackets, e.g. [02/07 23:58]
    - Include the source/service and a brief description
 3. If there are no anomalies, no new security threats, and no errors, end with: "No anomalies detected."
@@ -464,6 +498,180 @@ Keep it concise. No markdown formatting — plain text only.`;
     const header = target === 'all' ? 'All services resumed.' : `${target.charAt(0).toUpperCase() + target.slice(1)} resumed.`;
     const status = await this.handleStatus('');
     return `${header}\n${results.join('\n')}\n\n${status}`;
+  }
+
+  // ─── /cron ───────────────────────────────────────────────
+
+  private async handleCron(): Promise<string> {
+    const config = getConfig();
+    const jobsConfig = config.jobs ?? { inngestUrl: 'http://localhost:8288', port: 3000 };
+    const inngestUrl = jobsConfig.inngestUrl;
+    const endpointUrl = `http://localhost:${jobsConfig.port}/health`;
+    const haltManager = this.orchestrator.getHaltManager();
+    const inngestHalted = haltManager.isTargetHalted('inngest');
+
+    // Gather all data in parallel
+    const [serverUp, endpointUp, cronJobs, tasks, skillsResult] = await Promise.all([
+      this.checkHealth(inngestUrl),
+      this.checkHealth(endpointUrl),
+      new JobStorage().listJobs().catch(() => []),
+      new JobStorage().listTasks().catch(() => []),
+      this.toolRouter.routeToolCall('memory_list_skills', {
+        agent_id: 'thinker', enabled: true, trigger_type: 'cron',
+      }).catch(() => null),
+    ]);
+
+    // Header
+    const inngestState = inngestHalted ? 'halted' : 'active';
+    let output = `Cron Status\nInngest: ${inngestState} | Server: ${serverUp ? 'up' : 'DOWN'} | Endpoint: ${endpointUp ? 'up' : 'DOWN'}\n`;
+
+    // --- Jobs ---
+    const crons = cronJobs.filter((j: JobDefinition) => j.type === 'cron');
+    const enabledCount = crons.filter((j: JobDefinition) => j.enabled).length;
+    const disabledCount = crons.length - enabledCount;
+    const jobsSummary = [
+      enabledCount > 0 ? `${enabledCount} enabled` : null,
+      disabledCount > 0 ? `${disabledCount} disabled` : null,
+    ].filter(Boolean).join(', ');
+
+    output += `\nJobs (${jobsSummary || 'none'}):\n`;
+    if (crons.length === 0) {
+      output += '  (none)\n';
+    } else {
+      for (const job of crons) {
+        const name = job.name.slice(0, 20).padEnd(20);
+        const expr = (job.cronExpression ?? '').padEnd(14);
+        const tz = (job.timezone ?? 'UTC').padEnd(16);
+        if (!job.enabled) {
+          output += `  ${name} ${expr} ${tz} disabled\n`;
+        } else {
+          const lastRun = job.lastRunAt ? this.formatTimeAgo(new Date(job.lastRunAt)).padEnd(10) : 'never'.padEnd(10);
+          const nextRun = this.formatNextCronRun(job.cronExpression, job.timezone);
+          output += `  ${name} ${expr} ${tz} ${lastRun} ${nextRun}\n`;
+        }
+      }
+    }
+
+    // --- Skills ---
+    const skills = this.parseCronSkills(skillsResult);
+    const skillCount = skills.length;
+    output += `\nSkills (${skillCount > 0 ? `${skillCount} enabled` : 'none'}):\n`;
+    if (skills.length === 0) {
+      output += '  (none)\n';
+    } else {
+      for (const skill of skills) {
+        const name = skill.name.slice(0, 20).padEnd(20);
+        const schedule = skill.schedule.padEnd(14);
+        const tz = (skill.timezone ?? '').padEnd(16);
+        const lastRun = skill.lastRunAt ? this.formatTimeAgo(new Date(skill.lastRunAt)).padEnd(10) : 'never'.padEnd(10);
+        const failed = skill.lastStatus === 'failed';
+        const status = failed ? '[!] failed' : (skill.lastStatus ?? 'never run');
+        output += `  ${name} ${schedule} ${tz} ${lastRun} ${status}\n`;
+      }
+    }
+
+    // --- Tasks ---
+    const sorted = tasks.sort((a: TaskDefinition, b: TaskDefinition) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    ).slice(0, 10);
+
+    const running = tasks.filter((t: TaskDefinition) => t.status === 'running').length;
+    const completed = tasks.filter((t: TaskDefinition) => t.status === 'completed').length;
+    const failed = tasks.filter((t: TaskDefinition) => t.status === 'failed').length;
+    const queued = tasks.filter((t: TaskDefinition) => t.status === 'queued').length;
+    const taskParts = [
+      running > 0 ? `${running} running` : null,
+      queued > 0 ? `${queued} queued` : null,
+      completed > 0 ? `${completed} completed` : null,
+      failed > 0 ? `${failed} failed` : null,
+    ].filter(Boolean).join(', ');
+
+    output += `\nTasks (${taskParts || 'none'}):\n`;
+    if (sorted.length === 0) {
+      output += '  (none)\n';
+    } else {
+      for (const task of sorted) {
+        const name = task.name.slice(0, 20).padEnd(20);
+        const ago = this.formatTimeAgo(new Date(task.createdAt));
+        const isFailed = task.status === 'failed';
+        const statusLabel = isFailed ? '[!] failed' : task.status;
+        let detail = `${name} ${statusLabel.padEnd(12)} ${ago}`;
+        if (task.status === 'completed' && task.duration) {
+          detail += `    (took ${this.formatDuration(task.duration)})`;
+        }
+        if (isFailed && task.error) {
+          const errMsg = task.error.length > 40 ? task.error.slice(0, 40) + '...' : task.error;
+          detail += `    "${errMsg}"`;
+        }
+        output += `  ${detail}\n`;
+      }
+    }
+
+    return output;
+  }
+
+  private async checkHealth(url: string): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  private formatNextCronRun(cronExpr?: string, timezone?: string): string {
+    if (!cronExpr) return '';
+    try {
+      const cron = new Cron(cronExpr, { timezone: timezone ?? 'UTC' });
+      const next = cron.nextRun();
+      if (!next) return '';
+      const hours = String(next.getHours()).padStart(2, '0');
+      const minutes = String(next.getMinutes()).padStart(2, '0');
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const now = new Date();
+      const isToday = next.toDateString() === now.toDateString();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const isTomorrow = next.toDateString() === tomorrow.toDateString();
+      if (isToday) return `→ ${hours}:${minutes}`;
+      if (isTomorrow) return `→ tmrw ${hours}:${minutes}`;
+      return `→ ${days[next.getDay()]} ${hours}:${minutes}`;
+    } catch {
+      return '';
+    }
+  }
+
+  private parseCronSkills(result: { success: boolean; content?: unknown; error?: string } | null): Array<{
+    name: string; schedule: string; timezone?: string;
+    lastRunAt?: string; lastStatus?: string;
+  }> {
+    if (!result?.success) return [];
+    const data = this.extractData<{ skills: Array<{
+      name: string;
+      trigger_config?: { schedule?: string; interval_minutes?: number; timezone?: string };
+      last_run_status?: string | null;
+      last_run_at?: string | null;
+    }> }>(result);
+    const skills = data?.skills ?? [];
+    return skills.map(s => ({
+      name: s.name,
+      schedule: s.trigger_config?.schedule ?? `every ${s.trigger_config?.interval_minutes ?? 1440}m`,
+      timezone: s.trigger_config?.timezone,
+      lastRunAt: s.last_run_at ?? undefined,
+      lastStatus: s.last_run_status ?? undefined,
+    }));
+  }
+
+  private formatDuration(ms: number): string {
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m`;
   }
 
   // ─── /delete ──────────────────────────────────────────────
@@ -651,6 +859,7 @@ Keep it concise. No markdown formatting — plain text only.`;
     output += '  /security [N] — Last N security threats (default 10)\n';
     output += '  /logs — Log file sizes & freshness\n';
     output += '  /logs [N] — Last N warnings/errors (default 15)\n';
+    output += '  /cron — Inngest status, cron jobs, skills & background tasks\n';
     output += '  /kill — Kill services (all | thinker | telegram | inngest)\n';
     output += '  /resume — Resume services (all | thinker | telegram | inngest)\n';
     output += '  /help — Short command list\n';
