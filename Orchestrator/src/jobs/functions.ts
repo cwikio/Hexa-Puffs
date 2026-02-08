@@ -251,6 +251,26 @@ export const cronJobPollerFunction = inngest.createFunction(
         continue;
       }
 
+      // Check expiration limits before executing
+      if (isDue && job.expiresAt) {
+        if (now.getTime() >= new Date(job.expiresAt).getTime()) {
+          job.enabled = false;
+          await storage.saveJob(job);
+          logger.info('Cron job expired (past expiresAt)', { jobId: job.id, expiresAt: job.expiresAt });
+          isDue = false;
+        }
+      }
+
+      if (isDue && job.maxRuns !== undefined) {
+        const currentCount = job.runCount ?? 0;
+        if (currentCount >= job.maxRuns) {
+          job.enabled = false;
+          await storage.saveJob(job);
+          logger.info('Cron job expired (maxRuns reached)', { jobId: job.id, runCount: currentCount, maxRuns: job.maxRuns });
+          isDue = false;
+        }
+      }
+
       if (!isDue) continue;
 
       await step.run(`execute-cron-${job.id}`, async () => {
@@ -260,6 +280,14 @@ export const cronJobPollerFunction = inngest.createFunction(
           const result = await executeAction(job.action);
 
           job.lastRunAt = new Date().toISOString();
+          job.runCount = (job.runCount ?? 0) + 1;
+
+          // Auto-disable if maxRuns reached
+          if (job.maxRuns !== undefined && job.runCount >= job.maxRuns) {
+            job.enabled = false;
+            logger.info('Cron job auto-disabled after maxRuns', { jobId: job.id, runCount: job.runCount });
+          }
+
           await storage.saveJob(job);
 
           const duration = Date.now() - startTime;
@@ -269,8 +297,15 @@ export const cronJobPollerFunction = inngest.createFunction(
           const duration = Date.now() - startTime;
           logger.error('Cron job failed', { jobId: job.id, error });
 
-          // Update lastRunAt even on failure to prevent retry storm
+          // Update lastRunAt and runCount even on failure to prevent retry storm
           job.lastRunAt = new Date().toISOString();
+          job.runCount = (job.runCount ?? 0) + 1;
+
+          if (job.maxRuns !== undefined && job.runCount >= job.maxRuns) {
+            job.enabled = false;
+            logger.info('Cron job auto-disabled after maxRuns (failed run)', { jobId: job.id, runCount: job.runCount });
+          }
+
           await storage.saveJob(job);
 
           // Send failure notification via Telegram

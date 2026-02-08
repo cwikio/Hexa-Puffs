@@ -449,6 +449,13 @@ Examples: "every morning summarize my unread emails", "weekly review of my calen
    - instructions: the natural language task description
    - agent_id: "thinker"
 
+## AUTO-EXPIRATION
+- For limited runs: set maxRuns (e.g., "5 times" → maxRuns: 5)
+- For date limits: set expiresAt as ISO date (e.g., "until Friday" → compute the ISO date for next Friday midnight)
+- For duration: compute expiresAt from now + duration (e.g., "for 20 days" → now + 20 days as ISO)
+- Both can be combined — whichever limit is hit first stops the job
+- Omit both for permanent cron jobs
+
 ## NOTES
 - Default timezone: Europe/Warsaw (user's timezone)
 - Use list_jobs to show existing cron jobs, memory_list_skills for existing skills

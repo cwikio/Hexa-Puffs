@@ -52,6 +52,8 @@ const CreateJobSchema = z.object({
   scheduledAt: z.string().optional(),
   action: JobActionSchema,
   enabled: z.boolean().default(true),
+  maxRuns: z.number().int().positive().optional(),
+  expiresAt: z.string().optional(),
 });
 
 const QueueTaskSchema = z.object({
@@ -73,6 +75,11 @@ Cron expression examples:
 - "*/5 * * * *" = every 5 minutes
 - "0 0 * * 1" = every Monday at midnight
 - "0 */2 * * *" = every 2 hours
+
+Auto-expiration:
+- maxRuns: stop after N executions (e.g., 5 = run 5 times then auto-disable)
+- expiresAt: ISO date to auto-disable (e.g., "2026-02-15T00:00:00Z")
+- Omit both for permanent jobs. Set either or both for temporary jobs.
 ${AVAILABLE_TOOLS_DESCRIPTION}`,
   inputSchema: {
     type: 'object',
@@ -117,6 +124,14 @@ ${AVAILABLE_TOOLS_DESCRIPTION}`,
           },
         },
         required: ['type'],
+      },
+      maxRuns: {
+        type: 'number',
+        description: 'Max number of executions before auto-disabling. Omit for unlimited.',
+      },
+      expiresAt: {
+        type: 'string',
+        description: 'ISO date after which the job auto-disables. Omit for no expiry. Example: "2026-02-15T00:00:00Z"',
       },
       enabled: {
         type: 'boolean',
@@ -181,6 +196,9 @@ export async function handleCreateJob(args: unknown): Promise<StandardResponse> 
       enabled: data.enabled,
       createdAt: new Date().toISOString(),
       createdBy: 'user',
+      runCount: 0,
+      maxRuns: data.maxRuns,
+      expiresAt: data.expiresAt,
     };
 
     // Save to file system
@@ -232,6 +250,8 @@ export async function handleCreateJob(args: unknown): Promise<StandardResponse> 
         name: job.name,
         type: job.type,
         enabled: job.enabled,
+        maxRuns: job.maxRuns,
+        expiresAt: job.expiresAt,
         nextRunAt: job.type === 'scheduled' ? job.scheduledAt : 'Based on cron expression',
       },
     };
@@ -376,6 +396,9 @@ export async function handleListJobs(args: unknown): Promise<StandardResponse> {
           type: j.type,
           enabled: j.enabled,
           cronExpression: j.cronExpression,
+          runCount: j.runCount,
+          maxRuns: j.maxRuns,
+          expiresAt: j.expiresAt,
           lastRunAt: j.lastRunAt,
           nextRunAt: j.nextRunAt,
           createdAt: j.createdAt,

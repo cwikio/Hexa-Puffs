@@ -20,6 +20,11 @@ export interface JobDefinition {
   lastRunAt?: string;
   nextRunAt?: string;
 
+  // Auto-expiration
+  runCount?: number;    // how many times the job has executed (auto-incremented by poller)
+  maxRuns?: number;     // stop after this many executions (omit = unlimited)
+  expiresAt?: string;   // ISO date — auto-disable after this date (omit = never expires)
+
   // Options
   retryConfig?: RetryConfig;
   concurrency?: ConcurrencyConfig;
