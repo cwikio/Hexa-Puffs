@@ -1,16 +1,22 @@
-# Annabelle vs OpenClaw — Capability Comparison
+# Annabelle vs OpenClaw — Full Capability Comparison
+
+*Based on README documentation (Annabelle) and actual source code exploration (OpenClaw, 300+ files examined).*
+
+---
 
 ## At a Glance
 
-| Dimension | Annabelle (your codebase) | OpenClaw |
+| Dimension | Annabelle | OpenClaw |
 |---|---|---|
-| **Philosophy** | Security-first, MCP-native microservices | Channel-first, gateway-based unification |
-| **Architecture** | Orchestrator hub spawning stdio/HTTP MCP servers | Local WebSocket Gateway (port 18789) as control plane |
-| **Primary interface** | Claude Desktop / Claude Code / Telegram | Any messaging app (12+ channels) + companion apps |
-| **Agent runtime** | Thinker (ReAct loop, Vercel AI SDK, maxSteps: 8) | Pi runtime (RPC mode, tool + block streaming) |
-| **LLM support** | Groq, LM Studio, Ollama, Claude (model-agnostic) | Anthropic Claude, OpenAI (configurable) |
-| **Deployment** | Shell scripts (`start-all.sh`), Docker optional | `npm install -g openclaw && openclaw onboard --install-daemon` |
-| **Maturity focus** | Deep vertical: security, cost controls, memory | Broad horizontal: channels, devices, voice, canvas |
+| **Codebase scale** | ~8 MCP packages, ~65 tools | 300+ TS files in `/src`, 309 in agents alone, 124 config files, 52 skills |
+| **Philosophy** | Security-first, MCP-native microservices | Channel-first, gateway-based platform with plugin SDK |
+| **Architecture** | Orchestrator hub spawning stdio/HTTP MCP servers | Local WebSocket Gateway (:18789) as control plane |
+| **Primary interface** | Claude Desktop / Claude Code / Telegram | Any of 13+ messaging channels + companion apps + TUI + WebChat |
+| **Agent runtime** | Thinker (ReAct loop, Vercel AI SDK, maxSteps: 8) | Pi embedded runner (tool + block streaming, subagent spawning, session compaction) |
+| **LLM providers** | 4 (Groq, LM Studio, Ollama, Claude) | **9+** (Anthropic, OpenAI, Gemini, Bedrock, GitHub Copilot, Ollama, Qianfan, Minimax, Venice) |
+| **Deployment** | Shell scripts (`start-all.sh`), Docker optional | `npm install -g openclaw && openclaw onboard --install-daemon` (systemd/launchd/Windows) |
+| **CLI commands** | Telegram slash commands (~15) | **181 CLI commands** covering auth, agents, diagnostics, models, sandbox, security |
+| **Team / community** | Solo developer project | 176k GitHub stars, 28.9k forks, 7-person core team |
 
 ---
 
@@ -18,170 +24,266 @@
 
 | Channel | Annabelle | OpenClaw |
 |---|---|---|
-| Telegram | **Full MTProto** (user account via GramJS, not bot API) | Yes |
-| WhatsApp | No | Yes |
-| Slack | No | Yes |
-| Discord | No | Yes |
-| Signal | No | Yes |
-| iMessage | No | Yes |
-| Microsoft Teams | No | Yes |
-| Google Chat | No | Yes |
-| Matrix | No | Yes |
-| Zalo | No | Yes |
-| WebChat | No | Yes |
-| Claude Desktop/Code | **Yes (MCP stdio)** | No (not an MCP server) |
+| Telegram | **Full MTProto** (user account via GramJS, 16 tools) | Yes (grammY library, bot API) |
+| WhatsApp | No | Yes (Baileys library + CLI skill) |
+| Slack | No | Yes (native `@slack/bolt` integration) |
+| Discord | No | Yes (native `discord.js` integration) |
+| Signal | No | Yes (with install helper) |
+| iMessage | No | Yes (via BlueBubbles bridge) |
+| Microsoft Teams | No | Yes (extension) |
+| Google Chat | No | Yes (built-in) |
+| Matrix | No | Yes (extension, `matrix-js-sdk`) |
+| Zalo | No | Yes (extension, + personal variant) |
+| Line | No | Yes |
+| Mattermost | No | Yes (extension) |
+| Nextcloud Talk | No | Yes (extension) |
+| Twitch | No | Yes |
+| WebChat | No | Yes (46-file web module with QR login, auto-reply, media compression) |
+| TUI (terminal) | No | Yes (full terminal UI with themes, overlays, input history) |
+| Claude Desktop/Code (MCP) | **Yes — native MCP stdio server** | No |
 
-**Verdict:** OpenClaw wins massively on channel breadth (12+ platforms). Annabelle is deeper on Telegram (full user-account access, MTProto, real-time event capture, 16 tools, slash commands) and uniquely integrates as a native MCP server inside Claude Desktop/Code — meaning Claude itself can invoke all 65+ Annabelle tools directly.
+**Per-channel features in OpenClaw:** allowlist/blocklist per channel, mention gating, command gating, conversation labeling, acknowledgment tracking, reply chain preservation, location and sender identity tracking.
+
+**Verdict:** OpenClaw supports **17+ communication surfaces** vs Annabelle's 2 (Telegram + Claude Desktop). However, Annabelle's Telegram integration is deeper — full user-account MTProto access (not bot API), 16 dedicated tools, real-time GramJS event capture, and message queue management. Annabelle's unique advantage is being a native MCP server that plugs directly into Claude Desktop/Code.
 
 ---
 
-## 2. AI Agent Deployment & Multi-Agent
+## 2. AI Agent System
 
 | Feature | Annabelle | OpenClaw |
 |---|---|---|
-| Multi-agent support | Yes — Orchestrator spawns N Thinker instances, each with own port, LLM config, system prompt | Yes — multi-agent routing with isolated per-agent sessions |
-| Agent routing | Channel bindings: `(channel, chatId) → agentId`, exact → wildcard → default | Per-channel agent assignment |
-| Per-agent tool policies | **Yes** — glob-based `allowedTools` / `deniedTools` per agent | Not documented |
-| Per-agent security overrides | **Yes** — Guardian scan flags overridable per agent | Not documented |
-| Per-agent LLM config | **Yes** — each agent can use different provider/model | Not documented |
-| Per-agent cost controls | **Yes** — anomaly-based spike detection, hard token caps, auto-pause with Telegram alert | Not documented |
-| Agent health monitoring | Auto-restart crashed agents via AgentManager | Not documented |
-| Agent kill switch | Persistent halt manager (survives restarts), target-specific `/kill` and `/resume` | Not documented |
+| Agent runtime | Thinker (Vercel AI SDK `generateText` + `maxSteps`) | **Pi embedded runner** (309 files, tool/block streaming, session compaction) |
+| Multi-agent support | Yes — N Thinker instances, per-agent port/LLM/prompt | Yes — multi-agent with `AGENTS.md` config, subagent registry |
+| Subagent spawning | No | **Yes** — agents can spawn child agents |
+| Agent routing | Channel bindings: `(channel, chatId) → agentId` | Per-channel agent assignment with session-key routing |
+| Per-agent tool policies | **Yes** — glob-based `allowedTools` / `deniedTools` | Yes — `tools.allow` / `tools.deny` in config |
+| Per-agent LLM config | **Yes** — each agent uses different provider/model | Yes — per-agent model selection via `models-config.ts` |
+| Per-agent cost controls | **Yes** — anomaly-based spike detection, sliding-window algorithm, hard caps, auto-pause + Telegram alert | Not found in code |
+| Agent health monitoring | Auto-restart crashed agents via AgentManager | Not found in code |
+| Agent kill switch | **Persistent halt manager** (survives restarts), target-specific `/kill` + `/resume` | Not found in code |
+| Session compaction | No (conversation history only) | **Yes** — automatic summarization of older context to manage token limits |
+| Session persistence | Conversation stored in Memory MCP (SQLite) | **JSONL session files** with automatic repair, write locking, transcript restoration |
+| Dynamic tool selection | Keyword-based tool group routing per message | Not documented |
+| Playbooks | 12 default playbooks (email triage, research, daily briefing, etc.) | Handled via 52 skills in ClawHub |
+| Context window management | Dynamic system prompt from persona + facts + history | **Session compaction** + context window guards + custom instructions |
+| Persona configuration | Memory MCP profile + system prompt file | **Workspace files**: `SOUL.md`, `IDENTITY.md`, `USER.md`, `AGENTS.md` |
 
-**Verdict:** Annabelle has significantly more documented depth in agent management — per-agent tool policies, security overrides, cost controls, and health monitoring are all implemented and battle-tested (including two real incident post-mortems). OpenClaw supports multi-agent routing but the documentation doesn't detail the same level of per-agent governance.
+**Verdict:** Both have multi-agent with tool policies and routing. Annabelle has more explicit cost/safety controls (sliding-window anomaly detection, kill switch, auto-restart) that are battle-hardened through real incidents. OpenClaw has a more sophisticated agent runtime with subagent spawning, session compaction (critical for long conversations), and a much larger codebase (309 files vs ~15 for Thinker). OpenClaw's workspace-file-based persona config (`SOUL.md`, `IDENTITY.md`) is more user-friendly than Annabelle's Memory MCP profile approach.
 
 ---
 
-## 3. Task Management & Scheduling
+## 3. LLM Provider Support
+
+| Provider | Annabelle | OpenClaw |
+|---|---|---|
+| Anthropic Claude | Yes (via Claude Desktop MCP) | **Yes** (native SDK, `@anthropic-ai/sdk`) |
+| OpenAI / GPT-4 | No direct support | **Yes** (native SDK) |
+| Google Gemini | No | **Yes** (native `@google/generative-ai`) |
+| AWS Bedrock | No | **Yes** (`@aws-sdk/client-bedrock-runtime`) |
+| GitHub Copilot | No | **Yes** |
+| Groq | **Yes** (via OpenAI-compatible endpoint) | Not listed |
+| LM Studio | **Yes** (OpenAI-compatible, local) | Possible via OpenAI compat |
+| Ollama | **Yes** (OpenAI-compatible, local) | **Yes** (native) |
+| Qianfan | No | **Yes** |
+| Minimax | No | **Yes** |
+| Venice | No | **Yes** |
+| Local models (llama.cpp) | Via Ollama only | **Yes** (`llama-cpp-js` native) |
+| Model discovery | Static env vars | **Dynamic model catalog** with live filtering |
+
+**Verdict:** OpenClaw supports **9+ provider families** with native SDKs. Annabelle supports 4 providers via OpenAI-compatible endpoints. OpenClaw's dynamic model discovery and catalog is more sophisticated than Annabelle's env-var-based switching.
+
+---
+
+## 4. Task Management & Scheduling
 
 | Feature | Annabelle | OpenClaw |
 |---|---|---|
-| Cron jobs | **Yes** — Inngest-powered, validated cron expressions, IANA timezone support | Yes — cron job scheduling |
-| One-time scheduled jobs | **Yes** — schedule for a specific future timestamp | Not documented |
-| Background task queuing | **Yes** — immediate async execution | Not documented |
-| Multi-step workflows | **Yes** — step dependencies, automatic retries (3x exponential backoff) | Not documented |
-| Job dashboard | **Yes** — real-time at `:8288` (Inngest Dev Server) | Not documented |
-| Webhook integration | Planned (Pattern 4 in architecture) | Yes |
-| Playbooks | **12 default playbooks** seeded on first startup (email triage, research, daily briefing, etc.) | Skills platform (ClawHub) — managed, bundled, workspace-specific |
+| Cron jobs | **Inngest-powered**, validated expressions, IANA timezones | Yes — built-in cron tool |
+| One-time scheduled jobs | **Yes** — future timestamp scheduling | Not found |
+| Background task queuing | **Yes** — immediate async execution | Not found |
+| Multi-step workflows | **Yes** — step dependencies, 3x exponential retries | Not found |
+| Job dashboard | **Yes** — real-time Inngest UI at `:8288` | Not found |
+| Webhook integration | Planned (Pattern 4) | **Yes** — built-in webhook tool |
+| Gmail Pub/Sub | Background polling with configurable interval | **Yes** — native Pub/Sub integration |
+| Wakeups / heartbeats | Not implemented | **Yes** — `HEARTBEAT.md` config + wakeup cron tool |
 
-**Verdict:** Annabelle has a more fully documented job/task system with Inngest providing cron, one-shot scheduling, background tasks, workflows, retries, and a monitoring dashboard. OpenClaw has cron and webhooks but the documentation is lighter on details. OpenClaw's skills platform (ClawHub) is more of an extension/plugin marketplace, which Annabelle doesn't have.
+**Verdict:** Annabelle has a significantly more robust job system — Inngest gives it cron, one-shot scheduling, background tasks, multi-step workflows with retries, and a real-time monitoring dashboard. OpenClaw has cron and webhooks but no equivalent workflow engine or job dashboard.
 
 ---
 
-## 4. Security
+## 5. Security
 
 | Feature | Annabelle | OpenClaw |
 |---|---|---|
-| Prompt injection scanning | **Guardian MCP** — 3 backends: Groq Llama Guard, Groq Safeguard, Ollama (local) | Not documented |
-| Jailbreak detection | Yes (Guardian) | Not documented |
-| PII leak prevention | Yes — output scanning on sensitive tools | Not documented |
-| Defense-in-depth layers | **7 layers** documented (input validation → scanning → tool auth → output scan → MCP isolation → credential separation → cost controls) | Pairing mode for unknown DMs, optional Docker sandboxing for group sessions |
-| Per-tool scanning config | Yes — input/output scanning toggled per MCP, per agent | Not documented |
-| Credential management | **1Password MCP** — AI never sees raw credentials | Not documented |
-| Audit logging | Full JSONL audit trail, content hashed (not stored) for privacy | Not documented |
-| Fail modes | Configurable: closed (block when Guardian down) vs open (allow through) | Default to pairing mode |
-| LLM cost safety | Anomaly-based spike detection, sliding-window algorithm, hard caps, auto-pause + Telegram alert | Not documented |
+| Prompt injection scanning | **Guardian MCP** — 3 backends (Groq Llama Guard, Groq Safeguard, Ollama) | Not found in code |
+| Jailbreak detection | **Yes** (Guardian) | Not found |
+| PII leak prevention | **Yes** — output scanning on sensitive tools | Not found |
+| Defense-in-depth layers | **7 documented layers** (input → scanning → tool auth → output → isolation → credentials → cost) | 3 layers (pairing → sandboxing → tool allowlists) |
+| Per-tool input/output scanning | **Yes** — toggleable per MCP, per agent | No |
+| Credential management | **1Password MCP** — AI never sees raw credentials | 1Password skill available; OAuth profile system with provider-specific credentials |
+| Audit logging | JSONL audit trail, content hashed for privacy | **Yes** — dedicated audit module (13 files: `audit.ts`, `audit-fs.ts`, `audit-extra.ts`) |
+| Skill/extension scanning | No | **Yes** — `skill-scanner.ts` for vulnerability scanning |
+| DM pairing (unknown senders) | No (Telegram only, known user) | **Yes** — code verification for unknown DMs |
+| Sandbox isolation | MCP process isolation (stdio) | **Docker containers** for group/channel sessions |
+| File system auditing | File grants with ACLs | **Yes** — `audit-fs.ts` + Windows ACL support |
+| Access control protocol | Tool policy globs per agent | **ACP module** (13 files: client, server, session, commands) |
+| Fail modes | **Configurable** (closed = block, open = allow) when Guardian unavailable | Not documented |
+| LLM cost controls | **Anomaly detection** — sliding window, spike multiplier, hard cap, auto-pause + alert | Not found |
 
-**Verdict:** Annabelle's security posture is substantially more developed and documented. The Guardian MCP with multiple scanning backends, 7-layer defense-in-depth, per-tool/per-agent scan configuration, and battle-tested cost controls (with documented incident history) is a standout feature. OpenClaw takes a simpler approach with pairing mode and Docker sandboxing.
+**Verdict:** Different security philosophies. Annabelle focuses on **AI-specific threats** — prompt injection, jailbreak, PII leakage, LLM cost runaway — with a dedicated Guardian MCP and 7-layer defense. OpenClaw focuses on **platform security** — sandboxing untrusted sessions in Docker, DM pairing for unknown senders, skill vulnerability scanning, file system auditing, and a formal access control protocol. Neither covers what the other does well.
 
 ---
 
-## 5. Memory & Personalization
+## 6. Memory & Personalization
 
 | Feature | Annabelle | OpenClaw |
 |---|---|---|
-| Fact storage | Yes — categorized (preference, background, pattern, project, contact, decision) | Not documented |
-| Conversation logging | Yes — searchable, per-agent | Not documented |
-| User profiles | Yes — per agent, editable | Not documented |
-| Memory transparency | **Yes** — user can see and edit everything AI knows (exported to files) | Not documented |
-| Memory import/export | Yes — 11 memory tools total | Not documented |
-| Persona configuration | Config-driven system prompts, loaded from Memory MCP | Not documented |
-| Context management | Dynamic system prompt built from persona + facts + conversation history | Per-agent sessions |
+| Memory architecture | Memory MCP (SQLite, key-value + text) | **43-file memory module** with SQLite + vector embeddings |
+| Fact storage | Categorized (preference, background, pattern, project, contact, decision) | QMD (query/memory document) manager |
+| Semantic search | **No** (planned for Phase 3) | **Yes** — vector embeddings with hybrid search |
+| Embedding providers | None | **3 providers**: OpenAI, Google Gemini, Voyage (with batch processing) |
+| Conversation logging | Yes — searchable, per-agent | Yes — session files with compaction |
+| User profiles | Per-agent, editable | Workspace files (`USER.md`, `SOUL.md`, `IDENTITY.md`) |
+| Memory transparency | **Yes** — user can view/edit all stored facts (export to `~/.annabelle/memory-export/`) | Workspace markdown files are directly editable |
+| Memory import/export | **Yes** — 11 memory tools | File sync (`sync-memory-files.ts`) |
+| Automatic fact extraction | Yes — from conversations | Not documented separately |
+| Context building | Dynamic system prompt from persona + facts + history | Session compaction + custom instructions + workspace files |
+| Memory tools | 11 tools (store, list, delete, search, profile, stats, export, import) | Memory access with citations (agent tool) |
 
-**Verdict:** Annabelle has a fully built-out memory system with transparency as a core design principle. OpenClaw doesn't document an equivalent persistent memory/personalization layer.
+**Verdict:** OpenClaw has the more advanced memory system — **vector embeddings with 3 providers and hybrid search** is a major advantage over Annabelle's simple key-value/text storage. Annabelle's memory is more structured (categorized facts, 11 explicit tools, transparency exports) and gives users more granular control. Annabelle explicitly planned to add vector search in Phase 3.
 
 ---
 
-## 6. Device & Voice Integration
+## 7. Device, Voice & Visual
 
 | Feature | Annabelle | OpenClaw |
 |---|---|---|
-| macOS companion app | No | Yes |
-| iOS companion app | No | Yes |
-| Android companion app | No | Yes |
-| Voice interaction | No | **Yes — always-on speech via ElevenLabs** (macOS/iOS/Android) |
-| Screen recording | No | Yes (via mobile nodes) |
-| Camera access | No | Yes (via mobile nodes) |
-| Location sharing | No | Yes (via mobile nodes) |
-| Live Canvas (visual workspace) | No | **Yes — agent-driven A2UI visual workspace** |
+| macOS app | No | **Yes** (menu bar app) |
+| iOS app | No | **Yes** (companion node) |
+| Android app | No | **Yes** (companion node) |
+| Shared native kit | No | **Yes** (`OpenClawKit` shared across platforms) |
+| Voice wake/activation | No | **Yes** — always-on voice |
+| Talk mode (continuous voice) | No | **Yes** |
+| Speech-to-text | No | **Yes** — OpenAI Whisper (local + API), Deepgram, Sherpa ONNX |
+| Text-to-speech | No | **Yes** — ElevenLabs, Sherpa ONNX TTS |
+| Camera access | No | **Yes** — CamSnap skill + device node camera |
+| Screen recording | No | **Yes** — device node screen recording |
+| Location | No | **Yes** — device node `location.get` |
+| Live Canvas | No | **Yes** — A2UI visual workspace (present, push, snapshot, eval) |
 
-**Verdict:** OpenClaw wins entirely here. Annabelle has no device companion apps, no voice, no visual workspace. OpenClaw's always-on speech, mobile device integration, and Live Canvas are capabilities Annabelle doesn't attempt.
+**Verdict:** OpenClaw is in a completely different league here. Native apps for 3 platforms, voice with multiple STT/TTS providers, device sensor access, and a visual AI workspace. Annabelle has none of these capabilities.
 
 ---
 
-## 7. Tool Ecosystem
+## 8. Browser Automation
+
+| Feature | Annabelle | OpenClaw |
+|---|---|---|
+| Browser control | No | **Yes** — full implementation |
+| Chrome DevTools Protocol | No | **Yes** (`cdp.ts`) |
+| Playwright integration | No | **Yes** (`pw-session.ts`, `pw-tools-core.ts`) |
+| Tab/window management | No | **Yes** — multi-target control |
+| Screenshot capture | No | **Yes** — screenshots + ARIA role snapshots |
+| Browser profiles | No | **Yes** — Chrome profile management |
+| Download management | No | **Yes** — response interception |
+| Activity tracking | No | **Yes** — monitoring |
+
+**Verdict:** OpenClaw has a production-grade browser automation system. Annabelle has no browser capabilities.
+
+---
+
+## 9. Tool & Skills Ecosystem
 
 | Category | Annabelle | OpenClaw |
 |---|---|---|
-| Total tools | **65+** across 8 MCP servers | Not enumerated |
-| Email (Gmail) | **18 tools** — messages, drafts, labels, attachments, OAuth2, background polling | Gmail Pub/Sub |
-| File operations | **13 tools** — CRUD, grants, search, audit log, workspace isolation | System command execution (macOS) |
-| Web search | Brave Search (web + news) | Not documented separately |
-| Credential management | 1Password (read-only) | Not documented |
-| Browser control | No | **Yes — dedicated Chrome/Chromium instance** |
-| System commands | No | Yes (macOS) |
-| Extensibility | **Auto-discovery** — drop a folder with `package.json` manifest, Orchestrator finds it at startup | **Skills platform (ClawHub)** — bundled, managed, workspace-specific extensions with installation gating |
+| Total built-in tools | **65+** across 8 MCP servers, each with named parameters | **60+ first-class tools** + 52 installable skills |
+| Email (Gmail) | **18 tools** (messages, drafts, labels, attachments, OAuth2, polling) | Gmail Pub/Sub + Himalaya email skill |
+| File operations | **13 tools** (CRUD, grants, search, audit, workspace isolation) | Exec tool + file read/write/patch |
+| Web search | Brave Search (web + news) | **Yes** — web-search + web-fetch tools |
+| Browser | No | **CDP + Playwright** (status, snapshot, act, screenshot) |
+| Canvas/visual | No | **A2UI** (present, push, snapshot, eval) |
+| Device nodes | No | **Camera, screen, location, notifications** |
+| Messaging (cross-platform) | Telegram only (16 tools) | **Per-channel tools** for Discord, Slack, Telegram, WhatsApp, iMessage |
+| Media processing | No | **Yes** — image analysis (multi-provider), audio via Deepgram, video frames |
+| Link understanding | No | **Yes** — webpage parsing, content extraction, format normalization |
+| Credential management | 1Password MCP | 1Password skill + OAuth profile system |
+| Smart home | No | **Philips Hue** (openhue), **Sonos** (sonoscli) |
+| Health/fitness | No | **Sleep tracking** (eightctl) |
+| Notes | No | **Apple Notes, Apple Reminders, Bear Notes, Notion, Obsidian, Things** |
+| Music | No | **Spotify, Sonos, SongSee** |
+| Development | No | **GitHub skill, Coding Agent skill** |
+| Extensibility model | MCP auto-discovery (drop folder + manifest) | **Plugin SDK** with channel adapters, hooks, tools, services, schema validation |
+| Extension marketplace | No | **ClawHub** — 52 skills, install gating, workspace management |
 
-**Verdict:** Annabelle has more documented, enumerated tools (65+ with specific tool names and parameters). OpenClaw has browser control and system command execution that Annabelle lacks. OpenClaw's ClawHub is a more mature extension/plugin distribution model; Annabelle's auto-discovery is developer-friendly but doesn't have a marketplace.
+**Verdict:** Both have ~60+ core tools, but the ecosystems are very different. Annabelle's tools are deeper in email (18 Gmail tools) and file management (13 tools with grants/audit). OpenClaw's ecosystem is vastly wider — browser automation, media processing, smart home, notes apps, music, development tools, and 52 installable skills. OpenClaw's Plugin SDK is a full development framework; Annabelle's MCP auto-discovery is simpler but less powerful.
 
 ---
 
-## 8. Architecture & Developer Experience
+## 10. Architecture & Developer Experience
 
 | Aspect | Annabelle | OpenClaw |
 |---|---|---|
-| Protocol | **MCP (Model Context Protocol)** — native standard | WebSocket Gateway + custom RPC |
-| Transport | stdio (spawned children) + HTTP (independent services) | WebSocket (local port 18789) |
-| MCP integration | **Is an MCP server itself** — plugs directly into Claude Desktop/Code | Not an MCP server |
-| Configuration | Env vars + JSON config files | YAML config |
-| Startup | `start-all.sh` / Docker Compose | `openclaw onboard --install-daemon` (system service) |
-| Remote access | Not built-in | **Tailscale / SSH tunnels** |
-| Dashboard | Inngest (:8288) for jobs | Not documented |
-| Testing | Multi-level test suite (health checks, curl tests, vitest) | Not documented |
+| Protocol | **MCP (Model Context Protocol)** — open standard | WebSocket Gateway + custom JSON-RPC frames |
+| Transport | stdio (spawned children) + HTTP (independent services) | WebSocket (:18789) + HTTP on same port |
+| MCP integration | **Is an MCP server** — plugs into Claude Desktop/Code | Not an MCP server |
+| OpenAI compatibility | No | **Yes** — OpenAI HTTP proxy in gateway |
+| Configuration | Env vars + JSON config (`agents.json`) | **124-file config system** with Zod validation, hot-reload, env substitution |
+| Workspace config | `~/.annabelle/` | `~/.openclaw/workspace/` with editable `.md` files |
+| Startup | `start-all.sh` / Docker Compose | `openclaw onboard --install-daemon` → persistent system service |
+| Daemon support | Manual (`start-all.sh`) | **Cross-platform**: systemd (Linux), launchd (macOS), Task Scheduler (Windows) |
+| Remote access | Not built-in | **Tailscale Serve/Funnel, SSH tunnels** |
+| CLI | ~15 Telegram slash commands | **181 CLI commands** (auth, agents, diagnostics, models, sandbox, security, channels, webhooks) |
+| Diagnostics | Health checks | **`openclaw doctor`** — comprehensive diagnostics (auth, config, gateway, workspace, security) |
+| Dashboard | Inngest (:8288) for jobs | No web dashboard |
+| Testing | Vitest + curl integration tests | **Vitest** with colocated tests, Docker E2E, coverage reports |
+| Code quality | TypeScript strict | TypeScript + **Oxlint + Oxfmt** |
+| Package management | npm | **pnpm workspaces** (monorepo) |
 
-**Verdict:** Annabelle is deeply MCP-native, which means it integrates seamlessly with Claude Desktop and any future MCP client. OpenClaw uses its own gateway protocol, which gives it more flexibility for non-MCP clients but doesn't plug into the MCP ecosystem. OpenClaw has built-in remote access; Annabelle doesn't.
+**Verdict:** OpenClaw has a more mature development infrastructure — 181 CLI commands, cross-platform daemon support, comprehensive diagnostics (`doctor`), hot-reload config, and a full Plugin SDK. Annabelle's key architectural advantage is being MCP-native, which means seamless integration with Claude Desktop/Code and the broader MCP ecosystem.
 
 ---
 
-## Summary: Where Each Excels
+## 11. User Interface Options
 
-### Annabelle's strengths
-- **Security depth** — 7-layer defense, Guardian scanning with 3 backends, per-agent overrides, audit trails
-- **Agent governance** — per-agent tool policies, cost controls with anomaly detection, kill switches, health monitoring
-- **MCP-native** — integrates directly into Claude Desktop/Code as a first-class MCP server
-- **Memory system** — persistent, transparent, editable, categorized fact storage
-- **Task scheduling** — full Inngest integration with cron, one-shot, background, workflows, dashboard
-- **Gmail depth** — 18 tools covering the full email lifecycle
-- **Battle-tested** — documented incidents and post-mortems showing real-world hardening
+| Interface | Annabelle | OpenClaw |
+|---|---|---|
+| Claude Desktop (rich GUI) | **Yes** — primary interface via MCP | No |
+| Terminal UI (TUI) | No | **Yes** — themed, overlays, input history, gateway chat |
+| WebChat | No | **Yes** — 46-file module, QR login, auto-reply, media compression |
+| Mobile apps | No | **Yes** — iOS, Android, macOS |
+| Telegram as UI | **Yes** — full slash commands, real-time responses | Yes — as one of many channels |
+| Job dashboard | **Yes** — Inngest at `:8288` | No |
 
-### OpenClaw's strengths
-- **Channel breadth** — 12+ messaging platforms out of the box
-- **Device integration** — macOS, iOS, Android companion apps with camera, screen, location
-- **Voice** — always-on speech with ElevenLabs across devices
-- **Visual workspace** — Live Canvas with A2UI
-- **Browser control** — dedicated Chrome/Chromium instance
-- **Extension marketplace** — ClawHub skills platform for community extensions
-- **Remote access** — built-in Tailscale/SSH tunnel support
-- **Easy onboarding** — single `npm install -g` + `onboard --install-daemon`
+**Verdict:** OpenClaw offers 4+ user interface options (TUI, WebChat, mobile apps, any messaging channel). Annabelle relies on Claude Desktop (excellent UX but tied to one client) and Telegram.
 
-### What each project lacks
+---
 
-| Annabelle is missing | OpenClaw is missing |
-|---|---|
-| Multi-channel support beyond Telegram | MCP protocol integration |
-| Voice / speech capabilities | Documented security scanning / prompt injection defense |
-| Device companion apps | Documented persistent memory system |
-| Browser automation | Per-agent tool policies & cost controls |
-| Extension marketplace | Detailed tool enumeration (65+ documented tools) |
-| Remote access | Job management dashboard |
-| Easy one-command install | Memory transparency (user can see what AI knows) |
+## Summary Scorecard
+
+| Category | Annabelle | OpenClaw | Notes |
+|---|---|---|---|
+| Messaging channels | 2 | **17+** | OpenClaw dominates |
+| LLM provider support | 4 | **9+** | OpenClaw has native SDKs for more providers |
+| Agent governance & safety | **Strong** | Moderate | Annabelle's cost controls, kill switch, Guardian are unique |
+| Task management & scheduling | **Strong** | Basic | Inngest gives Annabelle workflows, dashboard, retries |
+| AI-specific security | **Strong** | None found | Guardian MCP is a standout Annabelle feature |
+| Platform security | Basic | **Strong** | OpenClaw has Docker sandboxing, DM pairing, skill scanning, ACP |
+| Memory system | Structured | **Advanced** | OpenClaw has vector embeddings + hybrid search |
+| Voice & devices | None | **Full** | OpenClaw is in a different league |
+| Browser automation | None | **Full** | CDP + Playwright |
+| Tool/skill ecosystem | Deep (65+ specific) | **Wide (60+ core + 52 skills)** | Different strengths |
+| Developer extensibility | MCP auto-discovery | **Plugin SDK + ClawHub** | OpenClaw's SDK is more comprehensive |
+| MCP protocol native | **Yes** | No | Annabelle's unique advantage |
+| Deployment maturity | Scripts | **System daemon** | Cross-platform daemon with diagnostics |
+| CLI experience | ~15 commands | **181 commands** | OpenClaw is far more complete |
+
+---
+
+## The Real Difference
+
+**Annabelle is a security-hardened, MCP-native orchestration layer** built by a solo developer with deep attention to cost safety, prompt injection defense, and operational controls. It excels at things that matter when you're running autonomous agents with real API costs — anomaly-based cost detection (born from a $100 incident), Guardian scanning with configurable fail modes, and granular per-agent governance. Its 18-tool Gmail integration and Inngest workflow engine are best-in-class for their scope.
+
+**OpenClaw is a full-platform AI assistant** built by a 7-person team with 176k GitHub stars. It's designed to be your AI everywhere — in every messaging app, on every device, with voice, browser control, visual canvas, and a 52-skill plugin ecosystem. Its memory system with vector embeddings and hybrid search is more advanced, its agent runtime supports subagent spawning and session compaction, and its 181 CLI commands cover every operational need.
+
+**If you want a secure, cost-controlled autonomous agent that lives inside Claude Desktop → Annabelle.**
+**If you want an AI assistant accessible from every device and messaging platform → OpenClaw.**
