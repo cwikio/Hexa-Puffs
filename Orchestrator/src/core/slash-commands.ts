@@ -40,6 +40,18 @@ const DEFAULT_SECURITY_ENTRIES = 10;
 const DEFAULT_LOG_ENTRIES = 15;
 const LOGS_DIR = join(homedir(), '.annabelle', 'logs');
 
+/** Human-friendly display names for MCP services */
+const MCP_DISPLAY_NAMES: Record<string, string> = {
+  guardian: 'Guardian',
+  telegram: 'Telegram',
+  memory: 'Memory',
+  filer: 'Filer',
+  searcher: 'Searcher',
+  gmail: 'Gmail',
+  onepassword: '1Password',
+  web: 'Browser',
+};
+
 /** Service log files to scan for /logs N (WARN/ERROR filtering) */
 const SERVICE_LOG_FILES = [
   'orchestrator.log',
@@ -147,9 +159,10 @@ export class SlashCommandHandler {
       output += '  (none)\n';
     } else {
       for (const [name, info] of mcpEntries) {
+        const label = MCP_DISPLAY_NAMES[name] ?? name;
         const state = info.available ? 'up' : 'DOWN';
         const transport = info.port ? `${info.type}:${info.port}` : info.type;
-        output += `  ${name}: ${state} (${transport})\n`;
+        output += `  ${label}: ${state} (${transport})\n`;
       }
     }
 
@@ -947,9 +960,10 @@ Keep it concise. No markdown formatting — plain text only.`;
     output += '\nMCP Services:\n';
     const mcpEntries = Object.entries(status.mcpServers);
     for (const [name, info] of mcpEntries) {
+      const label = MCP_DISPLAY_NAMES[name] ?? name;
       const state = info.available ? 'up' : 'DOWN';
       const count = toolsByMcp.get(name)?.length ?? 0;
-      output += `  ${name}: ${state} (${count} tools)\n`;
+      output += `  ${label}: ${state} (${count} tools)\n`;
     }
     output += `  Total: ${tools.length} tools\n`;
 

@@ -128,9 +128,9 @@ describe('SlashCommandHandler', () => {
 
       const result = await handler.tryHandle(makeMsg('/status'));
 
-      expect(result.response).toContain('guardian: up (stdio)');
-      expect(result.response).toContain('telegram: up (http:8002)');
-      expect(result.response).toContain('memory: up (stdio)');
+      expect(result.response).toContain('Guardian: up (stdio)');
+      expect(result.response).toContain('Telegram: up (http:8002)');
+      expect(result.response).toContain('Memory: up (stdio)');
     });
 
     it('should show DOWN for unavailable MCPs', async () => {
@@ -143,8 +143,8 @@ describe('SlashCommandHandler', () => {
 
       const result = await handler.tryHandle(makeMsg('/status'));
 
-      expect(result.response).toContain('guardian: up');
-      expect(result.response).toContain('memory: DOWN');
+      expect(result.response).toContain('Guardian: up');
+      expect(result.response).toContain('Memory: DOWN');
     });
 
     it('should include agent status', async () => {
