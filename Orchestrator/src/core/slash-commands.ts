@@ -96,7 +96,7 @@ export class SlashCommandHandler {
         case '/delete':
           return { handled: true, response: await this.handleDelete(msg.chatId, args) };
 
-        case '/info':
+        case '/help':
           return { handled: true, response: await this.handleInfo() };
 
         case '/security':
@@ -853,7 +853,7 @@ Keep it concise. No markdown formatting — plain text only.`;
     output += 'Commands:\n';
     output += '  /status — System status (MCPs, agents, uptime)\n';
     output += '  /status summary — AI health audit (logs, security, memory, cron)\n';
-    output += '  /info — This info page (commands, tools, skills)\n';
+    output += '  /help — This info page (commands, tools, skills)\n';
     output += '  /delete — Delete messages (today | yesterday | week | <N>h | <N>)\n';
     output += '  /security — Guardian status & scan config\n';
     output += '  /security [N] — Last N security threats (default 10)\n';
@@ -862,7 +862,6 @@ Keep it concise. No markdown formatting — plain text only.`;
     output += '  /cron — Inngest status, cron jobs, skills & background tasks\n';
     output += '  /kill — Kill services (all | thinker | telegram | inngest)\n';
     output += '  /resume — Resume services (all | thinker | telegram | inngest)\n';
-    output += '  /help — Short command list\n';
 
     // MCP services + tool counts
     output += '\nMCP Services:\n';
