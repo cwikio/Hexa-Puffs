@@ -326,7 +326,75 @@ When creating a new agent config directory, run `git init` and commit the initia
 
 ---
 
-## 7. Memory Architecture
+## 7. Learning About the User
+
+### How Annabelle Works
+
+Annabelle learns about the user through two mechanisms: **explicit fact storage** and **conversation logging**.
+
+**Explicit fact storage** relies on the LLM deciding during conversation that something is worth remembering. The system prompt instructs Thinker to call `store_fact` when it encounters user preferences, background information, patterns, projects, contacts, or decisions. Each fact gets a category, a confidence score (0.0–1.0), and optional tags. When the agent encounters "I prefer dark mode in all my apps," it's expected to call `store_fact({ fact: "User prefers dark mode in all apps", category: "preference", confidence: 0.9 })`. The 60% keyword-overlap deduplication prevents storing the same fact twice with slightly different wording.
+
+**Conversation logging** stores every exchange in the `conversations` table — user message, agent response, timestamp, agent ID. This is append-only archival, not active learning. The agent can later search conversations via `search_conversations`, but this is reactive retrieval, not proactive extraction.
+
+**Context assembly** at message time loads the user profile (from the `profiles` table) and relevant facts (via keyword matching against the incoming message). These get injected into the system prompt so the LLM has prior knowledge when responding.
+
+The README mentions "automatic fact extraction from conversations" and "periodic synthesis of learnings," but from the architecture documents, these appear to be planned rather than fully implemented. The current system depends entirely on the LLM choosing to call `store_fact` during the natural flow of conversation — there is no post-conversation extraction pipeline that reviews what was said and distills new facts.
+
+### How OpenClaw Works
+
+OpenClaw learns about the user through three layers: **workspace files**, **agent-written memory files**, and **session compaction**.
+
+**`USER.md`** is a static workspace file the user edits directly. It contains preferences, context, and background that the user wants the agent to know. This isn't "learning" — it's manual configuration. The agent reads it at session start and injects it into the system prompt. The user updates it when their preferences change.
+
+**Memory files** in `~/.openclaw/memory/<agentId>/` are markdown documents the agent writes during conversations. When the agent learns something, it writes to a memory file using the standard `write` tool (one of Pi's 4 core tools). These files are chunked and embedded for later retrieval via hybrid search. The agent can create new memory files, append to existing ones, or organize them into subdirectories. Because Pi can write arbitrary files, the memory format is flexible — the agent structures its notes however it finds most useful.
+
+**Session compaction** is an indirect learning mechanism. When a long conversation is compacted, the summary preserves key facts, decisions, and context. This compacted context persists across sessions. While not explicitly "learning about the user," it means that important user information discussed early in a conversation survives even when the raw messages are compressed.
+
+The QMD (query/memory document) manager handles the retrieval side — when the agent needs to recall something about the user, it searches memory files using hybrid vector + BM25 search. The semantic understanding of vector search means loosely related information surfaces even without exact keyword matches.
+
+### Which Architecture Is Superior
+
+**For extraction quality: roughly equal, but with different failure modes.** Both systems depend on the LLM deciding what's worth remembering during conversation. Annabelle uses a dedicated `store_fact` tool with structured categories. OpenClaw uses general-purpose file writing. Neither has a post-conversation extraction pipeline that systematically reviews exchanges and extracts facts the LLM missed in the moment. Both fail when the LLM is focused on completing a task rather than noting user preferences revealed along the way — which is frequent during tool-heavy conversations.
+
+**For storage structure: Annabelle is superior.** Categorized facts with confidence scores, tags, and deduplication are more organized than free-form markdown files. When you have 500 facts, knowing that 80 are preferences, 120 are project-related, and 45 are contacts is structurally useful for querying, auditing, and management. OpenClaw's markdown files can contain anything in any format — flexible but harder to query systematically and impossible to audit at a glance.
+
+**For retrieval: OpenClaw is superior.** As covered in the Memory Architecture section — vector embeddings with hybrid search find semantically related facts that keyword matching misses. A fact stored as "prefers terminal-based workflows" will match a query about "command line preferences" in OpenClaw but not in Annabelle.
+
+**For user control and transparency: Annabelle is superior.** The 11 memory tools (list, delete, search, export, import) give explicit control over what the agent knows. The memory export to `~/.annabelle/memory-export/` makes everything visible and editable. OpenClaw's `USER.md` is manually editable (good), but the agent-written memory files in `~/.openclaw/memory/` are less structured and harder to audit comprehensively.
+
+**For passive/ambient learning: OpenClaw is slightly superior.** Session compaction means that user information mentioned in passing during long conversations gets preserved in compressed form, even if nobody explicitly stored it as a fact. In Annabelle, if the LLM didn't call `store_fact`, that information exists only in the `conversations` table — retrievable by manual search but not proactively surfaced in future context assembly.
+
+**Overall: neither system is good at this.** Both depend on the LLM volunteering to remember things, which is unreliable. The real gap in both systems is the absence of a **systematic extraction pipeline** — a post-conversation process that reviews what was discussed and identifies new facts to store. Neither project has solved this well. This represents an opportunity for Annabelle to leapfrog OpenClaw's approach.
+
+### Recommendations
+
+**Recommendation 1: Add a post-conversation fact extraction step.**
+
+After each conversation turn (or after a conversation goes idle for 5 minutes), send the exchange to a lightweight LLM call with a focused prompt: "Review this conversation. Extract any new facts about the user (preferences, background, decisions, contacts, projects, patterns) that aren't already in the known facts list. Return structured facts or an empty list." Compare against existing facts using the 60% deduplication check, and store new ones automatically.
+
+*Justification:* This closes the biggest gap in both systems — facts that the LLM didn't think to store during the conversation. During a task-focused exchange ("send this email to my colleague Jan at jan@example.com"), the LLM is focused on sending the email, not on noting that Jan is a colleague with that email address. A post-conversation extraction pass catches these implicit facts. The cost is one additional LLM call per conversation (a few hundred tokens with a small model like Groq's llama-3.3), which is negligible. This would make Annabelle's learning meaningfully better than both its current state and OpenClaw's approach, which has no equivalent mechanism.
+
+**Recommendation 2: Add periodic memory synthesis via Inngest.**
+
+Schedule a weekly Inngest job that loads all facts and recent conversations, sends them to the LLM with a prompt like "Review these facts and conversations. Identify patterns, contradictions, or facts that should be updated. Suggest merges for duplicate facts. Flag stale facts that may no longer be accurate." Store the synthesis results and apply suggested updates (with logging).
+
+*Justification:* Individual facts accumulate but don't get refined. After 6 months, you might have "prefers dark mode" (stored January), "switched to light mode for presentations" (stored March), and "uses auto dark mode" (stored May). A synthesis step would consolidate these into "uses auto dark mode; prefers dark for coding, light for presentations" — one coherent fact instead of three potentially contradictory ones. This is already in Annabelle's architecture plan (Phase 3) and the Inngest infrastructure to run it already exists. OpenClaw has no equivalent.
+
+**Recommendation 3: Add fact extraction from conversation history backfill.**
+
+Run a one-time Inngest job that scans the existing `conversations` table, sends batches to the LLM for fact extraction, and populates the `facts` table with historical learnings. This recovers information from past conversations where `store_fact` wasn't called.
+
+*Justification:* Months of conversation history exist in the database but were never mined for facts. A backfill extracts user preferences, project details, contacts, and patterns that the LLM learned but didn't store during real-time conversation. This is a one-time cost (process N conversations × small LLM call each) that immediately enriches the fact base. After this, Recommendation 1 (post-conversation extraction) handles future conversations continuously.
+
+**Recommendation 4: Keep structured facts — don't switch to free-form markdown files.**
+
+OpenClaw's approach of writing unstructured markdown to memory files is flexible but loses the queryability of categorized, tagged, confidence-scored facts. Keep the current `store_fact` structure.
+
+*Justification:* Structured facts enable queries that free-form files can't: "list all contact facts," "show preferences with confidence below 0.7," "delete all facts in the project category for project X." These are useful for memory management and transparency. When vector search is added (see Memory Architecture section), structured facts get the best of both worlds — semantic retrieval through embeddings plus structured querying through categories and tags. Free-form markdown files only get semantic retrieval, losing the ability to filter, categorize, and audit systematically.
+
+---
+
+## 8. Memory Architecture
 
 ### How Annabelle Works
 
@@ -384,7 +452,7 @@ After implementing vector search, run a one-time migration that computes embeddi
 
 ---
 
-## 8. Summary — Prioritized Recommendations
+## 9. Summary — Prioritized Recommendations
 
 Recommendations ranked by impact-to-effort ratio, with codebase change estimates.
 
@@ -402,42 +470,63 @@ The second largest gap. As fact count grows, keyword matching becomes actively h
 
 The change is primarily in Memory MCP: add `sqlite-vec` as a dependency, create a `vec_facts` table, add embedding computation on `store_fact`, add vector search path in `retrieve_memories`, implement hybrid scoring. Touch points: `Memorizer-MCP/src/db/` (schema + queries), `Memorizer-MCP/src/embeddings/` (new module for local + API providers), `Memorizer-MCP/src/tools/` (modified retrieval logic). A migration script for existing facts. No changes to Orchestrator or Thinker — the memory interface stays the same.
 
-### Priority 3: Code Execution Tool
+### Priority 3: Post-Conversation Fact Extraction
+**Impact: High | Effort: Low-Medium | Codebase change: ~100–150 lines**
+
+Neither Annabelle nor OpenClaw systematically extracts user information from conversations. Both rely on the LLM choosing to store facts during conversation, which is unreliable — especially during task-focused exchanges. This is the single feature most likely to make Annabelle learn better than OpenClaw.
+
+The change adds a post-conversation extraction step to Thinker: after a conversation goes idle (5 minutes with no new messages), or after each turn, send the exchange to a lightweight LLM call that extracts structured facts. Touch points: `Thinker/src/agent/loop.ts` (trigger extraction after idle timeout), a new `Thinker/src/agent/fact-extractor.ts` (LLM prompt + fact comparison + `store_fact` calls). Uses existing Memory MCP tools — no database changes, no Orchestrator changes. The extraction LLM call uses Groq with a small model for minimal cost (~100–200 tokens per extraction).
+
+### Priority 4: Conversation History Backfill
+**Impact: High (one-time) | Effort: Low | Codebase change: ~50–80 lines**
+
+Recovers user knowledge from months of existing conversation history that was never mined for facts. A one-time Inngest background job that processes the `conversations` table in batches.
+
+Touch points: a new Inngest function in `Orchestrator/src/jobs/` that reads conversation batches, sends them to the LLM for fact extraction, and calls `store_fact` for new discoveries. Uses existing Memory MCP tools and Inngest infrastructure. No changes to Thinker, Orchestrator core, or other MCPs. Run once, then disable.
+
+### Priority 5: Memory Synthesis (Weekly)
+**Impact: Medium-High | Effort: Low-Medium | Codebase change: ~80–120 lines**
+
+Consolidates accumulated facts over time — merging duplicates, resolving contradictions, flagging stale information. Already planned in Annabelle's Phase 3 and the Inngest infrastructure exists.
+
+Touch points: a new Inngest cron function in `Orchestrator/src/jobs/` that loads all facts, groups by category, sends to LLM for synthesis, and applies updates via Memory MCP tools. Similar to backfill — uses existing infrastructure, no structural changes.
+
+### Priority 6: Code Execution Tool
 **Impact: High | Effort: Medium | Codebase change: ~150–250 lines**
 
 Closes the biggest capability gap in agent runtime. Enables the agent to solve novel problems by writing and running code, without abandoning the existing tool-rich architecture.
 
 New MCP or new tools in Filer MCP: `execute_code` tool implementation, Docker sandbox configuration, Guardian integration for code scanning. Touch points: new `CodeExec-MCP/` package (or additions to `Filer-MCP/src/tools/`), Guardian config update to scan code execution inputs/outputs. If using Docker, a `Dockerfile` for the sandbox container. Orchestrator auto-discovers the new MCP — no Orchestrator code changes needed.
 
-### Priority 4: Subagent Spawning
+### Priority 7: Subagent Spawning
 **Impact: High | Effort: Medium | Codebase change: ~300–400 lines**
 
 Enables parallel work — the most requested capability for autonomous agents. Your architecture is naturally suited for it.
 
 Touch points: new `spawn_subagent` tool in Orchestrator, `AgentManager` modifications for dynamic agent spawning with parent tracking, cascade-kill logic in halt manager, result callback routing. `Orchestrator/src/agents/agent-manager.ts` (spawn/track/kill), `Orchestrator/src/core/tool-router.ts` (new tool), `Orchestrator/src/core/halt-manager.ts` (cascade logic). No Thinker changes — subagents are just Thinker instances with additional metadata.
 
-### Priority 5: File-Based Persona Configuration
+### Priority 8: File-Based Persona Configuration
 **Impact: Medium | Effort: Low | Codebase change: ~50–100 lines**
 
 Improves developer experience for tuning agent behavior. Small change, immediate quality-of-life improvement.
 
 Create `~/.annabelle/agents/<agentId>/instructions.md`. Add file-reading logic to Thinker's context manager. Touch points: `Thinker/src/agent/loop.ts` (read file at session start), `Thinker/src/config.ts` (new config path). Optionally, a setup script that initializes the directory with `git init`. No changes to Memory MCP — profiles continue to work for dynamic state.
 
-### Priority 6: File-Based Skill Loading
+### Priority 9: File-Based Skill Loading
 **Impact: Medium | Effort: Low-Medium | Codebase change: ~100–150 lines**
 
 Complements existing playbooks with curated, version-controlled skills. Low risk, additive change.
 
 Add a skill scanner to Thinker that reads `~/.annabelle/skills/` at startup, parses YAML frontmatter + Markdown instructions, and registers them alongside database playbooks. Touch points: new `Thinker/src/agent/skill-loader.ts`, modifications to `Thinker/src/agent/playbook-classifier.ts` (merge file-based skills into matching). No database changes — file-based skills coexist with database playbooks.
 
-### Priority 7: Lazy-Spawn / Idle-Kill for Agents
+### Priority 10: Lazy-Spawn / Idle-Kill for Agents
 **Impact: Low | Effort: Low | Codebase change: ~50–80 lines**
 
 Operational cleanliness. Not critical on a 128GB machine but good practice.
 
 Touch points: `Orchestrator/src/agents/agent-manager.ts` (add `lastActivityAt` tracking, periodic idle check, lazy spawn on first message). No changes to Thinker or other MCPs.
 
-### Priority 8: Shared HTTP Server with Path Routing
+### Priority 11: Shared HTTP Server with Path Routing
 **Impact: Low | Effort: Medium | Codebase change: ~200–300 lines**
 
 Architectural cleanup. Only matters if agent count grows beyond ~10. Defer unless port management becomes a real problem.
