@@ -25,6 +25,19 @@ export const LogLevelSchema = z.enum(['debug', 'info', 'warn', 'error']);
 export type LogLevel = z.infer<typeof LogLevelSchema>;
 
 /**
+ * Session persistence configuration schema
+ */
+export const SessionConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  compactionEnabled: z.boolean().default(true),
+  compactionThresholdChars: z.number().int().min(5000).default(50_000), // ~12,500 tokens
+  compactionKeepRecentTurns: z.number().int().min(2).default(10),
+  compactionCooldownMs: z.number().int().min(0).default(5 * 60 * 1000), // 5 min
+  compactionMinTurns: z.number().int().min(3).default(15),
+  maxAgeDays: z.number().int().min(1).default(7),
+});
+
+/**
  * Configuration schema with Zod validation
  */
 export const ConfigSchema = z.object({
@@ -74,6 +87,14 @@ export const ConfigSchema = z.object({
   // Logging
   logLevel: LogLevelSchema.default('info'),
   traceLogPath: z.string().default('~/.annabelle/logs/traces.jsonl'),
+
+  // Session persistence
+  sessionsDir: z.string().default('~/.annabelle/sessions'),
+  sessionConfig: SessionConfigSchema.default({}),
+
+  // Compaction model — dedicated cheap model for session summarization
+  compactionProvider: LLMProviderSchema.default('groq'),
+  compactionModel: z.string().default('llama-3.1-8b-instant'),
 
   // Cost controls (optional, configured via Orchestrator env vars)
   costControl: CostControlSchema.optional(),
@@ -131,6 +152,22 @@ export function loadConfig(): Config {
     userTimezone: process.env.USER_TIMEZONE || 'Europe/Warsaw',
     logLevel: process.env.LOG_LEVEL || 'info',
     traceLogPath: process.env.TRACE_LOG_PATH || '~/.annabelle/logs/traces.jsonl',
+
+    // Session persistence
+    sessionsDir: process.env.THINKER_SESSIONS_DIR || '~/.annabelle/sessions',
+    sessionConfig: {
+      enabled: parseBoolean(process.env.THINKER_SESSION_ENABLED, true),
+      compactionEnabled: parseBoolean(process.env.THINKER_SESSION_COMPACTION_ENABLED, true),
+      compactionThresholdChars: parseInteger(process.env.THINKER_SESSION_COMPACTION_THRESHOLD_CHARS, 50_000),
+      compactionKeepRecentTurns: parseInteger(process.env.THINKER_SESSION_COMPACTION_KEEP_RECENT, 10),
+      compactionCooldownMs: parseInteger(process.env.THINKER_SESSION_COMPACTION_COOLDOWN_MS, 5 * 60 * 1000),
+      compactionMinTurns: parseInteger(process.env.THINKER_SESSION_COMPACTION_MIN_TURNS, 15),
+      maxAgeDays: parseInteger(process.env.THINKER_SESSION_MAX_AGE_DAYS, 7),
+    },
+
+    // Compaction model — dedicated cheap model for session summarization
+    compactionProvider: process.env.THINKER_COMPACTION_PROVIDER || 'groq',
+    compactionModel: process.env.THINKER_COMPACTION_MODEL || 'llama-3.1-8b-instant',
 
     // Cost controls — only built when explicitly enabled via env var
     ...(parseBoolean(process.env.THINKER_COST_CONTROL_ENABLED, false) ? {

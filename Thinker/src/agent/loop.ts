@@ -11,6 +11,7 @@ import { ModelFactory } from '../llm/factory.js';
 import { sanitizeResponseText } from '../utils/sanitize.js';
 import { CostMonitor } from '../cost/index.js';
 import type { CostStatus } from '../cost/types.js';
+import { SessionStore } from '../session/index.js';
 import type { IncomingMessage, ProcessingResult, AgentContext, AgentState } from './types.js';
 import { PlaybookCache } from './playbook-cache.js';
 import { classifyMessage } from './playbook-classifier.js';
@@ -132,16 +133,28 @@ export class Agent {
   // Cost controls
   private costMonitor: CostMonitor | null = null;
 
+  // Session persistence
+  private sessionStore: SessionStore;
+
   constructor(config: Config) {
     this.config = config;
     this.orchestrator = new OrchestratorClient(config);
     this.modelFactory = new ModelFactory(config);
     this.playbookCache = new PlaybookCache(this.orchestrator, config.thinkerAgentId);
+    this.sessionStore = new SessionStore(
+      config.sessionsDir,
+      config.thinkerAgentId,
+      config.sessionConfig
+    );
 
     // Initialize cost monitor if enabled
     if (config.costControl?.enabled) {
       this.costMonitor = new CostMonitor(config.costControl);
       console.log(`Cost monitor enabled (spike: ${config.costControl.spikeMultiplier}x, hard cap: ${config.costControl.hardCapTokensPerHour} tokens/hr)`);
+    }
+
+    if (config.sessionConfig.enabled) {
+      console.log(`Session persistence enabled (dir: ${config.sessionsDir}, compaction: ${config.sessionConfig.compactionEnabled})`);
     }
   }
 
@@ -202,20 +215,40 @@ export class Agent {
   }
 
   /**
-   * Get or create conversation state for a chat
+   * Get or create conversation state for a chat.
+   * On cache miss, attempts to load from disk (session JSONL file).
    */
-  private getConversationState(chatId: string): AgentState {
+  private async getConversationState(chatId: string): Promise<AgentState> {
     let state = this.conversationStates.get(chatId);
-
-    if (!state) {
-      state = {
-        chatId,
-        messages: [],
-        lastActivity: Date.now(),
-      };
-      this.conversationStates.set(chatId, state);
+    if (state) {
+      state.lastActivity = Date.now();
+      return state;
     }
 
+    // Try loading from disk
+    let messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    let compactionSummary: string | undefined;
+
+    if (this.config.sessionConfig.enabled) {
+      try {
+        const saved = await this.sessionStore.loadSession(chatId);
+        if (saved) {
+          messages = saved.messages;
+          compactionSummary = saved.compactionSummary;
+          console.log(`Restored session ${chatId} from disk (${saved.turnCount} turns${compactionSummary ? ', with compaction summary' : ''})`);
+        }
+      } catch (error) {
+        console.warn(`Failed to load session ${chatId} from disk:`, error);
+      }
+    }
+
+    state = {
+      chatId,
+      messages,
+      lastActivity: Date.now(),
+      compactionSummary,
+    };
+    this.conversationStates.set(chatId, state);
     return state;
   }
 
@@ -227,7 +260,7 @@ export class Agent {
     userMessage: string,
     trace: TraceContext
   ): Promise<AgentContext> {
-    const state = this.getConversationState(chatId);
+    const state = await this.getConversationState(chatId);
 
     // Get profile and memories from Orchestrator
     const profile = await this.orchestrator.getProfile(this.config.thinkerAgentId, trace);
@@ -274,6 +307,11 @@ export class Agent {
     });
     systemPrompt += `\n\n## Current Date & Time\n${formatter.format(now)} (${tz})`;
 
+    // Inject compaction summary from previous conversation context
+    if (state.compactionSummary) {
+      systemPrompt += `\n\n## Previous Conversation Context\n${state.compactionSummary}`;
+    }
+
     // Add context to system prompt
     if (memories.facts.length > 0) {
       const factsText = memories.facts
@@ -305,7 +343,7 @@ export class Agent {
 
     await this.logger.logMessageReceived(trace, message.chatId, message.text);
 
-    const state = this.getConversationState(message.chatId);
+    const state = await this.getConversationState(message.chatId);
     const providerInfo = this.modelFactory.getProviderInfo();
 
     try {
@@ -517,6 +555,42 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
       });
       state.lastActivity = Date.now();
 
+      // Persist turn to session JSONL
+      if (this.config.sessionConfig.enabled) {
+        try {
+          await this.sessionStore.saveTurn(
+            message.chatId,
+            message.text,
+            responseText,
+            result.steps
+              .flatMap((step) => step.toolCalls?.map((tc) => tc.toolName) || []),
+            { prompt: promptTokens, completion: completionTokens }
+          );
+
+          // Run compaction if needed
+          if (this.sessionStore.shouldCompact(message.chatId)) {
+            // Filter to user/assistant text messages (CoreMessage may include system/tool roles)
+            const textMessages = state.messages.filter(
+              (m): m is { role: 'user' | 'assistant'; content: string } =>
+                (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string'
+            );
+            const compactionModel = this.modelFactory.getCompactionModel();
+            const compactionResult = await this.sessionStore.compact(
+              message.chatId,
+              textMessages,
+              compactionModel
+            );
+            if (compactionResult.summary) {
+              state.messages = compactionResult.messages;
+              state.compactionSummary = compactionResult.summary;
+              state.lastCompactionAt = Date.now();
+            }
+          }
+        } catch (sessionError) {
+          console.warn('Session persistence error (non-fatal):', sessionError);
+        }
+      }
+
       // Collect tools used
       const toolsUsed = usedTextOnlyFallback
         ? ['(text-only fallback)']
@@ -723,6 +797,16 @@ Complete the task step by step, using your available tools. When done, provide a
         this.conversationStates.delete(chatId);
       }
     }
+  }
+
+  // ─── Session Persistence API ─────────────────────────────────────
+
+  /**
+   * Clean up session JSONL files older than the configured max age.
+   */
+  async cleanupOldSessions(): Promise<void> {
+    if (!this.config.sessionConfig.enabled) return;
+    await this.sessionStore.cleanupOldSessions();
   }
 
   // ─── Cost Control API ───────────────────────────────────────────

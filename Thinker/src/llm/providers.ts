@@ -54,6 +54,34 @@ export function getModelId(config: Config): string {
 }
 
 /**
+ * Create a language model for session compaction (cheap summarization).
+ * Uses a dedicated provider/model configured via compactionProvider + compactionModel.
+ */
+export function createCompactionModel(config: Config): ReturnType<ReturnType<typeof createOpenAI>> {
+  const provider = config.compactionProvider;
+  const modelId = config.compactionModel;
+
+  switch (provider) {
+    case 'groq': {
+      const groq = createGroqProvider(config);
+      return groq(modelId);
+    }
+    case 'lmstudio': {
+      const lmstudio = createLMStudioProvider(config);
+      return lmstudio(modelId);
+    }
+    case 'ollama': {
+      const ollama = createOllamaProvider(config);
+      return ollama(modelId);
+    }
+    default: {
+      const groq = createGroqProvider(config);
+      return groq(modelId);
+    }
+  }
+}
+
+/**
  * Get provider name for logging
  */
 export function getProviderDisplayName(provider: ProviderName): string {

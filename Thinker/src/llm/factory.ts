@@ -4,6 +4,7 @@ import {
   createGroqProvider,
   createLMStudioProvider,
   createOllamaProvider,
+  createCompactionModel,
   getModelId,
   getProviderDisplayName,
 } from './providers.js';
@@ -43,6 +44,7 @@ export function createLanguageModel(config: Config): LanguageModelV1 {
  */
 export class ModelFactory {
   private model: LanguageModelV1 | null = null;
+  private compactionModel: LanguageModelV1 | null = null;
   private config: Config;
 
   constructor(config: Config) {
@@ -60,10 +62,29 @@ export class ModelFactory {
   }
 
   /**
+   * Get or create the compaction model (cheap summarization).
+   * Uses a dedicated small model (e.g. llama-3.1-8b-instant) to minimize cost.
+   * Falls back to the main agent model if compaction model is not configured.
+   */
+  getCompactionModel(): LanguageModelV1 {
+    if (!this.compactionModel) {
+      if (this.config.compactionProvider && this.config.compactionModel) {
+        this.compactionModel = createCompactionModel(this.config);
+        console.log(`Compaction model initialized: ${this.config.compactionProvider}/${this.config.compactionModel}`);
+      } else {
+        // Fallback to main model
+        this.compactionModel = this.getModel();
+      }
+    }
+    return this.compactionModel;
+  }
+
+  /**
    * Reset the model (useful for provider switching)
    */
   reset(): void {
     this.model = null;
+    this.compactionModel = null;
   }
 
   /**

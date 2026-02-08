@@ -228,9 +228,14 @@ async function main() {
   console.log('='.repeat(50));
   console.log('Waiting for dispatched messages from Orchestrator');
 
-  // Periodic cleanup of old conversation states
-  setInterval(() => {
+  // Periodic cleanup of old conversation states and session files
+  setInterval(async () => {
     agent.cleanupOldConversations();
+    try {
+      await agent.cleanupOldSessions();
+    } catch (error) {
+      console.warn('Session cleanup error (non-fatal):', error);
+    }
   }, 5 * 60 * 1000); // Every 5 minutes
 
   // Handle graceful shutdown

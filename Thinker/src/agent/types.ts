@@ -7,6 +7,10 @@ export interface AgentState {
   chatId: string;
   messages: CoreMessage[];
   lastActivity: number;
+  /** LLM-generated summary of compacted older messages, injected into system prompt */
+  compactionSummary?: string;
+  /** Timestamp of last compaction, used for cooldown tracking */
+  lastCompactionAt?: number;
 }
 
 /**
