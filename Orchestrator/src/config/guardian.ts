@@ -14,8 +14,8 @@
  * global defaults. Unlisted MCPs inherit the global setting.
  */
 export interface AgentGuardianOverride {
-  input?: Record<string, boolean>;
-  output?: Record<string, boolean>;
+  input?: Record<string, boolean>
+  output?: Record<string, boolean>
 }
 
 export const guardianConfig = {
@@ -37,11 +37,11 @@ export const guardianConfig = {
    * the message text before Telegram MCP receives it.
    */
   input: {
-    telegram: true,
+    telegram: false,
     onepassword: true,
     memory: true,
     filer: true,
-    searcher: true,
+    searcher: false,
     gmail: true,
   } as Record<string, boolean>,
 
@@ -73,33 +73,31 @@ export const guardianConfig = {
    *   }
    */
   agentOverrides: {} as Record<string, AgentGuardianOverride>,
-};
+}
 
-export type GuardianConfig = typeof guardianConfig;
+export type GuardianConfig = typeof guardianConfig
 
 /**
  * Resolve effective scan flags for a specific agent.
  * Falls back to global defaults for any MCPs not overridden.
  */
-export function getEffectiveScanFlags(
-  agentId?: string,
-): { input: Record<string, boolean>; output: Record<string, boolean> } {
+export function getEffectiveScanFlags(agentId?: string): { input: Record<string, boolean>; output: Record<string, boolean> } {
   const base = {
     input: { ...guardianConfig.input },
     output: { ...guardianConfig.output },
-  };
+  }
 
-  if (!agentId) return base;
+  if (!agentId) return base
 
-  const overrides = guardianConfig.agentOverrides[agentId];
-  if (!overrides) return base;
+  const overrides = guardianConfig.agentOverrides[agentId]
+  if (!overrides) return base
 
   if (overrides.input) {
-    Object.assign(base.input, overrides.input);
+    Object.assign(base.input, overrides.input)
   }
   if (overrides.output) {
-    Object.assign(base.output, overrides.output);
+    Object.assign(base.output, overrides.output)
   }
 
-  return base;
+  return base
 }
