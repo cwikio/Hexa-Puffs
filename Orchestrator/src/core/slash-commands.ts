@@ -3,10 +3,14 @@
  * Fast, deterministic, zero-token responses for operational tasks.
  */
 
+import { readdir, stat, readFile } from 'node:fs/promises';
+import { join, basename } from 'node:path';
+import { homedir } from 'node:os';
 import type { ToolRouter } from './tool-router.js';
 import type { Orchestrator, OrchestratorStatus, MCPServerStatus } from './orchestrator.js';
 import type { AgentStatus } from './agent-manager.js';
 import type { IncomingAgentMessage } from './agent-types.js';
+import { guardianConfig } from '../config/guardian.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export interface SlashCommandResult {
@@ -27,6 +31,37 @@ const MAX_FETCH_MESSAGES = 500;
 const BATCH_SIZE = 100;
 const MAX_DELETE_HOURS = 168; // 1 week
 const MAX_DELETE_COUNT = 500;
+const MAX_ENTRIES_COUNT = 50;
+const DEFAULT_SECURITY_ENTRIES = 10;
+const DEFAULT_LOG_ENTRIES = 15;
+const LOGS_DIR = join(homedir(), '.annabelle', 'logs');
+
+/** Service log files to scan for /logs N (WARN/ERROR filtering) */
+const SERVICE_LOG_FILES = [
+  'orchestrator.log',
+  'thinker.log',
+  'gmail.log',
+  'telegram.log',
+  'searcher.log',
+  'filer.log',
+  'memorizer.log',
+  'ollama.log',
+];
+
+interface ScanLogEntry {
+  scan_id: string;
+  timestamp: string;
+  source: string;
+  safe: boolean;
+  confidence?: number;
+  threats: Array<{ type: string; snippet?: string }> | string[];
+  content_hash: string;
+}
+
+interface ScanLogResult {
+  scans: ScanLogEntry[];
+  total: number;
+}
 
 export class SlashCommandHandler {
   private toolRouter: ToolRouter;
@@ -59,6 +94,12 @@ export class SlashCommandHandler {
 
         case '/info':
           return { handled: true, response: await this.handleInfo() };
+
+        case '/security':
+          return { handled: true, response: await this.handleSecurity(args) };
+
+        case '/logs':
+          return { handled: true, response: await this.handleLogs(args) };
 
         default:
           return { handled: false };
@@ -275,6 +316,10 @@ export class SlashCommandHandler {
     output += '  /status — System status (MCPs, agents, uptime)\n';
     output += '  /info — This info page (commands, tools, skills)\n';
     output += '  /delete — Delete messages (today | <N>h | <N>)\n';
+    output += '  /security — Guardian status & scan config\n';
+    output += '  /security [N] — Last N security threats (default 10)\n';
+    output += '  /logs — Log file sizes & freshness\n';
+    output += '  /logs [N] — Last N warnings/errors (default 15)\n';
     output += '  /help — Short command list\n';
 
     // MCP services + tool counts
@@ -314,6 +359,251 @@ export class SlashCommandHandler {
     }
 
     return output;
+  }
+
+  // ─── /security ───────────────────────────────────────────────
+
+  private async handleSecurity(args: string): Promise<string> {
+    const count = this.parseEntryCount(args, DEFAULT_SECURITY_ENTRIES);
+    if (count !== null) return this.handleSecurityEntries(count);
+    return this.handleSecurityStatus();
+  }
+
+  private async handleSecurityStatus(): Promise<string> {
+    const status = this.orchestrator.getStatus();
+    const guardianStatus = status.mcpServers.guardian;
+    const available = guardianStatus?.available ?? false;
+
+    let output = 'Guardian Security\n';
+    output += `Status: ${guardianConfig.enabled ? 'enabled' : 'disabled'}`;
+    output += ` | Fail mode: ${guardianConfig.failMode}`;
+    output += `\nGuardian MCP: ${available ? 'available' : 'unavailable'}\n`;
+
+    // Input scanning flags
+    output += '\nInput scanning:\n';
+    output += this.formatScanFlags(guardianConfig.input);
+
+    // Output scanning flags
+    output += '\nOutput scanning:\n';
+    output += this.formatScanFlags(guardianConfig.output);
+
+    // 24h stats from scan log
+    if (available) {
+      try {
+        const result = await this.orchestrator.callGuardianTool('get_scan_log', { limit: 1000 });
+        if (result?.success) {
+          const data = this.extractData<ScanLogResult>(result);
+          const scans = data?.scans ?? [];
+
+          const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const recent = scans.filter((s) => new Date(s.timestamp) >= cutoff);
+          const threats = recent.filter((s) => !s.safe);
+          const pct = recent.length > 0 ? ((threats.length / recent.length) * 100).toFixed(1) : '0.0';
+
+          output += `\nLast 24h: ${recent.length} scans, ${threats.length} threats (${pct}%)`;
+        }
+      } catch {
+        output += '\nLast 24h: (stats unavailable)';
+      }
+    }
+
+    return output;
+  }
+
+  private async handleSecurityEntries(count: number): Promise<string> {
+    const result = await this.orchestrator.callGuardianTool('get_scan_log', {
+      limit: count,
+      threats_only: true,
+    });
+
+    if (!result) return 'Guardian MCP is unavailable.';
+    if (!result.success) return `Failed to retrieve scan log: ${result.error}`;
+
+    const data = this.extractData<ScanLogResult>(result);
+    const scans = data?.scans ?? [];
+
+    if (scans.length === 0) return 'No security threats found.';
+
+    let output = `Security Threats (last ${scans.length})\n`;
+
+    for (const scan of scans) {
+      const ts = this.formatShortTimestamp(scan.timestamp);
+      const threat = this.extractThreatInfo(scan);
+      output += `\n[${ts}] ${scan.source} — ${threat.type}`;
+      if (threat.confidence) output += ` (${threat.confidence})`;
+      if (threat.snippet) output += `\n  "${threat.snippet}"`;
+    }
+
+    output += `\n\nShowing ${scans.length} threat(s)`;
+    return output;
+  }
+
+  private formatScanFlags(flags: Record<string, boolean>): string {
+    const entries = Object.entries(flags);
+    const parts: string[] = [];
+    for (const [name, enabled] of entries) {
+      parts.push(`${name}: ${enabled ? 'on' : 'off'}`);
+    }
+    // Format in rows of 3
+    let result = '';
+    for (let i = 0; i < parts.length; i += 3) {
+      result += '  ' + parts.slice(i, i + 3).join(' | ') + '\n';
+    }
+    return result;
+  }
+
+  private extractThreatInfo(scan: ScanLogEntry): { type: string; confidence?: string; snippet?: string } {
+    const threats = scan.threats;
+    if (!threats || threats.length === 0) return { type: 'unknown' };
+
+    const first = threats[0];
+    // get_scan_log returns threats as either strings or objects
+    if (typeof first === 'string') {
+      return {
+        type: first,
+        confidence: scan.confidence?.toFixed(2),
+      };
+    }
+
+    return {
+      type: first.type ?? 'unknown',
+      confidence: scan.confidence?.toFixed(2),
+      snippet: first.snippet ? first.snippet.slice(0, 60) : undefined,
+    };
+  }
+
+  // ─── /logs ──────────────────────────────────────────────────
+
+  private async handleLogs(args: string): Promise<string> {
+    const count = this.parseEntryCount(args, DEFAULT_LOG_ENTRIES);
+    if (count !== null) return this.handleLogEntries(count);
+    return this.handleLogStatus();
+  }
+
+  private async handleLogStatus(): Promise<string> {
+    let files: Array<{ name: string; size: number; mtime: Date }>;
+    try {
+      const entries = await readdir(LOGS_DIR);
+      const stats = await Promise.all(
+        entries
+          .filter((name) => !name.startsWith('build-'))
+          .map(async (name) => {
+            const s = await stat(join(LOGS_DIR, name));
+            return { name, size: s.size, mtime: s.mtime };
+          })
+      );
+      files = stats.sort((a, b) => b.size - a.size);
+    } catch {
+      return `Cannot read log directory: ${LOGS_DIR}`;
+    }
+
+    if (files.length === 0) return 'No log files found.';
+
+    let output = `System Logs (${LOGS_DIR})\n\n`;
+    let totalSize = 0;
+
+    for (const file of files) {
+      totalSize += file.size;
+      const size = this.formatFileSize(file.size).padStart(10);
+      const ago = this.formatTimeAgo(file.mtime);
+      output += `  ${file.name.padEnd(24)} ${size}   ${ago}\n`;
+    }
+
+    output += `\nTotal: ${this.formatFileSize(totalSize)} across ${files.length} files`;
+    return output;
+  }
+
+  private async handleLogEntries(count: number): Promise<string> {
+    const allEntries: Array<{ timestamp: Date; service: string; level: string; message: string }> = [];
+
+    for (const filename of SERVICE_LOG_FILES) {
+      try {
+        const content = await readFile(join(LOGS_DIR, filename), 'utf-8');
+        const lines = content.split('\n');
+        // Read from the end for efficiency — take last 200 lines
+        const recent = lines.slice(-200);
+
+        const service = basename(filename, '.log');
+        for (const line of recent) {
+          const match = line.match(/^\[(\d{4}-\d{2}-\d{2}T[\d:.]+Z?)\]\s+\[(WARN|ERROR)\]\s+(?:\[.*?\]\s+)?(.*)$/);
+          if (match) {
+            allEntries.push({
+              timestamp: new Date(match[1]),
+              service,
+              level: match[2],
+              message: match[3].trim(),
+            });
+          }
+        }
+      } catch {
+        // File doesn't exist or can't be read — skip
+      }
+    }
+
+    if (allEntries.length === 0) return 'No recent warnings or errors found.';
+
+    // Sort by timestamp descending, take the requested count
+    allEntries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    const entries = allEntries.slice(0, count);
+
+    let output = `Recent Issues (last ${entries.length})\n`;
+
+    for (const entry of entries) {
+      const ts = this.formatShortTimestamp(entry.timestamp.toISOString());
+      const msg = entry.message.length > 80 ? entry.message.slice(0, 80) + '...' : entry.message;
+      output += `\n[${ts}] ${entry.service}: ${msg}`;
+    }
+
+    output += `\n\nShowing ${entries.length} of ${allEntries.length} warnings/errors`;
+    return output;
+  }
+
+  // ─── shared helpers ─────────────────────────────────────────
+
+  /**
+   * Parse args as an entry count for /security N and /logs N.
+   * Returns the count if args is a valid number, null if args is empty/non-numeric (show status).
+   * Throws on out-of-range values.
+   */
+  private parseEntryCount(args: string, defaultCount: number): number | null {
+    const trimmed = args.trim();
+    if (!trimmed) return null;
+
+    const match = trimmed.match(/^(\d+)$/);
+    if (!match) return null;
+
+    const count = parseInt(match[1], 10);
+    if (count < 1 || count > MAX_ENTRIES_COUNT) {
+      throw new Error(`Count must be between 1 and ${MAX_ENTRIES_COUNT}.`);
+    }
+    return count;
+  }
+
+  private formatShortTimestamp(iso: string): string {
+    const d = new Date(iso);
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${month}/${day} ${hours}:${minutes}`;
+  }
+
+  private formatFileSize(bytes: number): string {
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${bytes} B`;
+  }
+
+  private formatTimeAgo(date: Date): string {
+    const diffMs = Date.now() - date.getTime();
+    const minutes = Math.floor(diffMs / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    if (minutes > 0) return `${minutes}m ago`;
+    return 'just now';
   }
 
   private formatUptime(ms: number): string {

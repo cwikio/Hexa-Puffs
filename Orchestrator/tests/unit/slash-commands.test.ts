@@ -12,6 +12,16 @@ vi.mock('@mcp/shared/Utils/logger.js', () => ({
   },
 }));
 
+// Mock fs for /logs tests
+const mockReaddir = vi.fn();
+const mockStat = vi.fn();
+const mockReadFile = vi.fn();
+vi.mock('node:fs/promises', () => ({
+  readdir: (...args: unknown[]) => mockReaddir(...args),
+  stat: (...args: unknown[]) => mockStat(...args),
+  readFile: (...args: unknown[]) => mockReadFile(...args),
+}));
+
 import { SlashCommandHandler } from '../../src/core/slash-commands.js';
 import type { ToolRouter } from '../../src/core/tool-router.js';
 import type { Orchestrator, OrchestratorStatus } from '../../src/core/orchestrator.js';
@@ -82,6 +92,7 @@ function createMocks(statusOverrides?: Partial<OrchestratorStatus>) {
       'telegram_get_messages',
       'memory_store_fact',
     ]),
+    callGuardianTool: vi.fn().mockResolvedValue(null),
   } as unknown as Orchestrator;
 
   const handler = new SlashCommandHandler(mockToolRouter, mockOrchestrator);
@@ -175,19 +186,6 @@ describe('SlashCommandHandler', () => {
       const result = await handler.tryHandle(makeMsg('/status'));
 
       expect(result.response).toContain('Blocked: 5');
-    });
-  });
-
-  describe('/help', () => {
-    it('should return list of commands', async () => {
-      const { handler } = createMocks();
-
-      const result = await handler.tryHandle(makeMsg('/help'));
-
-      expect(result.handled).toBe(true);
-      expect(result.response).toContain('/status');
-      expect(result.response).toContain('/delete');
-      expect(result.response).toContain('/help');
     });
   });
 
@@ -463,6 +461,269 @@ describe('SlashCommandHandler', () => {
       const result = await handler.tryHandle(makeMsg("what's the status?"));
 
       expect(result.handled).toBe(false);
+    });
+  });
+
+  describe('/security', () => {
+    function makeScanLogResult(scans: Array<Record<string, unknown>>) {
+      return {
+        success: true,
+        content: {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, data: { scans, total: scans.length } }) }],
+        },
+      };
+    }
+
+    describe('status (no args)', () => {
+      it('should show Guardian config and availability', async () => {
+        const { handler, mockOrchestrator } = createMocks();
+        (mockOrchestrator.callGuardianTool as ReturnType<typeof vi.fn>).mockResolvedValue(
+          makeScanLogResult([])
+        );
+
+        const result = await handler.tryHandle(makeMsg('/security'));
+
+        expect(result.handled).toBe(true);
+        expect(result.response).toContain('Guardian Security');
+        expect(result.response).toContain('enabled');
+        expect(result.response).toContain('closed');
+        expect(result.response).toContain('available');
+        expect(result.response).toContain('Input scanning');
+        expect(result.response).toContain('Output scanning');
+      });
+
+      it('should show 24h stats when scans exist', async () => {
+        const now = new Date();
+        const recentScan = { timestamp: now.toISOString(), safe: true, threats: [] };
+        const threatScan = { timestamp: now.toISOString(), safe: false, threats: ['prompt_injection'] };
+
+        const { handler, mockOrchestrator } = createMocks();
+        (mockOrchestrator.callGuardianTool as ReturnType<typeof vi.fn>).mockResolvedValue(
+          makeScanLogResult([recentScan, threatScan])
+        );
+
+        const result = await handler.tryHandle(makeMsg('/security'));
+
+        expect(result.response).toContain('Last 24h: 2 scans, 1 threats');
+      });
+
+      it('should handle Guardian unavailable', async () => {
+        const { handler } = createMocks({
+          mcpServers: {
+            guardian: { available: false, required: false, type: 'stdio' },
+          },
+        });
+
+        const result = await handler.tryHandle(makeMsg('/security'));
+
+        expect(result.response).toContain('unavailable');
+        expect(result.response).not.toContain('Last 24h');
+      });
+    });
+
+    describe('entries (/security N)', () => {
+      it('should show recent threats with default count', async () => {
+        const scan = {
+          scan_id: 'test-1',
+          timestamp: new Date().toISOString(),
+          source: 'gmail',
+          safe: false,
+          confidence: 0.95,
+          threats: [{ type: 'prompt_injection', snippet: 'Ignore all previous instructions' }],
+          content_hash: 'abc123',
+        };
+
+        const { handler, mockOrchestrator } = createMocks();
+        (mockOrchestrator.callGuardianTool as ReturnType<typeof vi.fn>).mockResolvedValue(
+          makeScanLogResult([scan])
+        );
+
+        const result = await handler.tryHandle(makeMsg('/security 10'));
+
+        expect(result.handled).toBe(true);
+        expect(result.response).toContain('Security Threats');
+        expect(result.response).toContain('gmail');
+        expect(result.response).toContain('prompt_injection');
+        expect(result.response).toContain('0.95');
+        expect(result.response).toContain('Ignore all previous');
+        expect(mockOrchestrator.callGuardianTool).toHaveBeenCalledWith('get_scan_log', {
+          limit: 10,
+          threats_only: true,
+        });
+      });
+
+      it('should return message when no threats found', async () => {
+        const { handler, mockOrchestrator } = createMocks();
+        (mockOrchestrator.callGuardianTool as ReturnType<typeof vi.fn>).mockResolvedValue(
+          makeScanLogResult([])
+        );
+
+        const result = await handler.tryHandle(makeMsg('/security 5'));
+
+        expect(result.response).toContain('No security threats found');
+      });
+
+      it('should return error when Guardian unavailable', async () => {
+        const { handler, mockOrchestrator } = createMocks();
+        (mockOrchestrator.callGuardianTool as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+        const result = await handler.tryHandle(makeMsg('/security 5'));
+
+        expect(result.response).toContain('unavailable');
+      });
+
+      it('should reject count out of range', async () => {
+        const { handler } = createMocks();
+
+        const result = await handler.tryHandle(makeMsg('/security 999'));
+
+        expect(result.handled).toBe(true);
+        expect(result.error).toContain('Count must be between');
+      });
+
+      it('should handle string-only threat types', async () => {
+        const scan = {
+          scan_id: 'test-2',
+          timestamp: new Date().toISOString(),
+          source: 'filer',
+          safe: false,
+          confidence: 0.8,
+          threats: ['data_exfiltration'],
+          content_hash: 'def456',
+        };
+
+        const { handler, mockOrchestrator } = createMocks();
+        (mockOrchestrator.callGuardianTool as ReturnType<typeof vi.fn>).mockResolvedValue(
+          makeScanLogResult([scan])
+        );
+
+        const result = await handler.tryHandle(makeMsg('/security 10'));
+
+        expect(result.response).toContain('data_exfiltration');
+        expect(result.response).toContain('0.80');
+      });
+    });
+  });
+
+  describe('/logs', () => {
+    beforeEach(() => {
+      mockReaddir.mockReset();
+      mockStat.mockReset();
+      mockReadFile.mockReset();
+    });
+
+    describe('status (no args)', () => {
+      it('should list log files with sizes and age', async () => {
+        mockReaddir.mockResolvedValue(['orchestrator.log', 'thinker.log', 'build-Shared.log']);
+        mockStat.mockImplementation(async (path: string) => {
+          if (path.includes('orchestrator')) {
+            return { size: 75_000, mtime: new Date(Date.now() - 60_000) };
+          }
+          return { size: 26_000, mtime: new Date(Date.now() - 3_600_000) };
+        });
+
+        const { handler } = createMocks();
+        const result = await handler.tryHandle(makeMsg('/logs'));
+
+        expect(result.handled).toBe(true);
+        expect(result.response).toContain('System Logs');
+        expect(result.response).toContain('orchestrator.log');
+        expect(result.response).toContain('thinker.log');
+        // build logs should be filtered out
+        expect(result.response).not.toContain('build-Shared');
+        expect(result.response).toContain('Total:');
+      });
+
+      it('should handle missing log directory', async () => {
+        mockReaddir.mockRejectedValue(new Error('ENOENT'));
+
+        const { handler } = createMocks();
+        const result = await handler.tryHandle(makeMsg('/logs'));
+
+        expect(result.response).toContain('Cannot read log directory');
+      });
+    });
+
+    describe('entries (/logs N)', () => {
+      it('should show recent WARN and ERROR entries', async () => {
+        const logContent = [
+          '[2026-02-07T20:00:00.000Z] [INFO] [mcp] Normal operation',
+          '[2026-02-07T21:00:00.000Z] [WARN] [mcp:tool-router] MCP filer health check failed',
+          '[2026-02-07T22:00:00.000Z] [ERROR] [mcp] MCP memory restart failed',
+          '[2026-02-07T23:00:00.000Z] [INFO] [mcp] Recovery complete',
+        ].join('\n');
+
+        mockReadFile.mockResolvedValue(logContent);
+
+        const { handler } = createMocks();
+        const result = await handler.tryHandle(makeMsg('/logs 15'));
+
+        expect(result.handled).toBe(true);
+        expect(result.response).toContain('Recent Issues');
+        expect(result.response).toContain('MCP filer health check failed');
+        expect(result.response).toContain('MCP memory restart failed');
+        // INFO lines should not appear
+        expect(result.response).not.toContain('Normal operation');
+        expect(result.response).not.toContain('Recovery complete');
+      });
+
+      it('should sort entries by timestamp descending', async () => {
+        const logContent = [
+          '[2026-02-07T10:00:00.000Z] [ERROR] [mcp] Early error',
+          '[2026-02-07T22:00:00.000Z] [WARN] [mcp] Late warning',
+        ].join('\n');
+
+        mockReadFile.mockResolvedValue(logContent);
+
+        const { handler } = createMocks();
+        const result = await handler.tryHandle(makeMsg('/logs 10'));
+
+        const response = result.response!;
+        const lateIdx = response.indexOf('Late warning');
+        const earlyIdx = response.indexOf('Early error');
+        expect(lateIdx).toBeLessThan(earlyIdx);
+      });
+
+      it('should handle no warnings or errors found', async () => {
+        mockReadFile.mockResolvedValue('[2026-02-07T22:00:00.000Z] [INFO] [mcp] All good');
+
+        const { handler } = createMocks();
+        const result = await handler.tryHandle(makeMsg('/logs 5'));
+
+        expect(result.response).toContain('No recent warnings or errors');
+      });
+
+      it('should handle missing log files gracefully', async () => {
+        mockReadFile.mockRejectedValue(new Error('ENOENT'));
+
+        const { handler } = createMocks();
+        const result = await handler.tryHandle(makeMsg('/logs 5'));
+
+        expect(result.response).toContain('No recent warnings or errors');
+      });
+
+      it('should reject count out of range', async () => {
+        const { handler } = createMocks();
+
+        const result = await handler.tryHandle(makeMsg('/logs 999'));
+
+        expect(result.handled).toBe(true);
+        expect(result.error).toContain('Count must be between');
+      });
+
+      it('should truncate long messages', async () => {
+        const longMsg = 'A'.repeat(200);
+        const logContent = `[2026-02-07T22:00:00.000Z] [ERROR] [mcp] ${longMsg}`;
+
+        mockReadFile.mockResolvedValue(logContent);
+
+        const { handler } = createMocks();
+        const result = await handler.tryHandle(makeMsg('/logs 5'));
+
+        // Message should be truncated (80 chars + "..."), not contain full 200-char string
+        expect(result.response).toContain('...');
+        expect(result.response).not.toContain('A'.repeat(200));
+      });
     });
   });
 

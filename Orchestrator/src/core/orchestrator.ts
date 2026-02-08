@@ -23,7 +23,7 @@ import {
 import { FilerMCPClient } from '../mcp-clients/filer.js';
 import { HttpMCPClient } from '../mcp-clients/http-client.js';
 import { StdioMCPClient } from '../mcp-clients/stdio-client.js';
-import type { IMCPClient } from '../mcp-clients/types.js';
+import type { IMCPClient, ToolCallResult } from '../mcp-clients/types.js';
 import { SecurityCoordinator } from './security.js';
 import { SessionManager } from './sessions.js';
 import { ToolExecutor, type ToolRegistry } from './tools.js';
@@ -805,6 +805,17 @@ export class Orchestrator {
    */
   getToolRouter(): ToolRouter {
     return this.toolRouter;
+  }
+
+  /**
+   * Call a Guardian MCP tool directly (bypasses tool router).
+   * Guardian is not registered with the tool router — it's used internally.
+   * Returns null if Guardian is unavailable.
+   */
+  async callGuardianTool(toolName: string, args: Record<string, unknown>): Promise<ToolCallResult | null> {
+    const guardianClient = this.stdioClients.get('guardian');
+    if (!guardianClient?.isAvailable) return null;
+    return guardianClient.callTool({ name: toolName, arguments: args });
   }
 
   // Memory operations - Facts
