@@ -24,6 +24,7 @@ const TOOL_GROUPS: Record<string, string[]> = {
   telegram: ['telegram_*'],
   files: ['filer_*'],
   passwords: ['onepassword_*'],
+  browser: ['browser_*'],
 };
 
 /** Keyword patterns → tool groups to activate */
@@ -42,6 +43,8 @@ const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
     groups: ['memory'] },
   { pattern: /telegram|message|chat|contact|group/i,
     groups: ['telegram'] },
+  { pattern: /browse|website|navigate|webpage|screenshot|login.*site|fill.*form|open.*page|scrape|web.*page/i,
+    groups: ['browser'] },
   { pattern: /status|health|mcp/i,
     groups: [] }, // core only
 ];
