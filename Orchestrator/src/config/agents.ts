@@ -114,7 +114,7 @@ export function getDefaultAgent(): AgentDefinition {
     enabled: true,
     port: 8006,
     llmProvider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: 'qwen/qwen3-32b',
     systemPrompt: '', // Empty means Thinker uses its built-in DEFAULT_SYSTEM_PROMPT
     allowedTools: [],
     deniedTools: [],
