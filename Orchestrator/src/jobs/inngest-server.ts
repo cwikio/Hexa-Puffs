@@ -9,7 +9,8 @@ export function startInngestServer(port: number = 3000): void {
   const app = express();
 
   // Body parsing middleware required for Inngest
-  app.use(express.json());
+  // Increased limit: browser tool results (full page snapshots) can exceed the default 100KB
+  app.use(express.json({ limit: '10mb' }));
 
   // Inngest endpoint
   app.use(
