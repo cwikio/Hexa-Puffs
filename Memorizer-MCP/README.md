@@ -1,154 +1,195 @@
 # Annabelle Memory MCP
 
-Memory MCP server for the Annabelle AI Assistant. Provides persistent memory capabilities with automatic fact extraction.
+Persistent memory for the Annabelle AI Assistant. Learns from every interaction, recalls relevant context, and builds a rich user profile over time.
 
-## Features
+**Transport:** stdio (spawned by Orchestrator)
 
-- **Fact Storage** - Store and retrieve discrete learnings about the user
-- **Conversation Logging** - Full conversation history with search
-- **User Profiles** - Structured knowledge about the user per agent
-- **Automatic Fact Extraction** - AI extracts facts from conversations
-- **Memory Transparency** - Export to human-readable markdown/JSON files
-- **Configurable AI Provider** - Groq (cloud) or LM Studio (local)
+## Design Philosophy
+
+1. **Learn by Default** — Automatic fact extraction from conversations. No user action required.
+2. **Transparent Memory** — Users can see, edit, delete, and export everything the AI remembers.
+3. **Simple First** — Text-based search (keyword, exact match). No vector DB needed yet.
+4. **Privacy Respecting** — User controls their data. No sensitive data stored (passwords, keys, tokens).
 
 ## Quick Start
 
 ```bash
-# Install dependencies
 npm install
-
-# Copy and configure environment
-cp .env.example .env
-# Edit .env with your settings (GROQ_API_KEY required for cloud extraction)
-
-# Build
+cp .env.example .env   # Edit with your GROQ_API_KEY
 npm run build
-
-# Run
 npm start
 ```
 
 ## Configuration
 
-All configuration is via environment variables. See `.env.example` for all options.
+All configuration via environment variables. See `.env.example` for all options.
 
-### Required for Fact Extraction
+### AI Provider (for fact extraction)
 
 ```bash
-# Choose AI provider
 AI_PROVIDER=groq          # or: lmstudio
 
-# For Groq (cloud)
+# Groq (cloud) — default
 GROQ_API_KEY=gsk_xxx
+GROQ_MODEL=llama-3.3-70b-versatile
 
-# For LM Studio (local)
+# LM Studio (local)
 LMSTUDIO_BASE_URL=http://localhost:1234/v1
-LMSTUDIO_MODEL=your-model-name
+LMSTUDIO_MODEL=local-model
 ```
 
-### Storage Paths
+### Storage
 
 ```bash
 MEMORY_DB_PATH=~/.annabelle/data/memory.db
 MEMORY_EXPORT_PATH=~/.annabelle/memory-export/
 ```
 
+### Extraction Tuning
+
+```bash
+FACT_EXTRACTION_ENABLED=true
+CONFIDENCE_THRESHOLD=0.7
+MAX_FACTS_PER_CONVERSATION=3
+SKIP_SHORT_CONVERSATIONS=50     # min chars
+AI_TEMPERATURE=0.3
+AI_MAX_TOKENS=500
+```
+
 ## MCP Tools
+
+### Facts
 
 | Tool | Description |
 |------|-------------|
 | `store_fact` | Store a discrete fact about the user |
 | `list_facts` | List facts with optional category filter |
+| `update_fact` | Modify an existing fact |
 | `delete_fact` | Delete a specific fact by ID |
-| `store_conversation` | Log a conversation turn (triggers fact extraction) |
-| `search_conversations` | Search conversation history by keyword |
-| `get_profile` | Get the user profile for an agent |
-| `update_profile` | Update profile fields (dot notation supported) |
+
+### Conversations
+
+| Tool                    | Description                                                  |
+|-------------------------|--------------------------------------------------------------|
+| `store_conversation`    | Log a conversation turn (triggers automatic fact extraction) |
+| `search_conversations`  | Search conversation history by keyword                       |
+
+### Profiles
+
+| Tool               | Description                                      |
+|--------------------|--------------------------------------------------|
+| `get_profile`      | Get the user profile for an agent                |
+| `update_profile`   | Update profile fields (dot notation supported)   |
+
+### Skills
+
+| Tool | Description |
+|------|-------------|
+| `store_skill` | Save a learned skill or pattern |
+| `list_skills` | List all stored skills |
+| `get_skill` | Retrieve a specific skill by ID |
+| `update_skill` | Modify a skill |
+| `delete_skill` | Remove a skill |
+
+### Memory & Stats
+
+| Tool | Description |
+|------|-------------|
 | `retrieve_memories` | Search for relevant facts and conversations |
 | `get_memory_stats` | Get memory usage statistics |
-| `export_memory` | Export memory to markdown/JSON files |
+| `export_memory` | Export memory to JSON files |
 | `import_memory` | Import user-edited memory files |
 
 ## Fact Categories
 
-Facts are organized into these categories:
+- `preference` — User likes/dislikes
+- `background` — Who the user is
+- `pattern` — Behavioral patterns observed
+- `project` — Current work/projects
+- `contact` — People mentioned
+- `decision` — Choices made
 
-- `preference` - User likes/dislikes
-- `background` - Who the user is
-- `pattern` - Behavioral patterns observed
-- `project` - Current work/projects
-- `contact` - People mentioned
-- `decision` - Choices made
+## Automatic Fact Extraction
 
-## Database Schema
+When a conversation is stored, the AI provider extracts facts automatically:
 
-SQLite database with these tables:
+1. Receive conversation (user message + agent response)
+2. Call AI model with structured extraction prompt
+3. Parse extracted facts with category and confidence score
+4. Filter out low-confidence facts (below threshold)
+5. Deduplicate against existing facts (fuzzy match by text + category)
+6. Store new facts, update confidence on duplicates
 
-- `facts` - Discrete learnings with category and confidence
-- `conversations` - Full interaction history
-- `profiles` - Structured user knowledge per agent
-- `profile_history` - Profile change history for rollback
+Short conversations (< 50 chars) and error responses are skipped.
 
-## Docker
+## Memory Export (Transparency)
 
-```bash
-# Build and run
-docker-compose up -d
+Exported to `~/.annabelle/memory-export/`:
 
-# View logs
-docker-compose logs -f memory-mcp
+```
+memory-export/
+├── profile.json              ← Current profile (editable)
+├── profile.md                ← Human-readable profile
+├── facts/
+│   ├── preferences.md        ← Facts by category
+│   ├── patterns.md
+│   ├── projects.md
+│   └── all-facts.json        ← Complete facts export
+├── conversations/
+│   ├── 2026-02/
+│   │   ├── 01.md             ← Conversations by day
+│   │   └── 02.md
+│   └── recent.md             ← Last 50 conversations
+└── summary.md                ← High-level summary
 ```
 
-## Integration with Orchestrator
+Users can edit exported JSON files and re-import them.
 
-The Orchestrator can connect to this MCP server to:
+## Security & Privacy
 
-1. Retrieve relevant memories before AI calls
-2. Store conversations after AI responses
-3. Get user profile for context
+**Never stored:** passwords, API keys, credit card numbers, private keys, auth tokens.
 
-Add to Orchestrator config:
+Sensitive data patterns are detected and redacted during fact extraction. Users have full rights to view, edit, delete, and export all their data.
 
-```bash
-MEMORY_MCP_URL=http://localhost:8005
-```
+## Database
 
-## Development
+SQLite via `better-sqlite3`. Tables:
 
-```bash
-# Watch mode
-npm run dev
-
-# Type check
-npm run typecheck
-
-# Build
-npm run build
-```
+- `facts` — Discrete learnings with category and confidence
+- `conversations` — Full interaction history
+- `profiles` — Structured user knowledge per agent
+- `profile_history` — Profile change history for rollback
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                       MEMORY MCP                                 │
-│                    http://localhost:8005                         │
-│                                                                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │    Facts    │  │Conversations│  │   Profiles  │              │
-│  │   Storage   │  │   Storage   │  │  Management │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-│                                                                  │
-│  ┌─────────────┐  ┌─────────────┐                               │
-│  │    Fact     │  │   Memory    │                               │
-│  │ Extraction  │  │   Export    │                               │
-│  │ (Groq/LM)   │  │             │                               │
-│  └─────────────┘  └─────────────┘                               │
+│                       MEMORY MCP (stdio)                        │
+│                                                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
+│  │    Facts    │  │Conversations│  │   Profiles  │             │
+│  │   Storage   │  │   Storage   │  │  Management │             │
+│  └─────────────┘  └─────────────┘  └─────────────┘             │
+│                                                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
+│  │    Fact     │  │   Memory    │  │   Skills    │             │
+│  │ Extraction  │  │   Export    │  │   Storage   │             │
+│  │(Groq/LM St)│  │             │  │             │             │
+│  └─────────────┘  └─────────────┘  └─────────────┘             │
 └─────────────────────────────────────┬───────────────────────────┘
                                       ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │                     SQLite Database                              │
 │                   ~/.annabelle/data/memory.db                    │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+## Development
+
+```bash
+npm run dev        # Watch mode
+npm run typecheck  # Type check
+npm run build      # Build
 ```
 
 ## License
