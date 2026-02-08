@@ -15,6 +15,7 @@ import type { IncomingMessage, ProcessingResult, AgentContext, AgentState } from
 import { PlaybookCache } from './playbook-cache.js';
 import { classifyMessage } from './playbook-classifier.js';
 import { seedPlaybooks } from './playbook-seed.js';
+import { selectToolsForMessage } from './tool-selector.js';
 
 /**
  * Default system prompt for the agent
@@ -349,6 +350,7 @@ export class Agent {
       // Generate response using ReAct pattern (no retries to prevent runaway costs)
       // 90s timeout leaves buffer within ThinkerClient's 120s limit
       const agentAbort = AbortSignal.timeout(90_000);
+      const selectedTools = selectToolsForMessage(message.text, this.tools);
       let result;
       let usedTextOnlyFallback = false;
       try {
@@ -356,7 +358,7 @@ export class Agent {
           model: this.modelFactory.getModel(),
           system: context.systemPrompt,
           messages: [...context.conversationHistory, { role: 'user', content: message.text }],
-          tools: this.tools,
+          tools: selectedTools,
           maxSteps: 8,
           abortSignal: agentAbort,
         });
@@ -377,7 +379,7 @@ export class Agent {
               model: this.modelFactory.getModel(),
               system: context.systemPrompt,
               messages: [...context.conversationHistory, { role: 'user', content: message.text }],
-              tools: this.tools,
+              tools: selectedTools,
               maxSteps: 8,
               abortSignal: agentAbort,
             });
@@ -637,11 +639,12 @@ Complete the task step by step, using your available tools. When done, provide a
       }
 
       // Run the LLM with task instructions as the "user message"
+      const selectedTools = noTools ? undefined : selectToolsForMessage(taskInstructions, this.tools);
       const result = await generateText({
         model: this.modelFactory.getModel(),
         system: systemPromptWithContext,
         messages: [{ role: 'user', content: taskInstructions }],
-        ...(noTools ? {} : { tools: this.tools }),
+        ...(selectedTools ? { tools: selectedTools } : {}),
         maxSteps,
         abortSignal: AbortSignal.timeout(90_000),
       });
