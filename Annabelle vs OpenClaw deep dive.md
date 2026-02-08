@@ -176,13 +176,19 @@ Add a `maxSubagents` field to agent configuration. Default to 3. Orchestrator re
 
 ---
 
-## 4. Session Persistence
+## 4. Session Persistence ✅
+
+> **STATUS: IMPLEMENTED** — Session persistence and compaction were implemented in February 2026. Recommendations 1, 2, and 4 are complete. Recommendation 3 (soft-trimming for large tool results) remains open.
 
 ### How Annabelle Works
 
-Thinker keeps conversation history **in-memory only** — a `Map<chatId, AgentState>` holding the last 30 messages, cleaned up after 30 minutes of idle time. Conversations are stored in Memory MCP's SQLite `conversations` table for long-term recall, but this is append-only logging, not session state. If Thinker restarts, the in-memory conversation is gone. The user starts a fresh context with no awareness of the prior conversation.
+Thinker now persists session state to **JSONL files** at `~/.annabelle/sessions/<agentId>/<chatId>.jsonl`. Each file starts with a header entry (chatId, agentId, timestamp, version), followed by turn entries (user text, assistant text, tools used, token counts) and optional compaction entries (LLM summary replacing older turns).
 
-There is no session compaction. When a conversation exceeds 30 messages, older messages are simply dropped from the array. Context that was discussed 35 messages ago is lost, even if it's critical to the current task.
+The in-memory `Map<chatId, AgentState>` serves as a **hot cache** backed by JSONL on disk. On cache miss (first message for a chatId after restart), the session is lazy-loaded from disk. On every turn, the new exchange is appended to the JSONL file. Sessions survive restarts, crashes, and memory eviction.
+
+**Session compaction** automatically manages context growth. When estimated tokens exceed a configurable threshold (~12,500 tokens / 50K chars) and the conversation has 15+ turns, a **dedicated cheap model** (Llama 3.1 8B Instant on Groq) summarizes older turns into a compaction entry. The 10 most recent turns are kept intact. The JSONL file is atomically rewritten (temp file + rename). The compaction summary is injected into the system prompt as "Previous Conversation Context" for subsequent messages. A 5-minute cooldown prevents excessive compaction.
+
+Periodic cleanup (every 5 minutes) deletes session files with no activity in 7 days (configurable via `THINKER_SESSION_MAX_AGE_DAYS`).
 
 ### How OpenClaw Works
 
@@ -194,40 +200,21 @@ Sessions survive restarts, crashes, and even model switches mid-session. Automat
 
 ### Which Architecture Is Superior
 
-**OpenClaw's session persistence is clearly superior.** In-memory-only conversation state is Annabelle's most significant architectural weakness. It means:
+**Both systems now have robust session persistence with JSONL files and automatic compaction.** The core capability gap has been closed.
 
-- Restarting Thinker (for updates, config changes, or crash recovery) destroys all active conversations.
-- Long conversations lose context as messages are silently dropped past the 30-message limit.
-- There is no mechanism to resume a multi-day task across sessions.
-- The cost monitor can pause an agent, but when it resumes, the conversation context that led to the pause is gone.
+**OpenClaw's session system is more mature in some details:** automatic JSONL repair for corrupted files, write locking for concurrent access, tree-structured entries via `parentId` references, and soft-trimming of large tool results (head+tail pattern). These are incremental improvements over Annabelle's simpler implementation.
 
-OpenClaw's JSONL persistence with automatic compaction solves all four problems. Sessions survive restarts. Long conversations are intelligently compressed rather than truncated. Multi-day tasks maintain continuity. Paused agents resume with full context.
+**Annabelle's compaction model is more cost-efficient:** it uses a dedicated cheap model (Llama 3.1 8B Instant) for summarization rather than the main agent model, reducing compaction cost to a fraction of a cent per call. The compaction model is independently configurable (provider + model) and falls back to the main model if not configured.
 
-### Recommendations
+**Annabelle's lazy-loading approach is cleaner:** sessions load from disk only on cache miss, avoiding unnecessary I/O. The in-memory Map acts as a transparent cache. OpenClaw's session store requires a `sessions.json` index file alongside the JSONL files.
 
-**Recommendation 1: Persist session state to JSONL files.**
+### Remaining Gaps
 
-Write each message exchange (user message, tool calls, agent response) as a JSONL entry to `~/.annabelle/sessions/<agentId>/<chatId>.jsonl`. Load the file on Thinker startup or when a message arrives for a session with no in-memory state. Keep the in-memory `Map<chatId, AgentState>` as a cache for active sessions, backed by the file.
-
-*Justification:* This is the minimum viable fix for Annabelle's biggest gap. Agent restarts no longer destroy conversations. Crash recovery loads the last session state from disk. The implementation is straightforward — JSONL is append-only (fast writes, no corruption risk from partial writes), and reading the file on cold-start is a single `readFileSync` + line-by-line parse. Memory MCP's `conversations` table continues to serve as the long-term searchable archive; the JSONL file is the session's working state.
-
-**Recommendation 2: Add session compaction.**
-
-When the message history exceeds a configurable token threshold (e.g., 80% of the model's context window), take the oldest N messages, send them to the LLM with a prompt like "Summarize this conversation so far, preserving all key facts, decisions, and pending tasks," and replace them with a single compaction entry. Keep the most recent messages intact for immediate context.
-
-*Justification:* Without compaction, the current 30-message hard cutoff silently loses context. With compaction, a 100-message conversation gets compressed to a 1-message summary + the 20 most recent messages. The summary preserves key facts and decisions that would otherwise be lost. This is critical for multi-step tasks (research → analysis → action) where early context informs later decisions. The LLM call for compaction costs a few thousand tokens — far less than the cost of the agent making wrong decisions due to lost context.
-
-**Recommendation 3: Implement soft-trimming for large tool results.**
+**Recommendation (remaining): Implement soft-trimming for large tool results.**
 
 When a tool result exceeds 4,000 characters, store only the first 1,500 + last 1,500 characters in the session history (with a `[... truncated ...]` marker). Store the full result in a separate file referenced by the session entry.
 
 *Justification:* Tool results (especially from web search, email listing, or future code execution) can be very large. Storing them verbatim in session history wastes context window tokens on subsequent LLM calls. The head+tail pattern preserves the most useful parts: the beginning (typically the key answer or first results) and the end (typically error messages, final status, or the last results). OpenClaw uses exactly this pattern with the same thresholds.
-
-**Recommendation 4: Add session timeout and cleanup.**
-
-Sessions older than 7 days with no activity should be archived (moved to `~/.annabelle/sessions/archive/`) or deleted. Active sessions refresh their timeout on each message.
-
-*Justification:* Without cleanup, the sessions directory grows indefinitely. JSONL files for active conversations accumulate context that's no longer relevant. A 7-day timeout matches the current temp file cleanup in Filer MCP and provides enough time for multi-day tasks while preventing unbounded storage growth.
 
 ---
 
@@ -456,77 +443,79 @@ After implementing vector search, run a one-time migration that computes embeddi
 
 Recommendations ranked by impact-to-effort ratio, with codebase change estimates.
 
-### Priority 1: Session Persistence + Compaction
-**Impact: Critical | Effort: Medium | Codebase change: ~200–300 lines**
+### ✅ Priority 1: Session Persistence + Compaction
+**Impact: Critical | Effort: Medium | Codebase change: ~300 lines | Implemented Feb 2026**
 
-This is Annabelle's most significant architectural gap. Every restart destroys context. Long conversations silently lose information. This undermines the value of everything else — cost controls, memory, multi-agent — because the conversational continuity they protect doesn't survive a process restart.
+Sessions now persist to JSONL files at `~/.annabelle/sessions/<agentId>/<chatId>.jsonl`. Lazy-loaded on cache miss, append-only during normal operation, atomically rewritten during compaction. Compaction uses a dedicated cheap model (Llama 3.1 8B Instant on Groq) configurable via `THINKER_COMPACTION_PROVIDER` / `THINKER_COMPACTION_MODEL`. Periodic cleanup removes sessions older than 7 days.
 
-The change is contained: add a `SessionStore` class to Thinker that writes JSONL files on each message exchange, loads them on cold-start, and runs compaction when token count exceeds a threshold. Touch points: `Thinker/src/agent/loop.ts` (write on each turn), `Thinker/src/index.ts` (load on startup), and a new `Thinker/src/session/` module (persistence and compaction logic). No changes to Orchestrator or other MCPs.
+Files added: `Thinker/src/session/store.ts`, `types.ts`, `index.ts`. Files modified: `agent/loop.ts`, `agent/types.ts`, `llm/factory.ts`, `llm/providers.ts`, `config.ts`, `index.ts`. No changes to Orchestrator or other MCPs.
 
-### Priority 2: Vector Memory (sqlite-vec + Hybrid Search)
+**Remaining gap:** Soft-trimming for large tool results (head+tail pattern for results >4K chars) is not yet implemented.
+
+### ⬜ Priority 2: Vector Memory (sqlite-vec + Hybrid Search)
 **Impact: High | Effort: Medium-High | Codebase change: ~400–500 lines**
 
 The second largest gap. As fact count grows, keyword matching becomes actively harmful — missing relevant facts and returning irrelevant ones. Vector search transforms memory from a simple lookup to genuine understanding.
 
 The change is primarily in Memory MCP: add `sqlite-vec` as a dependency, create a `vec_facts` table, add embedding computation on `store_fact`, add vector search path in `retrieve_memories`, implement hybrid scoring. Touch points: `Memorizer-MCP/src/db/` (schema + queries), `Memorizer-MCP/src/embeddings/` (new module for local + API providers), `Memorizer-MCP/src/tools/` (modified retrieval logic). A migration script for existing facts. No changes to Orchestrator or Thinker — the memory interface stays the same.
 
-### Priority 3: Post-Conversation Fact Extraction
+### ⬜ Priority 3: Post-Conversation Fact Extraction
 **Impact: High | Effort: Low-Medium | Codebase change: ~100–150 lines**
 
 Neither Annabelle nor OpenClaw systematically extracts user information from conversations. Both rely on the LLM choosing to store facts during conversation, which is unreliable — especially during task-focused exchanges. This is the single feature most likely to make Annabelle learn better than OpenClaw.
 
 The change adds a post-conversation extraction step to Thinker: after a conversation goes idle (5 minutes with no new messages), or after each turn, send the exchange to a lightweight LLM call that extracts structured facts. Touch points: `Thinker/src/agent/loop.ts` (trigger extraction after idle timeout), a new `Thinker/src/agent/fact-extractor.ts` (LLM prompt + fact comparison + `store_fact` calls). Uses existing Memory MCP tools — no database changes, no Orchestrator changes. The extraction LLM call uses Groq with a small model for minimal cost (~100–200 tokens per extraction).
 
-### Priority 4: Conversation History Backfill
+### ⬜ Priority 4: Conversation History Backfill
 **Impact: High (one-time) | Effort: Low | Codebase change: ~50–80 lines**
 
 Recovers user knowledge from months of existing conversation history that was never mined for facts. A one-time Inngest background job that processes the `conversations` table in batches.
 
 Touch points: a new Inngest function in `Orchestrator/src/jobs/` that reads conversation batches, sends them to the LLM for fact extraction, and calls `store_fact` for new discoveries. Uses existing Memory MCP tools and Inngest infrastructure. No changes to Thinker, Orchestrator core, or other MCPs. Run once, then disable.
 
-### Priority 5: Memory Synthesis (Weekly)
+### ⬜ Priority 5: Memory Synthesis (Weekly)
 **Impact: Medium-High | Effort: Low-Medium | Codebase change: ~80–120 lines**
 
 Consolidates accumulated facts over time — merging duplicates, resolving contradictions, flagging stale information. Already planned in Annabelle's Phase 3 and the Inngest infrastructure exists.
 
 Touch points: a new Inngest cron function in `Orchestrator/src/jobs/` that loads all facts, groups by category, sends to LLM for synthesis, and applies updates via Memory MCP tools. Similar to backfill — uses existing infrastructure, no structural changes.
 
-### Priority 6: Code Execution Tool
+### ⬜ Priority 6: Code Execution Tool
 **Impact: High | Effort: Medium | Codebase change: ~150–250 lines**
 
 Closes the biggest capability gap in agent runtime. Enables the agent to solve novel problems by writing and running code, without abandoning the existing tool-rich architecture.
 
 New MCP or new tools in Filer MCP: `execute_code` tool implementation, Docker sandbox configuration, Guardian integration for code scanning. Touch points: new `CodeExec-MCP/` package (or additions to `Filer-MCP/src/tools/`), Guardian config update to scan code execution inputs/outputs. If using Docker, a `Dockerfile` for the sandbox container. Orchestrator auto-discovers the new MCP — no Orchestrator code changes needed.
 
-### Priority 7: Subagent Spawning
+### ⬜ Priority 7: Subagent Spawning
 **Impact: High | Effort: Medium | Codebase change: ~300–400 lines**
 
 Enables parallel work — the most requested capability for autonomous agents. Your architecture is naturally suited for it.
 
 Touch points: new `spawn_subagent` tool in Orchestrator, `AgentManager` modifications for dynamic agent spawning with parent tracking, cascade-kill logic in halt manager, result callback routing. `Orchestrator/src/agents/agent-manager.ts` (spawn/track/kill), `Orchestrator/src/core/tool-router.ts` (new tool), `Orchestrator/src/core/halt-manager.ts` (cascade logic). No Thinker changes — subagents are just Thinker instances with additional metadata.
 
-### Priority 8: File-Based Persona Configuration
+### ⬜ Priority 8: File-Based Persona Configuration
 **Impact: Medium | Effort: Low | Codebase change: ~50–100 lines**
 
 Improves developer experience for tuning agent behavior. Small change, immediate quality-of-life improvement.
 
 Create `~/.annabelle/agents/<agentId>/instructions.md`. Add file-reading logic to Thinker's context manager. Touch points: `Thinker/src/agent/loop.ts` (read file at session start), `Thinker/src/config.ts` (new config path). Optionally, a setup script that initializes the directory with `git init`. No changes to Memory MCP — profiles continue to work for dynamic state.
 
-### Priority 9: File-Based Skill Loading
+### ⬜ Priority 9: File-Based Skill Loading
 **Impact: Medium | Effort: Low-Medium | Codebase change: ~100–150 lines**
 
 Complements existing playbooks with curated, version-controlled skills. Low risk, additive change.
 
 Add a skill scanner to Thinker that reads `~/.annabelle/skills/` at startup, parses YAML frontmatter + Markdown instructions, and registers them alongside database playbooks. Touch points: new `Thinker/src/agent/skill-loader.ts`, modifications to `Thinker/src/agent/playbook-classifier.ts` (merge file-based skills into matching). No database changes — file-based skills coexist with database playbooks.
 
-### Priority 10: Lazy-Spawn / Idle-Kill for Agents
+### ⬜ Priority 10: Lazy-Spawn / Idle-Kill for Agents
 **Impact: Low | Effort: Low | Codebase change: ~50–80 lines**
 
 Operational cleanliness. Not critical on a 128GB machine but good practice.
 
 Touch points: `Orchestrator/src/agents/agent-manager.ts` (add `lastActivityAt` tracking, periodic idle check, lazy spawn on first message). No changes to Thinker or other MCPs.
 
-### Priority 11: Shared HTTP Server with Path Routing
+### ⬜ Priority 11: Shared HTTP Server with Path Routing
 **Impact: Low | Effort: Medium | Codebase change: ~200–300 lines**
 
 Architectural cleanup. Only matters if agent count grows beyond ~10. Defer unless port management becomes a real problem.

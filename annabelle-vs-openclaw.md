@@ -61,14 +61,14 @@
 | Per-agent cost controls | **Yes** — anomaly-based spike detection, sliding-window algorithm, hard caps, auto-pause + Telegram alert | Not found in code |
 | Agent health monitoring | Auto-restart crashed agents via AgentManager | Not found in code |
 | Agent kill switch | **Persistent halt manager** (survives restarts), target-specific `/kill` + `/resume` | Not found in code |
-| Session compaction | No (conversation history only) | **Yes** — automatic summarization of older context to manage token limits |
-| Session persistence | Conversation stored in Memory MCP (SQLite) | **JSONL session files** with automatic repair, write locking, transcript restoration |
+| Session compaction | **Yes** — automatic LLM summarization via dedicated cheap model (Llama 3.1 8B Instant), configurable thresholds | **Yes** — automatic summarization of older context to manage token limits |
+| Session persistence | **Yes** — JSONL files at `~/.annabelle/sessions/`, lazy-loaded on cache miss, append-only with atomic compaction rewrite | **JSONL session files** with automatic repair, write locking, transcript restoration |
 | Dynamic tool selection | Keyword-based tool group routing per message | Not documented |
 | Playbooks | 12 default playbooks (email triage, research, daily briefing, etc.) | Handled via 52 skills in ClawHub |
-| Context window management | Dynamic system prompt from persona + facts + history | **Session compaction** + context window guards + custom instructions |
+| Context window management | Dynamic system prompt from persona + facts + history + **session compaction** | **Session compaction** + context window guards + custom instructions |
 | Persona configuration | Memory MCP profile + system prompt file | **Workspace files**: `SOUL.md`, `IDENTITY.md`, `USER.md`, `AGENTS.md` |
 
-**Verdict:** Both have multi-agent with tool policies and routing. Annabelle has more explicit cost/safety controls (sliding-window anomaly detection, kill switch, auto-restart) that are battle-hardened through real incidents. OpenClaw has a more sophisticated agent runtime with subagent spawning, session compaction (critical for long conversations), and a much larger codebase (309 files vs ~15 for Thinker). OpenClaw's workspace-file-based persona config (`SOUL.md`, `IDENTITY.md`) is more user-friendly than Annabelle's Memory MCP profile approach.
+**Verdict:** Both have multi-agent with tool policies and routing. Both now have session persistence and compaction — Annabelle persists to JSONL with a dedicated cheap compaction model (Llama 3.1 8B Instant on Groq), OpenClaw uses similar JSONL with automatic repair. Annabelle has more explicit cost/safety controls (sliding-window anomaly detection, kill switch, auto-restart) that are battle-hardened through real incidents. OpenClaw has a more sophisticated agent runtime with subagent spawning and a much larger codebase (309 files vs ~15 for Thinker). OpenClaw's workspace-file-based persona config (`SOUL.md`, `IDENTITY.md`) is more user-friendly than Annabelle's Memory MCP profile approach.
 
 ---
 
@@ -283,7 +283,7 @@
 
 **Annabelle is a security-hardened, MCP-native orchestration layer** built by a solo developer with deep attention to cost safety, prompt injection defense, and operational controls. It excels at things that matter when you're running autonomous agents with real API costs — anomaly-based cost detection (born from a $100 incident), Guardian scanning with configurable fail modes, and granular per-agent governance. Its 18-tool Gmail integration and Inngest workflow engine are best-in-class for their scope.
 
-**OpenClaw is a full-platform AI assistant** built by a 7-person team with 176k GitHub stars. It's designed to be your AI everywhere — in every messaging app, on every device, with voice, browser control, visual canvas, and a 52-skill plugin ecosystem. Its memory system with vector embeddings and hybrid search is more advanced, its agent runtime supports subagent spawning and session compaction, and its 181 CLI commands cover every operational need.
+**OpenClaw is a full-platform AI assistant** built by a 7-person team with 176k GitHub stars. It's designed to be your AI everywhere — in every messaging app, on every device, with voice, browser control, visual canvas, and a 52-skill plugin ecosystem. Its memory system with vector embeddings and hybrid search is more advanced, its agent runtime supports subagent spawning, and its 181 CLI commands cover every operational need. (Note: Annabelle now also has session persistence and compaction, closing a previously major gap.)
 
 **If you want a secure, cost-controlled autonomous agent that lives inside Claude Desktop → Annabelle.**
 **If you want an AI assistant accessible from every device and messaging platform → OpenClaw.**
