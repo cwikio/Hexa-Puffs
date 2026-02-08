@@ -418,15 +418,19 @@ User wants to set up a recurring task, reminder, or scheduled job.
 ## CHOOSING THE RIGHT TOOL
 There are two options — pick based on complexity:
 
-**Option A: Cron Job (create_job)** — for simple, fixed actions that never change.
+**Option A: Cron Job (create_job)** — for fixed, single-step actions.
 Examples: "remind me to drink water at 9am", "send me 'good morning' every day"
+- Runs ONE tool call with the exact same parameters every time
+- The result is NOT sent to the user — so the action itself must deliver (e.g., telegram_send_message)
 - Zero cost per execution (no LLM tokens)
-- Runs the exact same tool call with the exact same parameters every time
 
-**Option B: Scheduled Skill (memory_store_skill with trigger_type "cron")** — for tasks that need reasoning each time.
-Examples: "every morning summarize my unread emails", "weekly review of my calendar"
-- Costs LLM tokens per execution (a full AI reasoning loop runs each time)
-- Can adapt — different output every run because the AI reads real data each time
+**Option B: Scheduled Skill (memory_store_skill with trigger_type "cron")** — for anything that needs multiple steps or reasoning.
+Examples: "send me an article from onet.pl every hour", "every morning summarize my unread emails", "weekly review of my calendar"
+- A full AI reasoning loop runs each execution — can search, read, decide, and SEND results
+- Use this whenever the task involves fetching data AND sending it to the user
+- Costs LLM tokens per execution
+
+**How to decide:** If the task is just "send a fixed message" → cron job. If it involves searching, reading, browsing, summarizing, or picking content → scheduled skill.
 
 ## STEPS FOR CRON JOBS (Option A)
 1. Parse the user's schedule into a cron expression:
@@ -461,7 +465,7 @@ Examples: "every morning summarize my unread emails", "weekly review of my calen
 - Use list_jobs to show existing cron jobs, memory_list_skills for existing skills
 - Cron format: "minute hour day month weekday" (e.g., "0 9 * * *" = 9:00 AM daily)
 - Always confirm the schedule before creating — mistakes are hard to undo
-- If unsure whether to use a cron job or skill, prefer cron job for simplicity`,
+- If the task only sends a fixed message → cron job. Otherwise → scheduled skill.`,
     required_tools: ['create_job', 'list_jobs', 'delete_job', 'memory_store_skill', 'memory_list_skills'],
     max_steps: 6,
     notify_on_completion: false,
