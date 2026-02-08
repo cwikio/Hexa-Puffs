@@ -535,20 +535,17 @@ Keep it concise. No markdown formatting — plain text only.`;
     ].filter(Boolean).join(', ');
 
     output += `\nJobs (${jobsSummary || 'none'}):\n`;
-    if (crons.length === 0) {
+    const enabledCrons = crons.filter((j: JobDefinition) => j.enabled);
+    if (enabledCrons.length === 0) {
       output += '  (none)\n';
     } else {
-      for (const job of crons) {
+      for (const job of enabledCrons) {
         const name = job.name.slice(0, 20).padEnd(20);
         const expr = (job.cronExpression ?? '').padEnd(14);
         const tz = (job.timezone ?? 'UTC').padEnd(16);
-        if (!job.enabled) {
-          output += `  ${name} ${expr} ${tz} disabled\n`;
-        } else {
-          const lastRun = job.lastRunAt ? this.formatTimeAgo(new Date(job.lastRunAt)).padEnd(10) : 'never'.padEnd(10);
-          const nextRun = this.formatNextCronRun(job.cronExpression, job.timezone);
-          output += `  ${name} ${expr} ${tz} ${lastRun} ${nextRun}\n`;
-        }
+        const lastRun = job.lastRunAt ? this.formatTimeAgo(new Date(job.lastRunAt)).padEnd(10) : 'never'.padEnd(10);
+        const nextRun = this.formatNextCronRun(job.cronExpression, job.timezone);
+        output += `  ${name} ${expr} ${tz} ${lastRun} ${nextRun}\n`;
       }
     }
 
