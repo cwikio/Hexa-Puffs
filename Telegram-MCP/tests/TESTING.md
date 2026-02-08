@@ -23,7 +23,7 @@ We focus on **integration tests against the real MCP server** rather than unit t
 ## Test Environment Setup
 
 ### Prerequisites
-- Telegram MCP server running locally (via `npm run dev` or `launch-all.sh`)
+- Telegram MCP server running locally (via `npm run dev` or `start-all.sh`)
 - Valid Telegram credentials configured
 
 ### Environment Variables

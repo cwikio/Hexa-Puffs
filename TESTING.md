@@ -6,13 +6,13 @@ This document provides a high-level overview of the testing strategy for the MCP
 
 ```bash
 # Run all tests across all MCPs
-./test-all.sh
+./test.sh
 
 # Run quick health checks + curl tests only
-./test-all.sh --quick
+./test.sh --quick
 
 # Run vitest tests only (skip curl tests)
-./test-all.sh --vitest
+./test.sh --vitest
 ```
 
 ## Testing Architecture
@@ -31,11 +31,11 @@ Each MCP has its own test suite that can be run independently:
 
 | MCP | Port | Test Command | Description |
 |-----|------|--------------|-------------|
-| Filer | 8004 | `cd Filer && npm test` | File operations (CRUD, search, audit) |
-| Memorizer | 8005 | `cd Memorizer && npm test` | Facts, conversations, profiles |
-| Telegram | 8002 | `cd Telegram && npm test` | Message send/receive, chat management |
+| Filer | 8004 | `cd Filer-MCP && npm test` | File operations (CRUD, search, audit) |
+| Memorizer | 8005 | `cd Memorizer-MCP && npm test` | Facts, conversations, profiles |
+| Telegram | 8002 | `cd Telegram-MCP && npm test` | Message send/receive, chat management |
 | Guardian | 8003 | `cd Guardian && npm test` | Security scanning, content validation |
-| Orchestrator | 8000 | `cd Orchestrator && npm test` | Routing, workflows, jobs |
+| Orchestrator | 8010 | `cd Orchestrator && npm test` | Routing, workflows, jobs |
 
 ## Level 3 Workflow Tests
 
@@ -73,12 +73,12 @@ Before running tests, ensure the required MCPs are running:
 
 ```bash
 # Launch all MCPs
-./launch-all.sh
+./start-all.sh
 
 # Or launch individually
-cd Filer && npm run dev &
-cd Memorizer && npm run dev &
-cd Telegram && npm run dev &
+cd Filer-MCP && npm run dev &
+cd Memorizer-MCP && npm run dev &
+cd Telegram-MCP && npm run dev &
 cd Guardian && npm run dev &
 cd Orchestrator && npm run dev &
 ```
@@ -145,12 +145,12 @@ For detailed documentation on specific test suites:
 
 ## CI/CD Integration
 
-The `test-all.sh` script returns exit code 0 on success, 1 on failure, making it suitable for CI pipelines:
+The `test.sh` script returns exit code 0 on success, 1 on failure, making it suitable for CI pipelines:
 
 ```yaml
 # Example GitHub Actions
 - name: Run MCP Tests
-  run: ./test-all.sh --vitest
+  run: ./test.sh --vitest
 ```
 
 ## Troubleshooting

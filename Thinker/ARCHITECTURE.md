@@ -2,17 +2,18 @@
 
 ## Overview
 
-Thinker is a standalone AI reasoning engine (sidecar) that processes Telegram messages autonomously, using Groq (default) or local LLM (LM Studio/Ollama), and can trigger any tool across the MCP ecosystem.
+Thinker is a passive AI reasoning engine that receives messages from Orchestrator via HTTP and processes them using Groq (default) or local LLM (LM Studio/Ollama). It can trigger any tool across the MCP ecosystem via the Orchestrator's tool API.
 
 **Key Decisions:**
 - **Sidecar architecture** - runs alongside existing stack
-- **Mode flag** - only Thinker OR Claude Desktop active at a time (env switch)
+- **Passive runtime** - receives messages via `POST /process-message` from Orchestrator
 - Access tools **via Orchestrator using MCP SDK over HTTP**
 - **Solid foundation** with proper abstractions
 - **Env-based LLM switching** (Groq/LM Studio/Ollama)
 - **Centralized tracing** with trace_id in Shared library
 - **Persona stored in Memorizer** profiles
-- **Own setInterval** for polling (not Inngest)
+- **Dynamic tool selection** - keyword-based routing selects relevant tool groups per message
+- **Playbook seeding** - 12 default playbooks seeded on first startup
 - **Port 8006** for health checks
 - **TypeScript** consistent with other MCPs
 - **Cost safeguards** - circuit breaker, rate limiting, reduced maxSteps (see Safety section)
@@ -82,7 +83,7 @@ Thinker is a standalone AI reasoning engine (sidecar) that processes Telegram me
                                     │ HTTP
                                     ↓
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           ORCHESTRATOR (:8000)                           │
+│                           ORCHESTRATOR (:8010)                           │
 │  ├─ /tools - List all available tools                                   │
 │  ├─ /execute - Execute a tool call                                      │
 │  └─ Security scanning via Guardian                                      │
@@ -317,7 +318,7 @@ async function processMessage(
         }),
         // ... dynamically loaded tools from Orchestrator
       },
-      maxSteps: 3,  // ReAct loop limit (reduced from 10 for cost control)
+      maxSteps: 8,  // ReAct loop limit
     });
 
     // Send final response to Telegram
@@ -472,43 +473,48 @@ inngest.createFunction(
 ```
 Thinker/
 ├── src/
-│   ├── index.ts                 # Entry point, main loop, HTTP server
+│   ├── index.ts                 # Entry point, HTTP server (POST /process-message)
 │   ├── config.ts                # Environment config loader (Zod)
 │   │
 │   ├── llm/
 │   │   ├── types.ts             # LLMProvider interface
-│   │   ├── groq.ts              # Groq implementation
-│   │   ├── lmstudio.ts          # LM Studio implementation (OpenAI-compatible)
-│   │   ├── ollama.ts            # Ollama implementation
-│   │   └─ factory.ts           # Provider factory based on env
-│   │
-│   ├── sources/
-│   │   ├── types.ts             # MessageSource interface
-│   │   └── telegram.ts          # Telegram via Orchestrator MCP tools
+│   │   ├── providers.ts         # Provider implementations (Groq, LM Studio, Ollama)
+│   │   ├── factory.ts           # Provider factory based on env
+│   │   └── index.ts             # Barrel export
 │   │
 │   ├── orchestrator/
-│   │   ├── client.ts            # MCP SDK client to Orchestrator
+│   │   ├── client.ts            # HTTP client to Orchestrator
 │   │   ├── tools.ts             # Tool discovery and execution
-│   │   └── types.ts             # Tool definitions
-│   │
-│   ├── context/
-│   │   ├── manager.ts           # Context assembly
-│   │   ├── persona.ts           # Persona loading from Memory profile
-│   │   └── memory.ts            # Memory MCP interactions
+│   │   ├── types.ts             # Tool definitions
+│   │   └── index.ts             # Barrel export
 │   │
 │   ├── cost/
 │   │   ├── types.ts             # CostControlConfig, CostStatus, TokenBucket
 │   │   ├── monitor.ts           # CostMonitor — sliding-window anomaly detection
 │   │   └── index.ts             # Barrel export
 │   │
-│   └── agent/
-│       ├── loop.ts              # ReAct agent loop
-│       └── types.ts             # Agent state types
+│   ├── agent/
+│   │   ├── loop.ts              # ReAct agent loop
+│   │   ├── tool-selector.ts     # Dynamic tool group selection by keywords
+│   │   ├── playbook-seed.ts     # 12 default playbooks seeded on first startup
+│   │   ├── playbook-cache.ts    # In-memory playbook cache
+│   │   ├── playbook-classifier.ts # Playbook keyword matching
+│   │   ├── types.ts             # Agent state types
+│   │   └── index.ts             # Barrel export
+│   │
+│   ├── tracing/
+│   │   ├── context.ts           # TraceContext, createTrace()
+│   │   ├── logger.ts            # JSONL trace writer
+│   │   ├── types.ts             # Trace types
+│   │   └── index.ts             # Barrel export
+│   │
+│   └── utils/
+│       └── sanitize.ts          # Input sanitization utilities
 │
 ├── package.json
 ├── tsconfig.json
 ├── .env.example
-└── README.md
+└── ARCHITECTURE.md
 ```
 
 ### Shared Library Addition
@@ -528,37 +534,34 @@ Shared/
 
 ## Message Flow
 
-### Telegram → Thinker → Response
+### Orchestrator → Thinker → Response
 
 ```
-1. Telegram user sends message
-   └─→ GramJS captures instantly
-   └─→ Stored in Telegram MCP queue
+1. Orchestrator receives Telegram message (via ChannelPoller)
+   └─→ MessageRouter resolves agent
+   └─→ POST /process-message to Thinker
 
-2. Thinker polls (every 30s)
-   └─→ GET new_telegram_messages via Orchestrator
-   └─→ Receives: [{id, chatId, senderId, text, date}]
-
-3. For each message:
+2. Thinker receives message:
    └─→ Create trace_id
+   └─→ Select relevant tool groups (tool-selector.ts)
    └─→ Load persona from Memory MCP
    └─→ Retrieve relevant facts
    └─→ Build conversation context
 
-4. LLM call (Groq default)
+3. LLM call (Groq default)
    └─→ System prompt + context + user message
-   └─→ Available tools as functions
+   └─→ Available tools as functions (filtered by tool selector)
    └─→ Response: content and/or tool_calls
 
-5. If tool_calls:
-   └─→ Execute each via Orchestrator
+4. If tool_calls:
+   └─→ Execute each via Orchestrator /tools/call
    └─→ Collect results
    └─→ Feed back to LLM
-   └─→ Repeat until final response
+   └─→ Repeat until final response (maxSteps: 8)
 
-6. Send response:
-   └─→ Via send_telegram tool
-   └─→ Store conversation in Memory MCP
+5. Return response to Orchestrator:
+   └─→ Orchestrator sends via send_telegram
+   └─→ Orchestrator stores conversation in Memory MCP
    └─→ Log trace complete
 ```
 
@@ -599,7 +602,7 @@ Shared/
 
 - [ ] Telegram polling via Orchestrator's `get_new_telegram_messages`
 - [ ] setInterval-based polling (30 seconds)
-- [ ] `generateText` with `maxSteps: 3` for ReAct (limited for cost control)
+- [ ] `generateText` with `maxSteps: 8` for ReAct
 - [ ] Response sending via `send_telegram`
 - [ ] Conversation storage in Memory MCP
 
@@ -641,7 +644,7 @@ cd Shared && npx tsc --noEmit
 1. **Start existing MCPs:**
 
    ```bash
-   ./launch-all.sh
+   ./start-all.sh
    ```
 
 2. **Start Thinker:**
@@ -686,9 +689,9 @@ cd Shared && npx tsc --noEmit
 
 | Question | Decision |
 |----------|----------|
-| Chat routing | Mode flag - Thinker handles ALL chats when enabled, Claude Desktop when disabled |
-| Polling method | Own setInterval (standalone, not Inngest) |
-| Orchestrator API | MCP SDK over HTTP (reuse existing protocol, no new endpoints) |
+| Chat routing | Orchestrator's ChannelPoller + MessageRouter dispatch to agents |
+| Message delivery | Passive — Thinker receives messages via POST /process-message |
+| Orchestrator API | HTTP REST (/tools/list, /tools/call) |
 | Port | 8006 |
 | Language | TypeScript |
 | Persona | Technical assistant (direct, concise) |
@@ -746,7 +749,7 @@ Skips messages matching known bot-generated patterns (error messages, apology ph
 
 | Setting | Before | After | Impact |
 |---------|--------|-------|--------|
-| `maxSteps` | 10 | 2 | 5x fewer API calls per message |
+| `maxSteps` | 10 | 8 | Bounded API calls per message |
 | Retries | 3 attempts | 0 | 3x fewer API calls on errors |
 | Poll interval | 10s | 30s | 3x fewer polls per minute |
 | Messages per cycle | unlimited | 3 | Bounded cost per interval |
@@ -791,7 +794,7 @@ Beyond the static safeguards above, Thinker includes a runtime **CostMonitor** t
 
 With all safeguards:
 
-- Max 3 messages per cycle, max 2 steps each = 6 API calls per cycle
+- Max 3 messages per cycle, max 8 steps each = 24 API calls per cycle
 - 30s poll interval = 2 cycles/min = 12 API calls/min max
 - Circuit breaker trips after 5 net errors
 - Estimated max runaway cost before breaker trips: **~$0.05**

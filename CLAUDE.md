@@ -11,13 +11,15 @@ All MCP tools follow this pattern:
 - Return structured objects using `StandardResponse` from `@mcp/shared`
 
 ## Testing
-- Full suite: `./test-all.sh`
+- Full suite: `./test.sh`
 - Single package: `cd <Package> && npx vitest run`
-- Quick health check: `./test-all.sh --quick`
+- Quick health check: `./test.sh --quick`
 
 ## Scripts
 - `./start-all.sh` — launch full Annabelle stack (Inngest → MCPs → Orchestrator → Thinker)
-- `./test-all.sh` — health checks + curl tests + vitest
+- `./test.sh` — health checks + curl tests + vitest
+- `./rebuild.sh` — rebuild all packages (Shared first, then rest in parallel)
+- `./restart.sh` — full restart (kill processes → rebuild → start-all.sh)
 
 ## Architecture Rules
 - Guardian MCP scans inputs for prompt injection — never bypass it

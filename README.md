@@ -296,8 +296,6 @@ The orchestrator's core logic works with ANY model:
 
 ### Orchestrator (MCP Server)
 
-**Specification:** `Orchestrator/ORCHESTRATION_LAYER_SPEC.md`
-
 The orchestrator is itself an **MCP server** that Claude Desktop/Code connects to. It exposes high-level tools, manages multiple Thinker agent instances, and internally coordinates all other MCP servers.
 
 **Key Responsibilities:**
@@ -312,8 +310,6 @@ The orchestrator is itself an **MCP server** that Claude Desktop/Code connects t
 - Session management (scoped by agentId)
 
 ### Memory MCP
-
-**Specification:** `Memory/MEMORY_MCP_SPEC.md`
 
 Persistent learning and personalization. Stores facts learned from conversations, maintains user profile, enables memory transparency (user can see and edit what AI knows).
 
@@ -330,8 +326,6 @@ Persistent learning and personalization. Stores facts learned from conversations
 
 ### File Ops MCP
 
-**Specification:** `FileOps/FILE_OPS_MCP_SPEC.md`
-
 File system operations and workspace management. Creates files AI generates, manages access grants to user's existing files, handles workspace organization.
 
 **Key Responsibilities:**
@@ -346,7 +340,7 @@ File system operations and workspace management. Creates files AI generates, man
 
 **Status:** ✅ Implemented
 
-Prompt injection detection, jailbreak prevention, PII leakage scanning using Granite Guardian model.
+Prompt injection detection, jailbreak prevention, PII leakage scanning. Supports three scanning backends: **Groq Llama Guard** (cloud, fast), **Groq Safeguard** (cloud, policy-driven), and **Ollama** (local, offline). Provider is selected lazily based on environment variables.
 
 ### 1Password MCP
 
@@ -404,7 +398,9 @@ Passive AI reasoning engine that receives messages from Orchestrator via HTTP an
 
 - **Passive runtime** - Receives messages via `POST /process-message` from Orchestrator, returns responses (does not poll or send directly)
 - **LLM abstraction** - Supports Groq (cloud), LM Studio (local), Ollama (local), configurable per agent
-- **ReAct agent loop** - Multi-step reasoning with tool use via Vercel AI SDK (`maxSteps: 2`)
+- **ReAct agent loop** - Multi-step reasoning with tool use via Vercel AI SDK (`maxSteps: 8`)
+- **Dynamic tool selection** - Keyword-based routing selects only relevant tool groups per message
+- **Playbook seeding** - 12 default playbooks seeded on first startup (email triage, research, daily briefing, etc.)
 - **Config-driven personality** - System prompt loaded from file path provided by Orchestrator at spawn
 - **Context management** - Loads persona and facts from Memory MCP via Orchestrator's tool API
 - **Per-agent tool filtering** - Discovers only tools allowed by agent's policy (via `agentId` query param)
@@ -445,7 +441,7 @@ Job management for scheduled and background tasks.
 
 A `cronJobPollerFunction` runs every minute via Inngest. It loads all enabled cron jobs, evaluates each expression against the current time (respecting timezones) using the [croner](https://github.com/nicknisi/croner) library, and executes those that are due. The `lastRunAt` timestamp prevents double execution.
 
-**Documentation:** `Orchestrator/JOBS_README.md`
+**Documentation:** `Orchestrator/README.md` (Job Management section)
 
 ---
 
@@ -604,32 +600,25 @@ Orchestrator spawns and manages multiple Thinker instances, each with its own LL
   "agents": [
     {
       "agentId": "annabelle",
+      "enabled": true,
       "port": 8006,
       "llmProvider": "groq",
       "model": "llama-3.3-70b-versatile",
-      "systemPrompt": "You are Annabelle, a personal assistant...",
-      "allowedTools": ["*"],
-      "maxSteps": 5,
+      "systemPrompt": "",
+      "allowedTools": [],
+      "deniedTools": [],
+      "maxSteps": 8,
       "costControls": {
         "enabled": true,
-        "hardCapTokensPerHour": 500000,
+        "shortWindowMinutes": 2,
         "spikeMultiplier": 3.0,
-        "notifyChatId": "12345"
+        "hardCapTokensPerHour": 250000,
+        "minimumBaselineTokens": 1000,
+        "notifyChatId": "8304042211"
       }
-    },
-    {
-      "agentId": "work-assistant",
-      "port": 8016,
-      "llmProvider": "groq",
-      "model": "llama-3.3-70b-versatile",
-      "systemPrompt": "You are a professional work assistant...",
-      "allowedTools": ["gmail_*", "filer_*", "web_search"],
-      "deniedTools": ["telegram_*"],
-      "maxSteps": 3
     }
   ],
   "bindings": [
-    { "channel": "telegram", "chatId": "12345", "agentId": "work-assistant" },
     { "channel": "telegram", "chatId": "*", "agentId": "annabelle" }
   ]
 }
@@ -777,10 +766,12 @@ Layer 7: LLM Cost Controls
 
 **Key Files:**
 
-- `launch-all.sh` - Launches Orchestrator (spawns MCPs) + Thinker + Inngest
-- `Orchestrator/JOBS_README.md` - Job system documentation
+- `start-all.sh` - Launches Orchestrator (spawns MCPs) + Thinker + Inngest (auto-discovers MCPs)
+- `rebuild.sh` - Rebuilds all packages (Shared first, then rest in parallel)
+- `restart.sh` - Full restart (kill → rebuild → start)
+- `test.sh` - Comprehensive test suite (health checks, curl tests, vitest)
 - `Thinker/ARCHITECTURE.md` - Thinker design and configuration
-- `Telegram/src/telegram/events.ts` - Real-time event handling
+- `command-list.md` - Telegram slash command reference
 
 ### Phase 2: Custom UI (Future)
 
@@ -825,20 +816,19 @@ Layer 7: LLM Cost Controls
 
 ## Cross-Reference Index
 
-| Topic                | Primary Document     | Related Sections                 |
-| -------------------- | -------------------- | -------------------------------- |
-| Request routing      | Orchestrator/SPEC.md | Section: Request Intake          |
-| Security scanning    | Orchestrator/SPEC.md | Section: Security Integration    |
-| MCP coordination     | Orchestrator/SPEC.md | Section: MCP Server Coordination |
-| Task scheduling      | Orchestrator/SPEC.md | Section: Task Scheduling         |
-| Webhooks             | Orchestrator/SPEC.md | Section: Webhook Handling        |
-| Memory storage       | Memory/SPEC.md       | Section: Storage Architecture    |
-| Fact extraction      | Memory/SPEC.md       | Section: Automatic Learning      |
-| User profile         | Memory/SPEC.md       | Section: Profile Management      |
-| Memory transparency  | Memory/SPEC.md       | Section: Memory Export           |
-| File operations      | FileOps/SPEC.md      | Section: Core Operations         |
-| Workspace management | FileOps/SPEC.md      | Section: Workspace               |
-| Access grants        | FileOps/SPEC.md      | Section: Grants System           |
+| Topic                | Primary Document              | Description                            |
+| -------------------- | ----------------------------- | -------------------------------------- |
+| Orchestrator         | Orchestrator/README.md        | Agent routing, tool policies, jobs     |
+| Guardian security    | Guardian/README.md            | Multi-provider scanning, pass-through  |
+| Thinker architecture | Thinker/ARCHITECTURE.md       | Agent loop, LLM providers, cost safety |
+| Telegram commands    | command-list.md               | Slash commands reference               |
+| Memory system        | Memorizer-MCP/README.md       | Facts, conversations, profiles         |
+| File operations      | Filer-MCP/README.md           | Workspace, grants, audit log           |
+| Gmail integration    | Gmail-MCP/README.md           | OAuth2, 18 tools, polling              |
+| Telegram MCP         | Telegram-MCP/README.md        | GramJS, real-time events, 16 tools     |
+| 1Password            | Onepassword-MCP/README.md     | Read-only credential access            |
+| Searcher             | Searcher-MCP/testing.md       | Brave Search integration               |
+| Testing guide        | TESTING.md                    | Multi-level test strategy              |
 
 ---
 
@@ -893,9 +883,7 @@ Layer 7: LLM Cost Controls
 
 ## Next Steps
 
-1. **Read** `Orchestrator/ORCHESTRATION_LAYER_SPEC.md` for orchestrator implementation
-2. **Read** `Memory/MEMORY_MCP_SPEC.md` for memory system implementation
-3. **Read** `FileOps/FILE_OPS_MCP_SPEC.md` for file operations implementation
-4. **Implement** orchestrator first (coordinates everything else)
-5. **Implement** Memory MCP (enables personalization)
-6. **Implement** File Ops MCP (enables file creation)
+1. **Read** `Orchestrator/README.md` for orchestrator architecture and multi-agent setup
+2. **Read** `Thinker/ARCHITECTURE.md` for agent design and safety controls
+3. **Read** `Guardian/README.md` for security scanning configuration
+4. **Read** `command-list.md` for Telegram slash command reference

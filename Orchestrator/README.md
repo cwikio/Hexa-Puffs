@@ -169,7 +169,7 @@ The recommended way to start everything is using the launch script, which starts
 
 ```bash
 cd /Users/tomasz/Coding/AI\ Assistants/MCPs
-./launch-all.sh
+./start-all.sh
 ```
 
 This script:
@@ -272,25 +272,21 @@ Agents are defined in a JSON config file (set via `AGENTS_CONFIG_PATH` env var):
       "port": 8006,
       "llmProvider": "groq",
       "model": "llama-3.3-70b-versatile",
-      "systemPrompt": "You are Annabelle, a personal AI assistant...",
+      "systemPrompt": "",
       "allowedTools": [],
       "deniedTools": [],
-      "maxSteps": 8
-    },
-    {
-      "agentId": "work-assistant",
-      "enabled": true,
-      "port": 8007,
-      "llmProvider": "groq",
-      "model": "llama-3.3-70b-versatile",
-      "systemPrompt": "You are a work-focused assistant...",
-      "allowedTools": ["gmail_*", "memory_*", "filer_*"],
-      "deniedTools": ["telegram_*"],
-      "maxSteps": 10
+      "maxSteps": 8,
+      "costControls": {
+        "enabled": true,
+        "shortWindowMinutes": 2,
+        "spikeMultiplier": 3.0,
+        "hardCapTokensPerHour": 250000,
+        "minimumBaselineTokens": 1000,
+        "notifyChatId": "8304042211"
+      }
     }
   ],
   "bindings": [
-    { "channel": "telegram", "chatId": "12345", "agentId": "work-assistant" },
     { "channel": "telegram", "chatId": "*", "agentId": "annabelle" }
   ]
 }
@@ -386,6 +382,26 @@ Thinker discovers tools from Orchestrator on startup:
 
 - `GET /tools/list` — Discover available tools (filtered by agent's policy)
 - `POST /tools/call` — Execute a tool (policy-checked by Orchestrator)
+
+## Slash Commands (Telegram)
+
+Telegram messages starting with `/` are intercepted by the Orchestrator before reaching the LLM. They execute instantly with zero token cost.
+
+See [command-list.md](../command-list.md) for the full command reference.
+
+**Key commands:** `/status`, `/status summary`, `/kill`, `/resume`, `/cron`, `/security`, `/logs`, `/delete`, `/help`
+
+**Source:** `Orchestrator/src/core/slash-commands.ts`
+
+## Halt Manager (Kill Switch)
+
+The Orchestrator includes a persistent kill switch that can halt agents, Telegram polling, and Inngest jobs independently.
+
+- **Persistent state:** Halt state is saved to `~/.annabelle/data/halt.json` — survives Orchestrator restarts
+- **Target-specific:** Can halt `thinker`, `telegram`, or `inngest` independently, or `all` at once
+- **Controlled via:** `/kill` and `/resume` Telegram commands, or HTTP REST API
+
+**Source:** `Orchestrator/src/core/halt-manager.ts`
 
 ## Key Features
 
@@ -680,7 +696,7 @@ All Gmail tools route through to the Gmail MCP via HTTP:
 
 ```bash
 docker build -t annabelle-orchestrator .
-docker run -p 8000:8000 annabelle-orchestrator
+docker run -p 8010:8010 annabelle-orchestrator
 ```
 
 ### Docker Compose
@@ -811,7 +827,25 @@ agentOverrides: {
 
 Use `getEffectiveScanFlags(agentId)` to resolve the merged flags for a specific agent. Unlisted MCPs inherit the global defaults.
 
-## REST API: Agent Resume
+## REST API
+
+### Kill Switch
+
+```http
+POST /kill
+Content-Type: application/json
+
+{ "target": "all" | "thinker" | "telegram" | "inngest" }
+```
+
+```http
+POST /resume
+Content-Type: application/json
+
+{ "target": "all" | "thinker" | "telegram" | "inngest" }
+```
+
+### Agent Resume
 
 Resume an agent that was paused by cost controls:
 

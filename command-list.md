@@ -9,6 +9,7 @@ Slash commands are intercepted by the Orchestrator before reaching the LLM. They
 | `/status` | System status — MCPs, agents, uptime, Telegram polling, Inngest state |
 | `/status summary` | AI-powered health audit — logs, security, memory, cron jobs, skills |
 | `/info` | Full info page — all commands, tools by MCP, active skills |
+| `/help` | Same as `/info` |
 
 ## Kill Switch
 
@@ -26,6 +27,12 @@ Slash commands are intercepted by the Orchestrator before reaching the LLM. They
 Every `/kill` and `/resume` command automatically shows the full `/status` output in its response.
 
 Halt state persists to disk (`~/.annabelle/data/halt.json`) — if the Orchestrator restarts, halted services stay halted until explicitly resumed.
+
+## Cron & Jobs
+
+| Command | Description |
+| --- | --- |
+| `/cron` | Inngest job/task status — next run times, recent failures, skill cooldowns |
 
 ## Security
 

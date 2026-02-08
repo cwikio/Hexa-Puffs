@@ -1,6 +1,12 @@
 # Guardian MCP Server
 
-MCP server that scans content for prompt injection attacks using [Granite Guardian 3.3-8B](https://huggingface.co/ibm-granite/granite-guardian-3.3-8b) running locally via Ollama.
+MCP server that scans content for prompt injection attacks using multiple scanning backends:
+
+- **Groq Llama Guard** (`meta-llama/llama-guard-4-12b`) — cloud-based, fast, category-based classification
+- **Groq Safeguard** (`openai/gpt-oss-safeguard-20b`) — cloud-based, policy-driven JSON scanning
+- **Ollama** ([Granite Guardian 3.3-8B](https://huggingface.co/ibm-granite/granite-guardian-3.3-8b)) — local, offline, GPU-accelerated
+
+The provider is selected lazily based on environment variables (see Configuration below).
 
 ## Purpose
 
@@ -15,7 +21,8 @@ Guardian acts as a security filter for AI orchestration systems. Before an AI ag
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 20+
-- [Ollama](https://ollama.ai/) installed and running
+- **Groq** (cloud): `GROQ_API_KEY` environment variable, OR
+- **Ollama** (local): [Ollama](https://ollama.ai/) installed and running
 
 ### Setup
 
@@ -116,12 +123,35 @@ Environment variables (`.env`):
 TRANSPORT=stdio          # "stdio" (default) or "http"
 PORT=3000               # HTTP port (when TRANSPORT=http)
 
-# Ollama settings
+# Provider selection (lazy — resolved at first scan)
+# If GROQ_API_KEY is set → uses Groq (Llama Guard or Safeguard based on GROQ_MODEL)
+# If GROQ_API_KEY is not set → falls back to Ollama
+
+# Groq settings (cloud)
+GROQ_API_KEY=gsk_...                           # Required for Groq providers
+GROQ_BASE_URL=https://api.groq.com/openai/v1  # Default
+GROQ_MODEL=meta-llama/llama-guard-4-12b        # Or include "safeguard" for Safeguard provider
+
+# Rate limiting (optional, Groq only)
+GUARDIAN_RATE_LIMIT_ENABLED=true               # Enable rate limiting
+GUARDIAN_RATE_LIMIT_RPM=80                     # Requests per minute
+
+# Ollama settings (local fallback)
 OLLAMA_HOST=http://localhost:11434
 MODEL_NAME=guardian
 ```
 
+### Provider Selection Logic
+
+1. If `GROQ_API_KEY` is **not set** → uses **Ollama** (local)
+2. If `GROQ_API_KEY` is set and `GROQ_MODEL` contains `"safeguard"` → uses **Groq Safeguard** (policy-driven JSON scanning)
+3. If `GROQ_API_KEY` is set and `GROQ_MODEL` does not contain `"safeguard"` → uses **Groq Llama Guard** (category-based classification)
+
+**Source:** `Guardian/src/provider.ts`
+
 ## Swapping Models
+
+### Ollama (local)
 
 1. Download a new GGUF file to `models/`
 2. Edit `models/Modelfile`:
@@ -134,6 +164,10 @@ MODEL_NAME=guardian
    ```
 
 See [models/README.md](models/README.md) for alternative models.
+
+### Groq (cloud)
+
+Set `GROQ_MODEL` to any supported model (e.g., `meta-llama/llama-guard-4-12b`).
 
 ## Claude Desktop Integration
 
@@ -294,23 +328,20 @@ output: {
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  macOS (Apple Silicon)                          │
+│  Guardian MCP (Node.js)                         │
+│  • TypeScript server                            │
+│  • stdio/HTTP transport                         │
+│  • Audit logging                                │
+│  • Lazy provider selection                      │
 │                                                 │
-│  ┌──────────────────────────────────────────┐   │
-│  │ Ollama (native)                          │   │
-│  │ • Uses Apple Silicon GPU (Metal)         │   │
-│  │ • Model: granite-guardian                │   │
-│  │ • API: localhost:11434                   │   │
-│  └──────────────────────────────────────────┘   │
-│                    ↑                            │
-│                    │ HTTP API                   │
-│                    ↓                            │
-│  ┌──────────────────────────────────────────┐   │
-│  │ Guardian MCP (Node.js)                   │   │
-│  │ • TypeScript server                      │   │
-│  │ • stdio/HTTP transport                   │   │
-│  │ • Audit logging                          │   │
-│  └──────────────────────────────────────────┘   │
+│         ┌──────────┼──────────┐                 │
+│         ↓          ↓          ↓                 │
+│  ┌───────────┐ ┌────────┐ ┌────────────────┐   │
+│  │ Groq      │ │ Groq   │ │ Ollama         │   │
+│  │ Llama     │ │ Safe-  │ │ (local)        │   │
+│  │ Guard     │ │ guard  │ │ granite-       │   │
+│  │ (cloud)   │ │(cloud) │ │ guardian       │   │
+│  └───────────┘ └────────┘ └────────────────┘   │
 └─────────────────────────────────────────────────┘
 ```
 
