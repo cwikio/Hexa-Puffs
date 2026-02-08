@@ -43,7 +43,7 @@ const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
     groups: ['memory'] },
   { pattern: /telegram|message|chat|contact|group/i,
     groups: ['telegram'] },
-  { pattern: /browse|website|navigate|webpage|screenshot|login.*site|fill.*form|open.*page|scrape|web.*page/i,
+  { pattern: /browse|website|navigate|webpage|screenshot|login.*site|fill.*form|open.*page|scrape|web.*page|visit.*site|www\.\w|https?:\/\/|go\s+to\s+\S+\.\S/i,
     groups: ['browser'] },
   { pattern: /status|health|mcp/i,
     groups: [] }, // core only
