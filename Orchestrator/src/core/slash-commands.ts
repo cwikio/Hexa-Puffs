@@ -320,8 +320,10 @@ export class SlashCommandHandler {
 ${bundle}
 ---
 Analyze this data and produce a concise Telegram-friendly summary:
-1. First: briefly confirm what is running and healthy
-2. Then: flag any anomalies — errors, failed cron jobs/skills, security threats, unusual patterns, DOWN services
+1. First: briefly confirm what is running and healthy (one or two lines)
+2. Then: list any anomalies — errors, failed cron jobs/skills, security threats, unusual patterns, DOWN services
+   - IMPORTANT: every anomaly MUST include its date/time in brackets, e.g. [02/07 23:58]
+   - Include the source/service and a brief description
 3. If there are no anomalies, no new security threats, and no errors, end with: "No anomalies detected."
 Keep it concise. No markdown formatting — plain text only.`;
 
