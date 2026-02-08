@@ -18,8 +18,8 @@ describe('package.json manifest', () => {
     expect(typeof pkg.annabelle).toBe('object');
   });
 
-  it('has mcpName set to "browser"', () => {
-    expect(pkg.annabelle.mcpName).toBe('browser');
+  it('has mcpName set to "web"', () => {
+    expect(pkg.annabelle.mcpName).toBe('web');
   });
 
   it('is marked as sensitive', () => {
