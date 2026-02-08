@@ -366,7 +366,8 @@ export class Agent {
         const isToolCallError =
           toolErrorMsg.includes('Failed to call a function') ||
           toolErrorMsg.includes('failed_generation') ||
-          toolErrorMsg.includes('tool call validation failed');
+          toolErrorMsg.includes('tool call validation failed') ||
+          toolErrorMsg.includes('maximum number of items');
         if (isToolCallError) {
           console.warn(`Tool call failed, retrying once with tools: ${toolErrorMsg}`);
 

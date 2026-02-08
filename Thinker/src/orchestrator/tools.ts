@@ -157,16 +157,6 @@ export function createToolsFromOrchestrator(
     });
 
     tools[orchTool.name] = wrappedTool;
-
-    // Also register an unprefixed alias (e.g., "web_search" for "searcher_web_search")
-    // so the LLM can call either name. Essential tools override these via spread later.
-    const sepIdx = orchTool.name.indexOf('_');
-    if (sepIdx > 0) {
-      const shortName = orchTool.name.substring(sepIdx + 1);
-      if (!(shortName in tools)) {
-        tools[shortName] = wrappedTool;
-      }
-    }
   }
 
   return tools;
