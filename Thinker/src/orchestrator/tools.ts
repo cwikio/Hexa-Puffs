@@ -80,7 +80,7 @@ function orchestratorToolToZodSchema(
 
     // Make optional if not required
     if (!required.includes(key)) {
-      propSchema = propSchema.optional();
+      propSchema = propSchema.nullish();
     }
 
     shape[key] = propSchema;
