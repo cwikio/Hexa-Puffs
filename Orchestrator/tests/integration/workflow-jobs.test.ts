@@ -23,6 +23,7 @@ import {
   parseJsonContent,
   testId,
   waitForJobCompletion,
+  cleanupTasks,
 } from '../helpers/workflow-helpers.js'
 
 describe('Workflow: Jobs → Guardian → Telegram (Background Tasks)', () => {
@@ -103,7 +104,8 @@ describe('Workflow: Jobs → Guardian → Telegram (Background Tasks)', () => {
     }
 
     if (createdTaskIds.length > 0) {
-      log(`${createdTaskIds.length} tasks were created (tasks auto-expire)`, 'debug')
+      cleanupTasks(createdTaskIds)
+      log(`Cleaned up ${createdTaskIds.length} task files`, 'debug')
     }
   })
 

@@ -2,6 +2,8 @@
  * Workflow Test Helpers - Utilities for cross-MCP workflow testing
  */
 
+import { unlinkSync } from 'fs'
+import { join } from 'path'
 import { MCPTestClient, MCPToolCallResult, log } from './mcp-client.js'
 
 export interface WorkflowStep {
@@ -204,6 +206,23 @@ export async function cleanupFiles(
       log(`Cleaned up file ${path}`, 'debug')
     } catch {
       log(`Failed to cleanup file ${path}`, 'warn')
+    }
+  }
+}
+
+/**
+ * Cleanup helper - delete task JSON files from storage.
+ * Tasks have no MCP delete tool, so we clean up via direct filesystem access.
+ */
+export function cleanupTasks(taskIds: string[]): void {
+  const tasksDir = join(process.env.HOME || '~', '.annabelle/data/tasks')
+
+  for (const taskId of taskIds) {
+    try {
+      unlinkSync(join(tasksDir, `${taskId}.json`))
+      log(`Cleaned up task ${taskId}`, 'debug')
+    } catch {
+      // File may not exist if Inngest wasn't running
     }
   }
 }

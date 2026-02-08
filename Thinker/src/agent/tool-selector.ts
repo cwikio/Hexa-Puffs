@@ -24,7 +24,11 @@ const TOOL_GROUPS: Record<string, string[]> = {
   telegram: ['telegram_*'],
   files: ['filer_*'],
   passwords: ['onepassword_*'],
-  browser: ['web_browser_*'],
+  browser: [
+    'web_browser_navigate', 'web_browser_snapshot', 'web_browser_click',
+    'web_browser_type', 'web_browser_take_screenshot', 'web_browser_tabs',
+    'web_browser_fill_form', 'web_browser_navigate_back',
+  ],
   jobs: ['create_job', 'queue_task', 'list_jobs', 'get_job_status', 'delete_job'],
 };
 

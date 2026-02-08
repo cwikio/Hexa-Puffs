@@ -63,8 +63,9 @@ describe('Workflow: Guardian → Telegram (Secure Message Send)', () => {
       arguments: { content },
     })
 
-    const textItem = result.content[0]
-    if (textItem.type !== 'text' || !('text' in textItem)) return null
+    const items = result.content as Array<{ type: string; text?: string }>
+    const textItem = items[0]
+    if (textItem.type !== 'text' || !textItem.text) return null
 
     const parsed = JSON.parse(textItem.text) as StandardResponse<ScanResult>
     if (!parsed.success || !parsed.data) return null
