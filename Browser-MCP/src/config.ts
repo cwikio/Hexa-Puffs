@@ -53,7 +53,12 @@ export function resolveProxy(env: ProxyEnv): ProxyResult {
 export function buildConfig(env: ProxyEnv): BrowserConfig {
   const { useProxy } = resolveProxy(env);
 
-  const isolated = env.BROWSER_ISOLATED === 'true';
+  // true  (default): each session spawns Chrome with a fresh temp profile dir,
+  //        so no lock file conflicts between restarts — but cookies/logins are lost.
+  // false: reuses a persistent profile at ~/Library/Caches/ms-playwright/mcp-chrome,
+  //        keeping cookies and sessions across restarts — but risks SingletonLock
+  //        conflicts if the previous Chrome wasn't cleanly shut down.
+  const isolated = env.BROWSER_ISOLATED !== 'false';
 
   return {
     browser: {

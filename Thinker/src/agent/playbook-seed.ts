@@ -390,11 +390,12 @@ User asks to visit a website, extract information from a page, fill out a form, 
 - web_browser_tabs can list, open, close, or switch tabs if multi-tab browsing is needed
 - For forms: prefer web_browser_fill_form over individual type calls when filling multiple fields
 - If a page requires login, fill credentials step by step and confirm before submitting
-- Keep interactions minimal — navigate, snapshot, extract, done`,
+- Keep interactions minimal — navigate, snapshot, extract, done
+- Call web_browser_close when you are completely done browsing to free resources`,
     required_tools: [
       'web_browser_navigate', 'web_browser_snapshot', 'web_browser_click',
       'web_browser_type', 'web_browser_take_screenshot', 'web_browser_tabs',
-      'web_browser_fill_form', 'web_browser_navigate_back',
+      'web_browser_fill_form', 'web_browser_navigate_back', 'web_browser_close',
     ],
     max_steps: 10,
     notify_on_completion: false,

@@ -114,4 +114,16 @@ describe('buildConfig', () => {
 
     expect(config.browser?.launchOptions?.proxy).toBeUndefined();
   });
+
+  it('defaults to isolated mode (fresh profile per session)', () => {
+    const config = buildConfig({});
+
+    expect(config.browser?.isolated).toBe(true);
+  });
+
+  it('can disable isolated mode with BROWSER_ISOLATED=false', () => {
+    const config = buildConfig({ BROWSER_ISOLATED: 'false' });
+
+    expect(config.browser?.isolated).toBe(false);
+  });
 });

@@ -5,7 +5,7 @@
       "enabled": true,
       "port": 8006,
       "llmProvider": "groq",
-      "model": "llama-3.3-70b-versatile",
+      "model": "qwen/qwen3-32b",
       "systemPrompt": "",
       "allowedTools": [],
       "deniedTools": [],

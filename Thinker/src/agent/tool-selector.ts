@@ -27,7 +27,7 @@ const TOOL_GROUPS: Record<string, string[]> = {
   browser: [
     'web_browser_navigate', 'web_browser_snapshot', 'web_browser_click',
     'web_browser_type', 'web_browser_take_screenshot', 'web_browser_tabs',
-    'web_browser_fill_form', 'web_browser_navigate_back',
+    'web_browser_fill_form', 'web_browser_navigate_back', 'web_browser_close',
   ],
   jobs: ['create_job', 'queue_task', 'list_jobs', 'get_job_status', 'delete_job'],
 };
