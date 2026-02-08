@@ -161,6 +161,12 @@ export class SlashCommandHandler {
       case 'today':
         return this.deleteByTime(chatId, this.getStartOfToday());
 
+      case 'yesterday':
+        return this.deleteByTime(chatId, this.getStartOfYesterday());
+
+      case 'week':
+        return this.deleteByTime(chatId, this.getStartOfThisWeek());
+
       case 'hours':
         return this.deleteByTime(chatId, new Date(Date.now() - parsed.value * 60 * 60 * 1000));
 
@@ -176,17 +182,27 @@ export class SlashCommandHandler {
     args: string
   ):
     | { type: 'today' }
+    | { type: 'yesterday' }
+    | { type: 'week' }
     | { type: 'hours'; value: number }
     | { type: 'count'; value: number }
     | { type: 'invalid'; reason: string } {
     const trimmed = args.trim().toLowerCase();
 
     if (!trimmed) {
-      return { type: 'invalid', reason: 'Usage: /delete today | /delete <N>h | /delete <N>' };
+      return { type: 'invalid', reason: 'Usage: /delete today | yesterday | week | <N>h | <N>' };
     }
 
     if (trimmed === 'today') {
       return { type: 'today' };
+    }
+
+    if (trimmed === 'yesterday') {
+      return { type: 'yesterday' };
+    }
+
+    if (trimmed === 'this week' || trimmed === 'week') {
+      return { type: 'week' };
     }
 
     // Match "Nh" pattern (e.g. "2h", "24h")
@@ -209,7 +225,7 @@ export class SlashCommandHandler {
       return { type: 'count', value: count };
     }
 
-    return { type: 'invalid', reason: 'Usage: /delete today | /delete <N>h | /delete <N>' };
+    return { type: 'invalid', reason: 'Usage: /delete today | yesterday | week | <N>h | <N>' };
   }
 
   private async deleteByTime(chatId: string, cutoff: Date): Promise<string> {
@@ -315,7 +331,7 @@ export class SlashCommandHandler {
     output += 'Commands:\n';
     output += '  /status — System status (MCPs, agents, uptime)\n';
     output += '  /info — This info page (commands, tools, skills)\n';
-    output += '  /delete — Delete messages (today | <N>h | <N>)\n';
+    output += '  /delete — Delete messages (today | yesterday | week | <N>h | <N>)\n';
     output += '  /security — Guardian status & scan config\n';
     output += '  /security [N] — Last N security threats (default 10)\n';
     output += '  /logs — Log file sizes & freshness\n';
@@ -619,6 +635,19 @@ export class SlashCommandHandler {
   private getStartOfToday(): Date {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
+  private getStartOfYesterday(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  }
+
+  private getStartOfThisWeek(): Date {
+    const now = new Date();
+    const day = now.getDay();
+    // Monday = 1, Sunday = 0 → offset so Monday is start of week
+    const daysBack = day === 0 ? 6 : day - 1;
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack);
   }
 
   /**
