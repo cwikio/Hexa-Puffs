@@ -521,7 +521,7 @@ export class Orchestrator {
             this.logger.error('Failed to send slash command response', { error });
           }
         }
-        this.logger.info(`Slash command handled: ${msg.text.split(' ')[0]}`);
+        this.logger.info(`Slash command handled: ${msg.text.split(' ')[0]}`, { command: msg.text, response });
         return;
       }
     }
