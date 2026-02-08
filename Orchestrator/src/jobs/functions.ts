@@ -334,6 +334,42 @@ export const skillSchedulerFunction = inngest.createFunction(
       max_steps?: number;
       notify_on_completion?: boolean;
       last_run_at?: string | null;
+      last_run_status?: string | null;
+    }
+
+    const FAILURE_COOLDOWN_MINUTES = 5;
+
+    async function notifySkillFailure(
+      skill: SkillRecord,
+      errorMessage: string,
+      triggerConfig: Record<string, unknown> | null,
+    ): Promise<void> {
+      try {
+        const { getOrchestrator } = await import('../core/orchestrator.js');
+        const orchestrator = await getOrchestrator();
+        const agentDef = orchestrator.getAgentDefinition('annabelle');
+        const chatId = agentDef?.costControls?.notifyChatId || process.env.NOTIFY_CHAT_ID;
+        if (!chatId) return;
+
+        const trigger = triggerConfig?.schedule
+          ? `cron: ${triggerConfig.schedule}`
+          : `interval: ${triggerConfig?.interval_minutes || 1440}min`;
+        const time = new Date().toISOString();
+
+        const toolRouter = orchestrator.getToolRouter();
+        await toolRouter.routeToolCall('telegram_send_message', {
+          chat_id: chatId,
+          message: [
+            `Skill "${skill.name}" (id: ${skill.id}) failed`,
+            `Time: ${time}`,
+            `Trigger: ${trigger}`,
+            `Error: ${errorMessage}`,
+            `Next retry in ${FAILURE_COOLDOWN_MINUTES} minutes (cooldown active)`,
+          ].join('\n'),
+        });
+      } catch (notifyError) {
+        logger.error('Failed to send skill failure notification', { error: notifyError });
+      }
     }
 
     for (const rawSkill of skills) {
@@ -388,6 +424,20 @@ export const skillSchedulerFunction = inngest.createFunction(
         continue;
       }
 
+      // Back-off: skip skills that recently failed (cooldown prevents hammering)
+      if (skill.last_run_status === 'error' && skill.last_run_at) {
+        const minutesSinceFailure = (now.getTime() - new Date(skill.last_run_at).getTime()) / 60000;
+        if (minutesSinceFailure < FAILURE_COOLDOWN_MINUTES) {
+          logger.info('Skipping skill due to recent failure (cooldown)', {
+            skillId: skill.id,
+            name: skill.name,
+            minutesSinceFailure: Math.round(minutesSinceFailure),
+            cooldownMinutes: FAILURE_COOLDOWN_MINUTES,
+          });
+          continue;
+        }
+      }
+
       // Execute the skill via Thinker
       await step.run(`execute-skill-${skill.id}`, async () => {
         try {
@@ -421,9 +471,16 @@ export const skillSchedulerFunction = inngest.createFunction(
             logger.error('Failed to update skill status', { skillId: skill.id, error: updateError });
           }
 
+          // Notify on failure
+          if (!result.success) {
+            await notifySkillFailure(skill, result.error || 'Unknown error', triggerConfig);
+          }
+
           return result;
         } catch (error) {
           logger.error('Failed to execute skill via Thinker', { skillId: skill.id, error });
+
+          const errorMessage = error instanceof Error ? error.message : 'Failed to reach Thinker';
 
           // Still update the skill as failed
           try {
@@ -434,13 +491,16 @@ export const skillSchedulerFunction = inngest.createFunction(
               skill_id: skill.id,
               last_run_at: new Date().toISOString(),
               last_run_status: 'error',
-              last_run_summary: error instanceof Error ? error.message : 'Failed to reach Thinker',
+              last_run_summary: errorMessage,
             });
           } catch (updateError) {
             logger.error('Failed to update skill error status', { skillId: skill.id, error: updateError });
           }
 
-          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+          // Notify on failure
+          await notifySkillFailure(skill, errorMessage, triggerConfig);
+
+          return { success: false, error: errorMessage };
         }
       });
 
