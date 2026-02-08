@@ -168,7 +168,7 @@ async function main() {
 
   // Register /execute-skill endpoint for proactive task execution
   app.post('/execute-skill', async (req: Request, res: Response) => {
-    const { skillId, instructions, maxSteps, notifyOnCompletion } = req.body;
+    const { skillId, instructions, maxSteps, notifyOnCompletion, noTools } = req.body;
 
     if (!instructions) {
       res.status(400).json({ success: false, error: 'instructions is required' });
@@ -187,10 +187,12 @@ async function main() {
         instructions,
         maxSteps || 10,
         notifyChatId,
+        noTools,
       );
 
       res.json({
         success: result.success,
+        response: result.summary,
         summary: result.summary,
         toolsUsed: result.toolsUsed,
         totalSteps: result.totalSteps,

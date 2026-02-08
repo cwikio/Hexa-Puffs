@@ -580,7 +580,8 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
   async processProactiveTask(
     taskInstructions: string,
     maxSteps: number = 10,
-    notifyChatId?: string
+    notifyChatId?: string,
+    noTools?: boolean
   ): Promise<ProcessingResult & { summary: string }> {
     const trace = createTrace('thinker-skill');
     this.currentTrace = trace;
@@ -639,7 +640,7 @@ Complete the task step by step, using your available tools. When done, provide a
         model: this.modelFactory.getModel(),
         system: systemPromptWithContext,
         messages: [{ role: 'user', content: taskInstructions }],
-        tools: this.tools,
+        ...(noTools ? {} : { tools: this.tools }),
         maxSteps,
         abortSignal: AbortSignal.timeout(90_000),
       });

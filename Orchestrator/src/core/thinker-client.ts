@@ -65,7 +65,8 @@ export class ThinkerClient {
   async executeSkill(
     instructions: string,
     maxSteps: number = 10,
-    notifyOnCompletion: boolean = false
+    notifyOnCompletion: boolean = false,
+    noTools: boolean = false
   ): Promise<ProcessingResponse> {
     const url = `${this.baseUrl}/execute-skill`;
 
@@ -73,7 +74,7 @@ export class ThinkerClient {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instructions, maxSteps, notifyOnCompletion }),
+        body: JSON.stringify({ instructions, maxSteps, notifyOnCompletion, noTools }),
         signal: AbortSignal.timeout(this.timeout),
       });
 

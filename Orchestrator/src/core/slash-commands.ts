@@ -11,6 +11,8 @@ import type { Orchestrator, OrchestratorStatus, MCPServerStatus } from './orches
 import type { AgentStatus } from './agent-manager.js';
 import type { IncomingAgentMessage } from './agent-types.js';
 import { guardianConfig } from '../config/guardian.js';
+import { JobStorage } from '../jobs/storage.js';
+import type { JobDefinition } from '../jobs/types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export interface SlashCommandResult {
@@ -87,7 +89,7 @@ export class SlashCommandHandler {
     try {
       switch (command) {
         case '/status':
-          return { handled: true, response: this.handleStatus() };
+          return { handled: true, response: await this.handleStatus(args) };
 
         case '/delete':
           return { handled: true, response: await this.handleDelete(msg.chatId, args) };
@@ -111,7 +113,10 @@ export class SlashCommandHandler {
     }
   }
 
-  private handleStatus(): string {
+  private async handleStatus(args: string): Promise<string> {
+    const trimmed = args.trim().toLowerCase();
+    if (trimmed === 'summary') return this.handleStatusSummary();
+
     const status = this.orchestrator.getStatus();
     const toolCount = this.orchestrator.getAvailableTools().length;
 
@@ -152,6 +157,181 @@ export class SlashCommandHandler {
     }
 
     return output;
+  }
+
+  // ─── /status summary ───────────────────────────────────────
+
+  private async handleStatusSummary(): Promise<string> {
+    const client = this.orchestrator.getThinkerClient();
+    if (!client) return 'Thinker is unavailable — cannot generate summary.';
+
+    // Gather all data in parallel
+    const [
+      statusData,
+      logIssues,
+      securityResult,
+      memoryStatsResult,
+      fileAuditResult,
+      cronJobs,
+      cronSkillsResult,
+    ] = await Promise.all([
+      Promise.resolve(this.orchestrator.getStatus()),
+      this.parseRecentLogIssues(),
+      this.orchestrator.callGuardianTool('get_scan_log', { limit: 20, threats_only: true }).catch(() => null),
+      this.toolRouter.routeToolCall('memory_get_memory_stats', { agent_id: 'annabelle' }).catch(() => null),
+      this.toolRouter.routeToolCall('filer_get_audit_log', { limit: 20 }).catch(() => null),
+      new JobStorage().listJobs().catch(() => []),
+      this.toolRouter.routeToolCall('memory_list_skills', { agent_id: 'thinker', enabled: true, trigger_type: 'cron' }).catch(() => null),
+    ]);
+
+    // Build data bundle
+    let bundle = '';
+
+    // --- System status ---
+    const uptime = this.formatUptime(statusData.uptime);
+    const state = statusData.ready ? 'Ready' : 'Initializing';
+    bundle += `=== SYSTEM STATUS ===\nUptime: ${uptime} | Status: ${state}\n`;
+
+    bundle += 'MCP Services: ';
+    const mcpParts: string[] = [];
+    for (const [name, info] of Object.entries(statusData.mcpServers)) {
+      mcpParts.push(`${name}: ${info.available ? 'up' : 'DOWN'}`);
+    }
+    bundle += mcpParts.join(', ') + '\n';
+
+    bundle += 'Agents: ';
+    if (statusData.agents.length === 0) {
+      bundle += '(none)\n';
+    } else {
+      const agentParts: string[] = [];
+      for (const agent of statusData.agents) {
+        let agentState = agent.available ? 'up' : 'DOWN';
+        if (agent.paused) agentState = `PAUSED (${agent.pauseReason || 'unknown'})`;
+        agentParts.push(`${agent.agentId}: ${agentState} (port ${agent.port}, ${agent.restartCount} restarts)`);
+      }
+      bundle += agentParts.join(', ') + '\n';
+    }
+
+    const toolCount = this.orchestrator.getAvailableTools().length;
+    bundle += `Tools: ${toolCount} | Sessions: ${statusData.sessions.activeSessions} active | Blocked: ${statusData.security.blockedCount}\n`;
+
+    // --- Cron jobs ---
+    bundle += '\n=== CRON JOBS ===\n';
+    const enabledCronJobs = cronJobs.filter((j: JobDefinition) => j.enabled && j.type === 'cron');
+    if (enabledCronJobs.length === 0) {
+      bundle += '(none)\n';
+    } else {
+      for (const job of enabledCronJobs) {
+        const lastRun = job.lastRunAt ? this.formatTimeAgo(new Date(job.lastRunAt)) : 'never';
+        bundle += `- ${job.name} (${job.cronExpression}) — last run: ${lastRun}\n`;
+      }
+    }
+
+    // --- Cron skills ---
+    bundle += '\n=== CRON SKILLS ===\n';
+    if (cronSkillsResult?.success) {
+      const skillsData = this.extractData<{ skills: Array<{ name: string; trigger_config?: { schedule?: string; interval_minutes?: number }; last_run_status?: string | null; last_run_at?: string | null }> }>(cronSkillsResult);
+      const skills = skillsData?.skills ?? [];
+      if (skills.length === 0) {
+        bundle += '(none)\n';
+      } else {
+        for (const skill of skills) {
+          const schedule = skill.trigger_config?.schedule ?? `every ${skill.trigger_config?.interval_minutes}m`;
+          const status = skill.last_run_status ?? 'never run';
+          const lastRun = skill.last_run_at ? this.formatTimeAgo(new Date(skill.last_run_at)) : 'never';
+          bundle += `- ${skill.name} [${schedule}] — ${status} (${lastRun})\n`;
+        }
+      }
+    } else {
+      bundle += '(unavailable)\n';
+    }
+
+    // --- Security ---
+    bundle += '\n=== SECURITY ===\n';
+    bundle += `Guardian: ${guardianConfig.enabled ? 'enabled' : 'disabled'} | Fail mode: ${guardianConfig.failMode}\n`;
+    if (securityResult?.success) {
+      const scanData = this.extractData<ScanLogResult>(securityResult);
+      const threats = scanData?.scans ?? [];
+      if (threats.length === 0) {
+        bundle += 'Recent threats: none\n';
+      } else {
+        bundle += `Recent threats: ${threats.length}\n`;
+        for (const scan of threats.slice(0, 10)) {
+          const ts = this.formatShortTimestamp(scan.timestamp);
+          const info = this.extractThreatInfo(scan);
+          bundle += `  [${ts}] ${scan.source} — ${info.type}\n`;
+        }
+      }
+    } else {
+      bundle += 'Recent threats: (unavailable)\n';
+    }
+
+    // --- Log issues ---
+    bundle += '\n=== RECENT LOGS (WARN/ERROR) ===\n';
+    if (logIssues.length === 0) {
+      bundle += 'No recent warnings or errors.\n';
+    } else {
+      logIssues.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      const recentLogs = logIssues.slice(0, 20);
+      for (const entry of recentLogs) {
+        const ts = this.formatShortTimestamp(entry.timestamp.toISOString());
+        const msg = entry.message.length > 100 ? entry.message.slice(0, 100) + '...' : entry.message;
+        bundle += `[${ts}] ${entry.service} [${entry.level}]: ${msg}\n`;
+      }
+      if (logIssues.length > 20) {
+        bundle += `... and ${logIssues.length - 20} more\n`;
+      }
+    }
+
+    // --- Memory stats ---
+    bundle += '\n=== MEMORY ===\n';
+    if (memoryStatsResult?.success) {
+      const stats = this.extractData<{ fact_count?: number; conversation_count?: number; database_size_mb?: number }>(memoryStatsResult);
+      if (stats) {
+        bundle += `Facts: ${stats.fact_count ?? '?'} | Conversations: ${stats.conversation_count ?? '?'} | DB: ${stats.database_size_mb?.toFixed(1) ?? '?'} MB\n`;
+      } else {
+        bundle += '(no data)\n';
+      }
+    } else {
+      bundle += '(unavailable)\n';
+    }
+
+    // --- File operations ---
+    bundle += '\n=== FILE OPERATIONS (recent) ===\n';
+    if (fileAuditResult?.success) {
+      const auditData = this.extractData<{ entries: Array<{ timestamp: string; operation: string; path: string; success: boolean; error?: string }> }>(fileAuditResult);
+      const entries = auditData?.entries ?? [];
+      if (entries.length === 0) {
+        bundle += '(none)\n';
+      } else {
+        for (const entry of entries) {
+          const ts = this.formatShortTimestamp(entry.timestamp);
+          const status = entry.success ? 'ok' : `FAIL: ${entry.error ?? 'unknown'}`;
+          bundle += `[${ts}] ${entry.operation} ${entry.path} (${status})\n`;
+        }
+      }
+    } else {
+      bundle += '(unavailable)\n';
+    }
+
+    // Send to Thinker for analysis
+    const instructions = `You are performing a system health audit. Below is a snapshot of all system data gathered just now.
+
+${bundle}
+---
+Analyze this data and produce a concise Telegram-friendly summary:
+1. First: briefly confirm what is running and healthy
+2. Then: flag any anomalies — errors, failed cron jobs/skills, security threats, unusual patterns, DOWN services
+3. If there are no anomalies, no new security threats, and no errors, end with: "No anomalies detected."
+Keep it concise. No markdown formatting — plain text only.`;
+
+    const result = await client.executeSkill(instructions, 1, false, true);
+
+    if (!result.success) {
+      return `Summary failed: ${result.error ?? 'unknown error'}`;
+    }
+
+    return result.response ?? 'Summary produced no output.';
   }
 
   private async handleDelete(chatId: string, args: string): Promise<string> {
@@ -330,6 +510,7 @@ export class SlashCommandHandler {
     // Slash commands
     output += 'Commands:\n';
     output += '  /status — System status (MCPs, agents, uptime)\n';
+    output += '  /status summary — AI health audit (logs, security, memory, cron)\n';
     output += '  /info — This info page (commands, tools, skills)\n';
     output += '  /delete — Delete messages (today | yesterday | week | <N>h | <N>)\n';
     output += '  /security — Guardian status & scan config\n';
@@ -530,13 +711,34 @@ export class SlashCommandHandler {
   }
 
   private async handleLogEntries(count: number): Promise<string> {
+    const allEntries = await this.parseRecentLogIssues();
+
+    if (allEntries.length === 0) return 'No recent warnings or errors found.';
+
+    // Sort by timestamp descending, take the requested count
+    allEntries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    const entries = allEntries.slice(0, count);
+
+    let output = `Recent Issues (last ${entries.length})\n`;
+
+    for (const entry of entries) {
+      const ts = this.formatShortTimestamp(entry.timestamp.toISOString());
+      const msg = entry.message.length > 80 ? entry.message.slice(0, 80) + '...' : entry.message;
+      output += `\n[${ts}] ${entry.service}: ${msg}`;
+    }
+
+    output += `\n\nShowing ${entries.length} of ${allEntries.length} warnings/errors`;
+    return output;
+  }
+
+  /** Parse WARN/ERROR entries from all service log files. */
+  private async parseRecentLogIssues(): Promise<Array<{ timestamp: Date; service: string; level: string; message: string }>> {
     const allEntries: Array<{ timestamp: Date; service: string; level: string; message: string }> = [];
 
     for (const filename of SERVICE_LOG_FILES) {
       try {
         const content = await readFile(join(LOGS_DIR, filename), 'utf-8');
         const lines = content.split('\n');
-        // Read from the end for efficiency — take last 200 lines
         const recent = lines.slice(-200);
 
         const service = basename(filename, '.log');
@@ -556,22 +758,7 @@ export class SlashCommandHandler {
       }
     }
 
-    if (allEntries.length === 0) return 'No recent warnings or errors found.';
-
-    // Sort by timestamp descending, take the requested count
-    allEntries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-    const entries = allEntries.slice(0, count);
-
-    let output = `Recent Issues (last ${entries.length})\n`;
-
-    for (const entry of entries) {
-      const ts = this.formatShortTimestamp(entry.timestamp.toISOString());
-      const msg = entry.message.length > 80 ? entry.message.slice(0, 80) + '...' : entry.message;
-      output += `\n[${ts}] ${entry.service}: ${msg}`;
-    }
-
-    output += `\n\nShowing ${entries.length} of ${allEntries.length} warnings/errors`;
-    return output;
+    return allEntries;
   }
 
   // ─── shared helpers ─────────────────────────────────────────
