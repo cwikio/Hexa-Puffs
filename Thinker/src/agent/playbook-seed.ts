@@ -357,6 +357,49 @@ User asks to clean up, delete, or purge messages from a Telegram chat.
     notify_on_completion: false,
   },
   {
+    name: 'web-browsing',
+    description: 'Browse websites, extract information, fill forms, and take screenshots',
+    trigger_type: 'event',
+    trigger_config: {
+      keywords: [
+        'browse', 'website', 'webpage', 'open page', 'go to', 'visit site',
+        'screenshot', 'scrape', 'fill form', 'login site', 'web page',
+        'www', 'http', 'navigate to', 'open url',
+      ],
+      priority: 10,
+    },
+    instructions: `## WHEN TO USE
+User asks to visit a website, extract information from a page, fill out a form, take a screenshot, or interact with web content.
+
+## STEPS
+1. web_browser_navigate — go to the requested URL
+2. web_browser_snapshot — get the accessibility tree to understand page structure
+3. Read the snapshot to find relevant content, links, buttons, or form fields (identified by [ref] numbers)
+4. Interact as needed:
+   - web_browser_click with the ref number to click links or buttons
+   - web_browser_type with the ref number and text to type into inputs
+   - web_browser_fill_form to fill multiple form fields at once
+   - web_browser_navigate_back to go back to the previous page
+5. web_browser_snapshot again after each interaction to see the updated page
+6. web_browser_take_screenshot if the user wants a visual capture
+7. Summarize the extracted information to the user
+
+## NOTES
+- Always snapshot after navigating or clicking — the page may have changed
+- Use ref numbers from the snapshot to target elements (e.g., click ref "5" for a link shown as [5])
+- web_browser_tabs can list, open, close, or switch tabs if multi-tab browsing is needed
+- For forms: prefer web_browser_fill_form over individual type calls when filling multiple fields
+- If a page requires login, fill credentials step by step and confirm before submitting
+- Keep interactions minimal — navigate, snapshot, extract, done`,
+    required_tools: [
+      'web_browser_navigate', 'web_browser_snapshot', 'web_browser_click',
+      'web_browser_type', 'web_browser_take_screenshot', 'web_browser_tabs',
+      'web_browser_fill_form', 'web_browser_navigate_back',
+    ],
+    max_steps: 10,
+    notify_on_completion: false,
+  },
+  {
     name: 'cron-scheduling',
     description: 'Create recurring cron jobs or scheduled skills from natural language',
     trigger_type: 'event',
