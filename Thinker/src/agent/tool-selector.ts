@@ -24,7 +24,8 @@ const TOOL_GROUPS: Record<string, string[]> = {
   telegram: ['telegram_*'],
   files: ['filer_*'],
   passwords: ['onepassword_*'],
-  browser: ['browser_*'],
+  browser: ['web_browser_*'],
+  jobs: ['create_job', 'queue_task', 'list_jobs', 'get_job_status', 'delete_job'],
 };
 
 /** Keyword patterns → tool groups to activate */
@@ -45,6 +46,8 @@ const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
     groups: ['telegram'] },
   { pattern: /browse|website|navigate|webpage|screenshot|login.*site|fill.*form|open.*page|scrape|web.*page|visit.*site|www\.\w|https?:\/\/|go\s+to\s+\S+\.\S/i,
     groups: ['browser'] },
+  { pattern: /cron|remind me|recurring|every\s+(day|hour|week|minute|morning|evening|\d)|daily at|weekly|hourly|schedule.*(task|job|remind)/i,
+    groups: ['jobs', 'memory'] },
   { pattern: /status|health|mcp/i,
     groups: [] }, // core only
 ];

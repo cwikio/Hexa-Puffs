@@ -356,6 +356,65 @@ User asks to clean up, delete, or purge messages from a Telegram chat.
     max_steps: 8,
     notify_on_completion: false,
   },
+  {
+    name: 'cron-scheduling',
+    description: 'Create recurring cron jobs or scheduled skills from natural language',
+    trigger_type: 'event',
+    trigger_config: {
+      keywords: [
+        'cron', 'remind me', 'recurring', 'every day', 'every hour', 'every week',
+        'every morning', 'every evening', 'schedule task', 'background job', 'repeat',
+        'daily at', 'weekly', 'hourly',
+      ],
+      priority: 10,
+    },
+    instructions: `## WHEN TO USE
+User wants to set up a recurring task, reminder, or scheduled job.
+
+## CHOOSING THE RIGHT TOOL
+There are two options — pick based on complexity:
+
+**Option A: Cron Job (create_job)** — for simple, fixed actions that never change.
+Examples: "remind me to drink water at 9am", "send me 'good morning' every day"
+- Zero cost per execution (no LLM tokens)
+- Runs the exact same tool call with the exact same parameters every time
+
+**Option B: Scheduled Skill (memory_store_skill with trigger_type "cron")** — for tasks that need reasoning each time.
+Examples: "every morning summarize my unread emails", "weekly review of my calendar"
+- Costs LLM tokens per execution (a full AI reasoning loop runs each time)
+- Can adapt — different output every run because the AI reads real data each time
+
+## STEPS FOR CRON JOBS (Option A)
+1. Parse the user's schedule into a cron expression:
+   - "every day at 9am" → "0 9 * * *"
+   - "every hour" → "0 * * * *"
+   - "every 5 minutes" → "*/5 * * * *"
+   - "every Monday at 8am" → "0 8 * * 1"
+   - "every weekday at 9am" → "0 9 * * 1-5"
+2. Determine the action — usually telegram_send_message with the reminder text
+3. Confirm with user: "I'll create a cron job that sends you '[message]' every day at 9:00 AM (Europe/Warsaw). OK?"
+4. Call create_job with type "cron", the cron expression, timezone "Europe/Warsaw", and the action
+
+## STEPS FOR SCHEDULED SKILLS (Option B)
+1. Parse the schedule (same cron expression rules as above)
+2. Write clear natural language instructions describing what the AI should do each run
+3. Confirm with user
+4. Call memory_store_skill with:
+   - trigger_type: "cron"
+   - trigger_config: { "schedule": "<cron>", "timezone": "Europe/Warsaw" }
+   - instructions: the natural language task description
+   - agent_id: "thinker"
+
+## NOTES
+- Default timezone: Europe/Warsaw (user's timezone)
+- Use list_jobs to show existing cron jobs, memory_list_skills for existing skills
+- Cron format: "minute hour day month weekday" (e.g., "0 9 * * *" = 9:00 AM daily)
+- Always confirm the schedule before creating — mistakes are hard to undo
+- If unsure whether to use a cron job or skill, prefer cron job for simplicity`,
+    required_tools: ['create_job', 'list_jobs', 'delete_job', 'memory_store_skill', 'memory_list_skills'],
+    max_steps: 6,
+    notify_on_completion: false,
+  },
 ];
 
 /**

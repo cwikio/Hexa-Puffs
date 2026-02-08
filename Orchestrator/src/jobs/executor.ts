@@ -1,168 +1,93 @@
 import { JobAction, WorkflowStep } from './types.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
-import {
-  handleTelegram,
-  handleStoreFact,
-  handleListFacts,
-  handleDeleteFact,
-  handleStoreConversation,
-  handleSearchConversations,
-  handleGetProfile,
-  handleUpdateProfile,
-  handleRetrieveMemories,
-  handleGetMemoryStats,
-  handleExportMemory,
-  handleImportMemory,
-  handleCreateFile,
-  handleReadFile,
-  handleListFiles,
-  handleUpdateFile,
-  handleDeleteFile,
-  handleMoveFile,
-  handleCopyFile,
-  handleSearchFiles,
-  handleCheckGrant,
-  handleRequestGrant,
-  handleListGrants,
-  handleGetWorkspaceInfo,
-  handleGetAuditLog,
-  handlePassword,
-  handleListChats,
-  handleGetMessages,
-  type StandardResponse,
-} from '../tools/index.js';
+import type { ToolCallResult } from '../mcp-clients/types.js';
+
+interface StandardResponse {
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
+/**
+ * Backward-compatible tool name mapping.
+ * Old names (used by existing saved jobs) → current ToolRouter names.
+ */
+const BACKWARD_COMPAT_MAP: Record<string, string> = {
+  'send_telegram': 'telegram_send_message',
+  'list_telegram_chats': 'telegram_list_chats',
+  'get_telegram_messages': 'telegram_get_messages',
+  'get_credential': 'onepassword_get_item',
+  'store_fact': 'memory_store_fact',
+  'list_facts': 'memory_list_facts',
+  'delete_fact': 'memory_delete_fact',
+  'store_conversation': 'memory_store_conversation',
+  'search_conversations': 'memory_search_conversations',
+  'get_profile': 'memory_get_profile',
+  'update_profile': 'memory_update_profile',
+  'retrieve_memories': 'memory_retrieve_memories',
+  'get_memory_stats': 'memory_get_memory_stats',
+  'export_memory': 'memory_export_memory',
+  'import_memory': 'memory_import_memory',
+  'create_file': 'filer_create_file',
+  'read_file': 'filer_read_file',
+  'list_files': 'filer_list_files',
+  'update_file': 'filer_update_file',
+  'delete_file': 'filer_delete_file',
+  'move_file': 'filer_move_file',
+  'copy_file': 'filer_copy_file',
+  'search_files': 'filer_search_files',
+  'check_grant': 'filer_check_grant',
+  'request_grant': 'filer_request_grant',
+  'list_grants': 'filer_list_grants',
+  'get_workspace_info': 'filer_get_workspace_info',
+  'get_audit_log': 'filer_get_audit_log',
+};
+
+/**
+ * Parse a ToolCallResult from the ToolRouter into a StandardResponse.
+ * MCP responses come wrapped as { success, content: { content: [{ type, text }] } }.
+ */
+function parseToolCallResult(result: ToolCallResult): StandardResponse {
+  if (!result.success) {
+    return { success: false, error: result.error || 'Tool call failed' };
+  }
+
+  const mcpResponse = result.content as { content?: Array<{ type: string; text?: string }> } | undefined;
+  const innerText = mcpResponse?.content?.[0]?.text;
+
+  if (innerText) {
+    try {
+      return JSON.parse(innerText) as StandardResponse;
+    } catch {
+      return { success: true, data: innerText };
+    }
+  }
+
+  return { success: true, data: result.content };
+}
 
 export async function executeToolCall(
   toolName: string,
   parameters?: Record<string, unknown>
 ): Promise<StandardResponse> {
   // Strip namespace prefix if present (e.g., "annabelle:send_telegram" -> "send_telegram")
-  const normalizedToolName = toolName.includes(':') ? toolName.split(':').pop()! : toolName;
+  let normalized = toolName.includes(':') ? toolName.split(':').pop()! : toolName;
 
-  logger.info('Executing tool call', { toolName, normalizedToolName, parameters });
+  // Map backward-compatible names to current ToolRouter names
+  normalized = BACKWARD_COMPAT_MAP[normalized] || normalized;
 
-  const args = parameters || {};
+  logger.info('Executing tool call via ToolRouter', { toolName, normalized, parameters });
 
-  switch (normalizedToolName) {
-    // Telegram tools
-    case 'telegram_send_message':
-    case 'send_telegram': // backward compat
-      return await handleTelegram(args);
+  const { getOrchestrator } = await import('../core/orchestrator.js');
+  const orchestrator = await getOrchestrator();
+  const toolRouter = orchestrator.getToolRouter();
 
-    case 'telegram_list_chats':
-    case 'list_telegram_chats': // backward compat
-      return await handleListChats(args);
-
-    case 'telegram_get_messages':
-    case 'get_telegram_messages': // backward compat
-      return await handleGetMessages(args);
-
-    // 1Password tools
-    case 'onepassword_get_item':
-    case 'get_credential': // backward compat
-      return await handlePassword(args);
-
-    // Memory tools
-    case 'memory_store_fact':
-    case 'store_fact': // backward compat
-      return await handleStoreFact(args);
-
-    case 'memory_list_facts':
-    case 'list_facts': // backward compat
-      return await handleListFacts(args);
-
-    case 'memory_delete_fact':
-    case 'delete_fact': // backward compat
-      return await handleDeleteFact(args);
-
-    case 'memory_store_conversation':
-    case 'store_conversation': // backward compat
-      return await handleStoreConversation(args);
-
-    case 'memory_search_conversations':
-    case 'search_conversations': // backward compat
-      return await handleSearchConversations(args);
-
-    case 'memory_get_profile':
-    case 'get_profile': // backward compat
-      return await handleGetProfile(args);
-
-    case 'memory_update_profile':
-    case 'update_profile': // backward compat
-      return await handleUpdateProfile(args);
-
-    case 'memory_retrieve_memories':
-    case 'retrieve_memories': // backward compat
-      return await handleRetrieveMemories(args);
-
-    case 'memory_get_memory_stats':
-    case 'get_memory_stats': // backward compat
-      return await handleGetMemoryStats(args);
-
-    case 'memory_export_memory':
-    case 'export_memory': // backward compat
-      return await handleExportMemory(args);
-
-    case 'memory_import_memory':
-    case 'import_memory': // backward compat
-      return await handleImportMemory(args);
-
-    // Filer tools
-    case 'filer_create_file':
-    case 'create_file': // backward compat
-      return await handleCreateFile(args);
-
-    case 'filer_read_file':
-    case 'read_file': // backward compat
-      return await handleReadFile(args);
-
-    case 'filer_list_files':
-    case 'list_files': // backward compat
-      return await handleListFiles(args);
-
-    case 'filer_update_file':
-    case 'update_file': // backward compat
-      return await handleUpdateFile(args);
-
-    case 'filer_delete_file':
-    case 'delete_file': // backward compat
-      return await handleDeleteFile(args);
-
-    case 'filer_move_file':
-    case 'move_file': // backward compat
-      return await handleMoveFile(args);
-
-    case 'filer_copy_file':
-    case 'copy_file': // backward compat
-      return await handleCopyFile(args);
-
-    case 'filer_search_files':
-    case 'search_files': // backward compat
-      return await handleSearchFiles(args);
-
-    case 'filer_check_grant':
-    case 'check_grant': // backward compat
-      return await handleCheckGrant(args);
-
-    case 'filer_request_grant':
-    case 'request_grant': // backward compat
-      return await handleRequestGrant(args);
-
-    case 'filer_list_grants':
-    case 'list_grants': // backward compat
-      return await handleListGrants(args);
-
-    case 'filer_get_workspace_info':
-    case 'get_workspace_info': // backward compat
-      return await handleGetWorkspaceInfo(args);
-
-    case 'filer_get_audit_log':
-    case 'get_audit_log': // backward compat
-      return await handleGetAuditLog(args);
-
-    default:
-      throw new Error(`Unknown tool: ${normalizedToolName} (original: ${toolName})`);
+  if (!toolRouter.hasRoute(normalized)) {
+    throw new Error(`Unknown tool: ${normalized} (original: ${toolName}). Available tools: ${toolRouter.getToolDefinitions().map(t => t.name).join(', ')}`);
   }
+
+  const result = await toolRouter.routeToolCall(normalized, parameters || {});
+  return parseToolCallResult(result);
 }
 
 export async function executeWorkflow(
