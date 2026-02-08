@@ -50,6 +50,7 @@ const SERVICE_LOG_FILES = [
   'filer.log',
   'memorizer.log',
   'ollama.log',
+  'web.log',
 ];
 
 interface ScanLogEntry {
@@ -114,6 +115,9 @@ export class SlashCommandHandler {
         case '/cron':
           return { handled: true, response: await this.handleCron() };
 
+        case '/browser':
+          return { handled: true, response: await this.handleBrowser() };
+
         default:
           return { handled: false };
       }
@@ -168,6 +172,32 @@ export class SlashCommandHandler {
 
     output += `\nTelegram: ${pollerRunning ? 'polling' : 'stopped'}`;
     output += `\nInngest: ${inngestHalted ? 'halted' : 'active'}`;
+
+    // Browser
+    const webMcp = status.mcpServers.web;
+    if (webMcp) {
+      if (webMcp.available) {
+        let browserLine = 'Browser: 1 instance';
+        try {
+          const tabResult = await Promise.race([
+            this.toolRouter.routeToolCall('web_browser_tabs', {}),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+          ]);
+          if (tabResult) {
+            const tabText = this.extractMcpText(tabResult as { success: boolean; content?: unknown });
+            if (tabText) {
+              const tabCount = tabText.split('\n').filter((l) => l.trim().length > 0).length;
+              browserLine += `, ${tabCount} tab${tabCount !== 1 ? 's' : ''}`;
+            }
+          }
+        } catch {
+          // Tab info unavailable — show instance only
+        }
+        output += `\n${browserLine}`;
+      } else {
+        output += '\nBrowser: offline';
+      }
+    }
 
     // Summary
     output += `\n\nTools: ${toolCount} | Sessions: ${status.sessions.activeSessions} active`;
@@ -607,6 +637,58 @@ Keep it concise. No markdown formatting — plain text only.`;
     return output;
   }
 
+  // ─── /browser ──────────────────────────────────────────────
+
+  private async handleBrowser(): Promise<string> {
+    const status = this.orchestrator.getStatus();
+    const webMcp = status.mcpServers.web;
+
+    if (!webMcp) {
+      return 'Browser MCP is not installed.';
+    }
+
+    const proxyEnabled = process.env.BROWSER_PROXY_ENABLED === 'true';
+    const proxyServer = process.env.BROWSER_PROXY_SERVER;
+    const proxyLabel = proxyEnabled && proxyServer ? proxyServer : 'disabled';
+
+    let output = `Browser Status\nMCP: ${webMcp.available ? 'up' : 'DOWN'} (${webMcp.type}) | Proxy: ${proxyLabel}\n`;
+
+    if (!webMcp.available) {
+      output += '\nBrowser MCP is offline — no session data available.';
+      return output;
+    }
+
+    // Try to get tab listing from the browser
+    try {
+      const result = await this.toolRouter.routeToolCall('web_browser_tabs', {});
+      const tabText = this.extractMcpText(result);
+
+      if (tabText) {
+        const tabLines = tabText.split('\n').filter((l) => l.trim().length > 0);
+        output += `\nTabs (${tabLines.length}):\n`;
+        for (const line of tabLines) {
+          output += `  ${line}\n`;
+        }
+      } else {
+        output += '\nNo active browser session';
+      }
+    } catch {
+      output += '\nNo active browser session';
+    }
+
+    return output;
+  }
+
+  /**
+   * Extract raw text from an MCP tool result (for tools that return plain text, not StandardResponse JSON).
+   */
+  private extractMcpText(result: { success: boolean; content?: unknown }): string | null {
+    if (!result.success) return null;
+    const mcpResponse = result.content as { content?: Array<{ type: string; text?: string }> };
+    const text = mcpResponse?.content?.[0]?.text;
+    return text?.trim() || null;
+  }
+
   private async checkHealth(url: string): Promise<boolean> {
     try {
       const controller = new AbortController();
@@ -857,6 +939,7 @@ Keep it concise. No markdown formatting — plain text only.`;
     output += '  /logs — Log file sizes & freshness\n';
     output += '  /logs [N] — Last N warnings/errors (default 15)\n';
     output += '  /cron — Inngest status, cron jobs, skills & background tasks\n';
+    output += '  /browser — Browser status (proxy, open tabs)\n';
     output += '  /kill — Kill services (all | thinker | telegram | inngest)\n';
     output += '  /resume — Resume services (all | thinker | telegram | inngest)\n';
 

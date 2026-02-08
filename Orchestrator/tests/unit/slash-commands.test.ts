@@ -734,6 +734,138 @@ describe('SlashCommandHandler', () => {
     });
   });
 
+  describe('/browser', () => {
+    it('should show browser status when MCP is available', async () => {
+      const { handler, mockToolRouter } = createMocks({
+        mcpServers: {
+          guardian: { available: true, required: false, type: 'stdio' },
+          web: { available: true, required: false, type: 'stdio' },
+        },
+      });
+
+      (mockToolRouter.routeToolCall as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: true,
+        content: {
+          content: [{ type: 'text', text: 'Tab 1: https://example.com\nTab 2: about:blank' }],
+        },
+      });
+
+      const result = await handler.tryHandle(makeMsg('/browser'));
+
+      expect(result.handled).toBe(true);
+      expect(result.response).toContain('Browser Status');
+      expect(result.response).toContain('MCP: up (stdio)');
+      expect(result.response).toContain('Tabs (2)');
+      expect(result.response).toContain('https://example.com');
+    });
+
+    it('should show offline when MCP is unavailable', async () => {
+      const { handler } = createMocks({
+        mcpServers: {
+          guardian: { available: true, required: false, type: 'stdio' },
+          web: { available: false, required: false, type: 'stdio' },
+        },
+      });
+
+      const result = await handler.tryHandle(makeMsg('/browser'));
+
+      expect(result.handled).toBe(true);
+      expect(result.response).toContain('MCP: DOWN');
+      expect(result.response).toContain('offline');
+    });
+
+    it('should show not installed when web MCP is absent', async () => {
+      const { handler } = createMocks();
+
+      const result = await handler.tryHandle(makeMsg('/browser'));
+
+      expect(result.handled).toBe(true);
+      expect(result.response).toContain('not installed');
+    });
+
+    it('should handle tab call failure gracefully', async () => {
+      const { handler, mockToolRouter } = createMocks({
+        mcpServers: {
+          guardian: { available: true, required: false, type: 'stdio' },
+          web: { available: true, required: false, type: 'stdio' },
+        },
+      });
+
+      (mockToolRouter.routeToolCall as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no session'));
+
+      const result = await handler.tryHandle(makeMsg('/browser'));
+
+      expect(result.handled).toBe(true);
+      expect(result.response).toContain('Browser Status');
+      expect(result.response).toContain('No active browser session');
+    });
+
+    it('should show proxy config when enabled', async () => {
+      const original = { ...process.env };
+      process.env.BROWSER_PROXY_ENABLED = 'true';
+      process.env.BROWSER_PROXY_SERVER = 'http://proxy.example.com:8080';
+
+      const { handler, mockToolRouter } = createMocks({
+        mcpServers: {
+          guardian: { available: true, required: false, type: 'stdio' },
+          web: { available: true, required: false, type: 'stdio' },
+        },
+      });
+
+      (mockToolRouter.routeToolCall as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no session'));
+
+      const result = await handler.tryHandle(makeMsg('/browser'));
+
+      expect(result.response).toContain('http://proxy.example.com:8080');
+
+      process.env.BROWSER_PROXY_ENABLED = original.BROWSER_PROXY_ENABLED;
+      process.env.BROWSER_PROXY_SERVER = original.BROWSER_PROXY_SERVER;
+    });
+  });
+
+  describe('/status browser line', () => {
+    it('should include browser instance info when web MCP is available', async () => {
+      const { handler, mockToolRouter } = createMocks({
+        mcpServers: {
+          guardian: { available: true, required: false, type: 'stdio' },
+          web: { available: true, required: false, type: 'stdio' },
+        },
+      });
+
+      (mockToolRouter.routeToolCall as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: true,
+        content: {
+          content: [{ type: 'text', text: 'Tab 1: https://example.com' }],
+        },
+      });
+
+      const result = await handler.tryHandle(makeMsg('/status'));
+
+      expect(result.response).toContain('Browser: 1 instance, 1 tab');
+    });
+
+    it('should show browser offline when web MCP is down', async () => {
+      const { handler } = createMocks({
+        mcpServers: {
+          guardian: { available: true, required: false, type: 'stdio' },
+          web: { available: false, required: false, type: 'stdio' },
+        },
+      });
+
+      const result = await handler.tryHandle(makeMsg('/status'));
+
+      expect(result.response).toContain('Browser: offline');
+    });
+
+    it('should omit browser line when web MCP is not present', async () => {
+      const { handler } = createMocks();
+
+      const result = await handler.tryHandle(makeMsg('/status'));
+
+      expect(result.response).not.toContain('Browser:');
+    });
+  });
+
   describe('unknown commands', () => {
     it('should not handle unknown slash commands', async () => {
       const { handler } = createMocks();

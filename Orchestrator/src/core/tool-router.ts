@@ -54,6 +54,7 @@ export class ToolRouter {
     searcher: 'Web Search',
     guardian: 'Guardian',
     gmail: 'Gmail',
+    web: 'Browser',
   };
 
   private static readonly DEFAULT_TOOL_GROUPS: ToolGroup[] = [

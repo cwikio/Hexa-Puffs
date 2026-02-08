@@ -8,6 +8,7 @@ Slash commands are intercepted by the Orchestrator before reaching the LLM. They
 | --- | --- |
 | `/status` | System status — MCPs, agents, uptime, Telegram polling, Inngest state |
 | `/status summary` | AI-powered health audit — logs, security, memory, cron jobs, skills |
+| `/browser` | Browser status — MCP availability, proxy config, open tabs |
 | `/info` | Full info page — all commands, tools by MCP, active skills |
 | `/help` | Same as `/info` |
 
