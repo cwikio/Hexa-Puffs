@@ -33,6 +33,7 @@ import { ThinkerClient } from './thinker-client.js';
 import { AgentManager, type AgentStatus } from './agent-manager.js';
 import { MessageRouter } from './message-router.js';
 import { SlashCommandHandler } from './slash-commands.js';
+import { HaltManager, getHaltManager } from './halt-manager.js';
 import type { IncomingAgentMessage } from './agent-types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
@@ -85,6 +86,8 @@ export class Orchestrator {
   private thinkerClient: ThinkerClient | null = null;
   // Slash command handler (intercepts /commands before LLM)
   private slashCommands: SlashCommandHandler;
+  // Kill switch halt manager
+  private haltManager: HaltManager;
 
   private initialized: boolean = false;
   private connectionMode: 'stdio' | 'http';
@@ -98,6 +101,7 @@ export class Orchestrator {
     this.connectionMode = this.config.mcpConnectionMode;
     this.sessions = new SessionManager();
     this.toolRouter = new ToolRouter({ alwaysPrefix: true, separator: '_' });
+    this.haltManager = getHaltManager();
     this.slashCommands = new SlashCommandHandler(this.toolRouter, this);
 
     if (this.connectionMode === 'stdio') {
@@ -664,6 +668,30 @@ export class Orchestrator {
    */
   getAgentDefinition(agentId: string): AgentDefinition | undefined {
     return this.agentDefinitions.get(agentId);
+  }
+
+  /**
+   * Get the HaltManager (for kill switch).
+   */
+  getHaltManager(): HaltManager {
+    return this.haltManager;
+  }
+
+  /**
+   * Get the ChannelPoller (for kill switch — stop/start polling).
+   */
+  getChannelPoller(): ChannelPoller | null {
+    return this.channelPoller;
+  }
+
+  /**
+   * Restart channel polling (used by /resume telegram).
+   */
+  async restartChannelPolling(): Promise<void> {
+    if (this.channelPoller) return; // already running
+    if (this.config.channelPolling.enabled) {
+      await this.startChannelPolling();
+    }
   }
 
   // ─── HTTP Mode Helpers ────────────────────────────────────────────

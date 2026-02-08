@@ -103,6 +103,12 @@ export class SlashCommandHandler {
         case '/logs':
           return { handled: true, response: await this.handleLogs(args) };
 
+        case '/kill':
+          return { handled: true, response: await this.handleKill(args) };
+
+        case '/resume':
+          return { handled: true, response: await this.handleResume(args) };
+
         default:
           return { handled: false };
       }
@@ -150,8 +156,16 @@ export class SlashCommandHandler {
       }
     }
 
+    // Telegram & Inngest state
+    const haltManager = this.orchestrator.getHaltManager();
+    const pollerRunning = this.orchestrator.getChannelPoller() !== null;
+    const inngestHalted = haltManager.isTargetHalted('inngest');
+
+    output += `\nTelegram: ${pollerRunning ? 'polling' : 'stopped'}`;
+    output += `\nInngest: ${inngestHalted ? 'halted' : 'active'}`;
+
     // Summary
-    output += `\nTools: ${toolCount} | Sessions: ${status.sessions.activeSessions} active`;
+    output += `\n\nTools: ${toolCount} | Sessions: ${status.sessions.activeSessions} active`;
     if (status.security.blockedCount > 0) {
       output += ` | Blocked: ${status.security.blockedCount}`;
     }
@@ -336,6 +350,124 @@ Keep it concise. No markdown formatting — plain text only.`;
     return result.response ?? 'Summary produced no output.';
   }
 
+  // ─── /kill & /resume ─────────────────────────────────────
+
+  private async handleKill(args: string): Promise<string> {
+    const target = args.trim().toLowerCase();
+    if (!target) {
+      return 'Usage: /kill all | thinker | telegram | inngest';
+    }
+
+    const haltManager = this.orchestrator.getHaltManager();
+    const agentManager = this.orchestrator.getAgentManager();
+    const results: string[] = [];
+
+    const validTargets = ['all', 'thinker', 'telegram', 'inngest'];
+    if (!validTargets.includes(target)) {
+      return `Unknown target "${target}". Valid targets: ${validTargets.join(', ')}`;
+    }
+
+    if (target === 'all' || target === 'thinker') {
+      if (agentManager) {
+        const agents = agentManager.getStatus();
+        let paused = 0;
+        for (const agent of agents) {
+          if (!agent.paused) {
+            agentManager.markPaused(agent.agentId, 'manual kill');
+            paused++;
+          }
+        }
+        results.push(`Thinker: ${paused} agent(s) paused`);
+      } else {
+        results.push('Thinker: no agent manager (single-agent mode)');
+      }
+      if (target !== 'all') haltManager.addTarget('thinker', 'manual kill');
+    }
+
+    if (target === 'all' || target === 'telegram') {
+      const poller = this.orchestrator.getChannelPoller();
+      if (poller) {
+        this.orchestrator.stopChannelPolling();
+        results.push('Telegram: polling stopped');
+      } else {
+        results.push('Telegram: polling was not running');
+      }
+      if (target !== 'all') haltManager.addTarget('telegram', 'manual kill');
+    }
+
+    if (target === 'all' || target === 'inngest') {
+      haltManager.addTarget('inngest', 'manual kill');
+      results.push('Inngest: halted (functions will bail at entry)');
+    }
+
+    if (target === 'all') {
+      haltManager.halt('manual kill', ['thinker', 'telegram', 'inngest']);
+    }
+
+    const header = target === 'all' ? 'All services killed.' : `${target.charAt(0).toUpperCase() + target.slice(1)} killed.`;
+    const status = await this.handleStatus('');
+    return `${header}\n${results.join('\n')}\n\n${status}`;
+  }
+
+  private async handleResume(args: string): Promise<string> {
+    const target = args.trim().toLowerCase();
+    if (!target) {
+      return 'Usage: /resume all | thinker | telegram | inngest';
+    }
+
+    const haltManager = this.orchestrator.getHaltManager();
+    const agentManager = this.orchestrator.getAgentManager();
+    const results: string[] = [];
+
+    const validTargets = ['all', 'thinker', 'telegram', 'inngest'];
+    if (!validTargets.includes(target)) {
+      return `Unknown target "${target}". Valid targets: ${validTargets.join(', ')}`;
+    }
+
+    if (target === 'all' || target === 'thinker') {
+      if (agentManager) {
+        const agents = agentManager.getStatus();
+        let resumed = 0;
+        for (const agent of agents) {
+          if (agent.paused) {
+            const result = await agentManager.resumeAgent(agent.agentId, true);
+            if (result.success) resumed++;
+          }
+        }
+        results.push(`Thinker: ${resumed} agent(s) resumed`);
+      } else {
+        results.push('Thinker: no agent manager (single-agent mode)');
+      }
+      haltManager.removeTarget('thinker');
+    }
+
+    if (target === 'all' || target === 'telegram') {
+      const poller = this.orchestrator.getChannelPoller();
+      if (!poller) {
+        await this.orchestrator.restartChannelPolling();
+        results.push('Telegram: polling restarted');
+      } else {
+        results.push('Telegram: polling was already running');
+      }
+      haltManager.removeTarget('telegram');
+    }
+
+    if (target === 'all' || target === 'inngest') {
+      haltManager.removeTarget('inngest');
+      results.push('Inngest: resumed (functions will execute normally)');
+    }
+
+    if (target === 'all') {
+      haltManager.resumeAll();
+    }
+
+    const header = target === 'all' ? 'All services resumed.' : `${target.charAt(0).toUpperCase() + target.slice(1)} resumed.`;
+    const status = await this.handleStatus('');
+    return `${header}\n${results.join('\n')}\n\n${status}`;
+  }
+
+  // ─── /delete ──────────────────────────────────────────────
+
   private async handleDelete(chatId: string, args: string): Promise<string> {
     const parsed = this.parseDeleteArgs(args);
 
@@ -519,6 +651,8 @@ Keep it concise. No markdown formatting — plain text only.`;
     output += '  /security [N] — Last N security threats (default 10)\n';
     output += '  /logs — Log file sizes & freshness\n';
     output += '  /logs [N] — Last N warnings/errors (default 15)\n';
+    output += '  /kill — Kill services (all | thinker | telegram | inngest)\n';
+    output += '  /resume — Resume services (all | thinker | telegram | inngest)\n';
     output += '  /help — Short command list\n';
 
     // MCP services + tool counts

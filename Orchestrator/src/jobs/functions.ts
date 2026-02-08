@@ -4,6 +4,7 @@ import { executeAction } from './executor.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { JobDefinition, TaskDefinition } from './types.js';
 import { getConfig } from '../config/index.js';
+import { getHaltManager } from '../core/halt-manager.js';
 import { Cron } from 'croner';
 
 const storage = new JobStorage();
@@ -20,6 +21,11 @@ export const backgroundJobFunction = inngest.createFunction(
   },
   { event: 'job/background.execute' },
   async ({ event, step }) => {
+    if (getHaltManager().isTargetHalted('inngest')) {
+      logger.info('Background job skipped — system halted');
+      return { success: false, error: 'System halted — use /resume inngest to restart' };
+    }
+
     const { taskId, action } = event.data;
 
     logger.info('Background job started', { taskId });
@@ -117,6 +123,11 @@ export const cronJobFunction = inngest.createFunction(
   },
   { event: 'job/cron.execute' },
   async ({ event, step }) => {
+    if (getHaltManager().isTargetHalted('inngest')) {
+      logger.info('Cron job skipped — system halted');
+      return { success: false, error: 'System halted — use /resume inngest to restart' };
+    }
+
     const { jobId, action } = event.data;
 
     logger.info('Cron job triggered', { jobId });
@@ -195,6 +206,10 @@ export const cronJobPollerFunction = inngest.createFunction(
   },
   { cron: '* * * * *' }, // Every minute
   async ({ step }) => {
+    if (getHaltManager().isTargetHalted('inngest')) {
+      return { checked: 0, executed: 0, halted: true };
+    }
+
     const jobs = await step.run('load-cron-jobs', async () => {
       const allJobs = await storage.listJobs();
       return allJobs.filter(
@@ -289,6 +304,10 @@ export const skillSchedulerFunction = inngest.createFunction(
   },
   { cron: '* * * * *' }, // Every minute
   async ({ step }) => {
+    if (getHaltManager().isTargetHalted('inngest')) {
+      return { checked: 0, executed: 0, halted: true };
+    }
+
     const config = getConfig();
     const thinkerUrl = config.thinkerUrl;
 

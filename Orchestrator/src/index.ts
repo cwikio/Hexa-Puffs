@@ -92,6 +92,98 @@ async function main(): Promise<void> {
           return;
         }
 
+        // REST API: Kill switch
+        if (req.url === '/kill' && req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk: Buffer) => { body += chunk; });
+          req.on('end', async () => {
+            const target = body ? JSON.parse(body)?.target : undefined;
+            if (!target) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, message: 'Missing target (all | thinker | telegram | inngest)' }));
+              return;
+            }
+            const haltManager = orchestrator.getHaltManager();
+            const agentManager = orchestrator.getAgentManager();
+
+            if (target === 'all') {
+              if (agentManager) {
+                for (const agent of agentManager.getStatus()) {
+                  if (!agent.paused) agentManager.markPaused(agent.agentId, 'manual kill');
+                }
+              }
+              orchestrator.stopChannelPolling();
+              haltManager.halt('manual kill', ['thinker', 'telegram', 'inngest']);
+            } else if (target === 'thinker') {
+              if (agentManager) {
+                for (const agent of agentManager.getStatus()) {
+                  if (!agent.paused) agentManager.markPaused(agent.agentId, 'manual kill');
+                }
+              }
+              haltManager.addTarget('thinker', 'manual kill');
+            } else if (target === 'telegram') {
+              orchestrator.stopChannelPolling();
+              haltManager.addTarget('telegram', 'manual kill');
+            } else if (target === 'inngest') {
+              haltManager.addTarget('inngest', 'manual kill');
+            } else {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, message: `Unknown target: ${target}` }));
+              return;
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, message: `${target} killed`, halted: haltManager.getState() }));
+          });
+          return;
+        }
+
+        // REST API: Resume
+        if (req.url === '/resume' && req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk: Buffer) => { body += chunk; });
+          req.on('end', async () => {
+            const target = body ? JSON.parse(body)?.target : undefined;
+            if (!target) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, message: 'Missing target (all | thinker | telegram | inngest)' }));
+              return;
+            }
+            const haltManager = orchestrator.getHaltManager();
+            const agentManager = orchestrator.getAgentManager();
+
+            if (target === 'all') {
+              if (agentManager) {
+                for (const agent of agentManager.getStatus()) {
+                  if (agent.paused) await agentManager.resumeAgent(agent.agentId, true);
+                }
+              }
+              await orchestrator.restartChannelPolling();
+              haltManager.resumeAll();
+            } else if (target === 'thinker') {
+              if (agentManager) {
+                for (const agent of agentManager.getStatus()) {
+                  if (agent.paused) await agentManager.resumeAgent(agent.agentId, true);
+                }
+              }
+              haltManager.removeTarget('thinker');
+            } else if (target === 'telegram') {
+              await orchestrator.restartChannelPolling();
+              haltManager.removeTarget('telegram');
+            } else if (target === 'inngest') {
+              haltManager.removeTarget('inngest');
+            } else {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, message: `Unknown target: ${target}` }));
+              return;
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, message: `${target} resumed`, halted: haltManager.getState() }));
+          });
+          return;
+        }
+
         // SSE endpoint
         if (req.url === '/sse' && req.method === 'GET') {
           logger.debug('SSE connection established');
@@ -120,6 +212,8 @@ async function main(): Promise<void> {
           logger.info(`  GET  /tools/list  - List available tools (REST API)`);
           logger.info(`  POST /tools/call  - Execute a tool (REST API)`);
           logger.info(`  POST /agents/:id/resume - Resume a cost-paused agent`);
+          logger.info(`  POST /kill        - Kill switch (target: all | thinker | telegram | inngest)`);
+          logger.info(`  POST /resume      - Resume (target: all | thinker | telegram | inngest)`);
           logger.info(`  GET  /sse         - SSE connection`);
           logger.info(`  POST /message     - SSE messages`);
           resolve();
