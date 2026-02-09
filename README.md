@@ -419,21 +419,24 @@ Passive AI reasoning engine that receives messages from Orchestrator via HTTP an
 - **Context management** - Loads persona and facts from Memory MCP via Orchestrator's tool API
 - **Per-agent tool filtering** - Discovers only tools allowed by agent's policy (via `agentId` query param)
 - **LLM cost controls** - Anomaly-based spike detection with sliding-window algorithm; pauses agent and sends Telegram alert on abnormal token consumption
+- **Subagent spawning** - Agents can spawn temporary subagents via `spawn_subagent` tool for parallel task delegation. Subagents run as separate processes on OS-assigned dynamic ports, inherit parent tool policies, and are auto-killed after completing their task or hitting a timeout
+- **Lazy-spawn / idle-kill** - Agents register on startup but only spawn on first message. Idle agents are killed after configurable timeout (default 30 min). Reduces resource usage when agents aren't active
 
 **Architecture:**
 
 ```
 Orchestrator (:8010)
      │
-     ├── spawns ──→ Thinker :8006 (default agent)
-     ├── spawns ──→ Thinker :8016 (work agent)
-     └── spawns ──→ Thinker :801N (...)
-                        │
-                        ├──HTTP──→ Orchestrator /tools/call (all tool access)
-                        └──→ LLM Provider (Groq/LM Studio/Ollama)
+     ├── lazy-spawns ──→ Thinker :8006 (default agent)
+     ├── lazy-spawns ──→ Thinker :8016 (work agent)
+     └── lazy-spawns ──→ Thinker :801N (...)
+                              │
+                              ├──HTTP──→ Orchestrator /tools/call (all tool access)
+                              ├──→ LLM Provider (Groq/LM Studio/Ollama)
+                              └── spawn_subagent ──→ Thinker :dynamic (temporary)
 ```
 
-**Default Port:** 8006 (each additional agent gets its own port)
+**Default Port:** 8006 (each additional agent gets its own port; subagents use OS-assigned dynamic ports)
 
 ### Inngest Job System
 
@@ -640,19 +643,23 @@ Orchestrator spawns and manages multiple Thinker instances, each with its own LL
 
 **How It Works:**
 
-1. **AgentManager** spawns one Thinker process per agent definition, passing env vars for port, LLM config, system prompt path, and agent ID
+1. **AgentManager** registers agents from `agents.json` on startup (lazy-spawn — no process started yet)
 2. **ChannelPoller** polls Telegram for new messages via the ToolRouter
 3. **MessageRouter** resolves which agent handles each message based on channel bindings (exact match → wildcard → default agent)
-4. Orchestrator dispatches the message to the correct Thinker via `POST /process-message`
-5. Thinker runs its ReAct loop, calling tools back through Orchestrator's `/tools/call` endpoint
-6. Orchestrator enforces **tool policy** — each agent only sees tools matching its `allowedTools`/`deniedTools` globs
-7. Orchestrator sends the response back to Telegram via the ToolRouter
+4. **AgentManager.ensureRunning()** lazy-spawns the agent on first message (deduplicates concurrent spawn requests)
+5. Orchestrator dispatches the message to the correct Thinker via `POST /process-message`
+6. Thinker runs its ReAct loop, calling tools back through Orchestrator's `/tools/call` endpoint
+7. Orchestrator enforces **tool policy** — each agent only sees tools matching its `allowedTools`/`deniedTools` globs
+8. Orchestrator sends the response back to Telegram via the ToolRouter
+9. **Idle scanner** (every 5 min) kills agents with no activity beyond their `idleTimeoutMinutes`
+
+**Subagent Spawning:** Agents can call the `spawn_subagent` tool to delegate tasks to temporary subagent processes. Subagents spawn on dynamic ports, inherit parent tool policies (subset only), cannot spawn their own subagents (single-level), and are killed after returning their result. Max 5 concurrent subagents per parent.
 
 **Single-Agent Fallback:** If no `agents.json` is configured, Orchestrator falls back to connecting to a single Thinker at `THINKER_URL` — identical to pre-multi-agent behavior.
 
 **Key Components:**
 
-- `AgentManager` — spawns processes, monitors health, auto-restarts crashed agents, tracks cost-pause state
+- `AgentManager` — registers agents (lazy-spawn), monitors health, auto-restarts crashed agents, tracks cost-pause state, manages subagent lifecycle
 - `ChannelPoller` — polls Telegram via ToolRouter, deduplicates messages
 - `MessageRouter` — resolves `(channel, chatId)` → `agentId` via config-driven bindings
 - `ToolRouter.isToolAllowed()` — glob-based allow/deny filtering per agent

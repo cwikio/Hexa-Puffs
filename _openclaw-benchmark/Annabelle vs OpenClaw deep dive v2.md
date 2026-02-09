@@ -1,6 +1,6 @@
 # Annabelle Architecture Deep Dive v2 — Comparison with OpenClaw & Roadmap
 
-*Updated February 2026. Reflects 7 of 11 original recommendations now implemented. Based on source code exploration of both projects.*
+*Updated February 2026. Reflects 9 of 11 original recommendations now implemented. Based on source code exploration of both projects.*
 
 *Annabelle: ~8 MCP packages, ~65 tools. OpenClaw: 300+ TypeScript files, 309 in agents alone, 52 skills, 176k GitHub stars.*
 
@@ -8,7 +8,7 @@
 
 ## Progress Since v1
 
-The original deep dive (January 2026) identified 11 prioritized recommendations. Seven have been implemented:
+The original deep dive (January 2026) identified 11 prioritized recommendations. Nine have been implemented:
 
 | # | Recommendation | Status |
 |---|---|---|
@@ -18,10 +18,10 @@ The original deep dive (January 2026) identified 11 prioritized recommendations.
 | 4 | Conversation History Backfill | ✅ Implemented |
 | 5 | Memory Synthesis (Weekly) | ✅ Implemented |
 | 6 | Code Execution Tool | ⬜ Open |
-| 7 | Subagent Spawning | ⬜ Open |
+| 7 | Subagent Spawning | ✅ Implemented |
 | 8 | File-Based Persona Configuration | ✅ Implemented |
 | 9 | File-Based Skill Loading | ✅ Implemented |
-| 10 | Lazy-Spawn / Idle-Kill | ⬜ Open |
+| 10 | Lazy-Spawn / Idle-Kill | ✅ Implemented |
 | 11 | Shared HTTP Server | ⬜ Open |
 
 This changes the competitive picture materially. Several sections where Annabelle was behind are now at parity or ahead. The reassessment below reflects the current state of the codebase, not aspirational plans.
@@ -76,15 +76,17 @@ All agents in a **single gateway process** with session-level isolation. Agents 
 
 **No change from v1.** Annabelle's process-per-agent model remains superior for isolation, safety, and operational control. OpenClaw's shared-process model remains superior for resource efficiency and configuration simplicity. On a 128GB MacBook Pro, the resource argument remains irrelevant — 200MB per agent × 500+ agents possible.
 
-### Remaining Recommendations
+### What Changed Since v1
 
-**Lazy-spawn and idle-kill (Priority 10).** Spawn agents on first message, kill after configurable idle timeout. Add `lastActivityAt` tracking to AgentManager. Low effort (~50–80 lines), operational cleanliness.
+**Lazy-spawn and idle-kill (Priority 10) are now implemented.** AgentManager registers agents on startup without spawning them. `ensureRunning()` lazy-spawns on first message with deduplication (concurrent callers share one spawn). An idle scanner runs every 5 minutes and kills agents with no activity beyond their `idleTimeoutMinutes` (configurable per-agent, default 30 minutes). `lastActivityAt` tracking, `AgentState` enum (`stopped`, `starting`, `running`, `stopping`), and graceful `stopAgent()` with prompt file cleanup. ~200 lines across `agent-manager.ts` and `orchestrator.ts`.
+
+### Remaining Recommendations
 
 **Shared HTTP server with path routing (Priority 11).** Replace port-per-agent with path-based routing: `POST /agents/annabelle/process-message`. Only matters if agent count grows beyond ~10. Defer unless port management becomes a real problem.
 
 ---
 
-## 3. Subagent Spawning
+## 3. Subagent Spawning ✅ IMPLEMENTED
 
 ### How OpenClaw Works
 
@@ -92,23 +94,49 @@ Agents spawn child agents for parallel work. `sessions_spawn` returns `{ status:
 
 Known issues: session write lock timeouts, model override not applied to subagents — both symptoms of shared-process contention.
 
-### How Annabelle Would Handle This
+### How Annabelle Works — Current State
 
-Annabelle's architecture is **better suited for subagent spawning than OpenClaw's**, precisely because of process isolation. Spawning a subagent means `AgentManager` starts another Thinker process with scoped configuration: parent reference, narrower tool policy, callback URL, timeout. All existing safety infrastructure — health checks, auto-restart limits, cost anomaly detection, halt manager — applies automatically.
+Annabelle now has a **`spawn_subagent` tool** that agents can call to delegate tasks to temporary subagent processes. The implementation leverages the process-per-agent architecture for true isolation.
+
+**How it works:**
+
+1. Parent agent calls `spawn_subagent` with a task description and optional tool restrictions
+2. `AgentManager.spawnSubagent()` creates a new agent definition inheriting the parent's config (LLM provider, model) with `port: 0` for OS-assigned dynamic port allocation
+3. A new Thinker process spawns and announces its actual port via `LISTENING_PORT=XXXXX` on stdout
+4. `AgentManager.waitForPortAnnouncement()` parses the port, creates a client, and waits for health
+5. The task is dispatched to the subagent via `POST /process-message`
+6. The tool **blocks until the subagent finishes** — synchronous from the LLM's perspective
+7. The subagent is **immediately killed and cleaned up** after returning its result
+8. A safety auto-kill timer (default 5 minutes, configurable up to 30) kills hung subagents
+
+**Safety features:**
+
+- **Single-level depth** — `spawn_subagent` is auto-denied for subagents, preventing recursive spawning
+- **Max 5 concurrent subagents per parent** — `subagentsByParent` tracking with concurrency limit
+- **Tool policy inheritance** — subagent tools are a subset of parent's; `deniedTools` merge (parent + subagent + `spawn_subagent`)
+- **Cascade-kill** — stopping a parent agent cascades to all child subagents via `killSubagent()`
+- **Auto-kill timer** — subagents that exceed their timeout are forcefully killed
+- **Prompt file cleanup** — temporary system prompt files are deleted on subagent kill
+
+**Implementation:** `Orchestrator/src/tools/spawn-subagent.ts` (tool definition + handler), `Orchestrator/src/core/agent-manager.ts` (spawnSubagent, killSubagent, waitForPortAnnouncement, cascade-kill), `Orchestrator/src/core/orchestrator.ts` (registerAgentDefinition/unregisterAgentDefinition), `Thinker/src/index.ts` (LISTENING_PORT announcement, agentRef health gate), `Thinker/src/config.ts` (port 0 validation).
 
 ### Which Architecture Is Superior — Updated Assessment
 
-**No change from v1.** OpenClaw is superior in having the feature at all. Annabelle's architecture would be superior for implementing it — process isolation eliminates OpenClaw's known contention issues. This remains the most impactful capability addition for autonomous agent work.
+**Annabelle is now superior.** It has the feature AND the better architecture for it.
 
-### Remaining Recommendations
+Annabelle's process-per-agent model gives subagents true OS-level isolation. Each subagent is a full Thinker process with its own memory space, LLM context, and tool access — no shared state, no write lock contention. OpenClaw's known issues (session write lock timeouts, model override not applied) are structurally impossible in Annabelle's design.
 
-All four original recommendations remain open:
+The synchronous model (tool call blocks until subagent finishes) is simpler than OpenClaw's async model and aligns naturally with how MCP tool calls work. Async can be added later if needed.
 
-1. **Add `spawn_subagent` tool to Orchestrator** — dynamic agent spawning with parent tracking, result callback routing.
-2. **Enforce single-level depth** — `parentAgentId` field, reject nested spawning.
-3. **Inherit parent tool policies** with optional further restriction (never expand beyond parent's permissions).
-4. **Cascade-kill through halt manager** — SIGTERM to parent cascades to children.
-5. **`maxConcurrent` per parent (3–5)** — bounds worst-case resource consumption.
+### No Remaining Recommendations
+
+All five original recommendations are implemented:
+
+1. ✅ **`spawn_subagent` tool in Orchestrator** — dynamic spawning with parent tracking, result return
+2. ✅ **Single-level depth** — `isSubagent` flag, `spawn_subagent` auto-denied for subagents
+3. ✅ **Inherit parent tool policies** — `allowedTools` filtered to parent's subset, `deniedTools` merged
+4. ✅ **Cascade-kill** — `stopAgent()` cascades to all child subagents
+5. ✅ **Max concurrent per parent (5)** — `subagentsByParent` map with `MAX_SUBAGENTS_PER_PARENT` check
 
 ---
 
@@ -321,7 +349,7 @@ All four original recommendations have been implemented:
 
 ## 9. Summary — Revised Priority List
 
-With 7 of 11 recommendations implemented, the remaining 4 are re-ranked by current impact-to-effort ratio.
+With 9 of 11 recommendations implemented, the remaining 2 are re-ranked by current impact-to-effort ratio.
 
 ### Completed ✅
 
@@ -332,31 +360,21 @@ With 7 of 11 recommendations implemented, the remaining 4 are re-ranked by curre
 | 3 | Post-Conversation Fact Extraction | Feb 2026 | Facts caught that LLM missed during task focus. Idle-triggered, deduped. |
 | 4 | Conversation History Backfill | Feb 2026 | Months of past conversations mined for facts. One-time catch-up. |
 | 5 | Memory Synthesis (Weekly) | Feb 2026 | Duplicates merged, contradictions resolved, stale facts flagged. |
+| 7 | Subagent Spawning | Feb 2026 | `spawn_subagent` tool. Dynamic port allocation, cascade-kill, max 5 concurrent per parent. |
 | 8 | File-Based Persona Configuration | Feb 2026 | `instructions.md` per agent. Editable, version-controllable, auto-copied defaults. |
 | 9 | File-Based Skill Loading | Feb 2026 | Agent Skills standard. Coexists with DB playbooks. Progressive disclosure. |
+| 10 | Lazy-Spawn / Idle-Kill | Feb 2026 | Agents spawn on first message, kill after configurable idle timeout. ~200 lines. |
 
 ### Remaining — Re-ranked
 
 **Priority A: Code Execution Tool**
 *Impact: High | Effort: Medium | ~150–250 lines*
 
-Previously Priority 6, now the **single largest capability gap** with OpenClaw's runtime. With session persistence, user learning, vector memory, persona config, and skills all implemented, the inability to improvise by writing and running code is the most visible remaining limitation.
+Previously Priority 6, now the **single largest capability gap** with OpenClaw's runtime. With session persistence, user learning, vector memory, persona config, skills, subagent spawning, and lazy-spawn all implemented, the inability to improvise by writing and running code is the most visible remaining limitation.
 
-New MCP or tool in Filer MCP. Guardian integration for code scanning. Docker sandbox optional but recommended. This also unlocks future value from subagent spawning — subagents that can write and execute code are dramatically more useful than subagents limited to pre-built tools.
+New MCP or tool in Filer MCP. Guardian integration for code scanning. Docker sandbox optional but recommended. This is now even more impactful because subagents that can write and execute code are dramatically more useful than subagents limited to pre-built tools.
 
-**Priority B: Subagent Spawning**
-*Impact: High | Effort: Medium | ~300–400 lines*
-
-Previously Priority 7. Enables parallel work — spawn 3 research subagents instead of doing research sequentially. Annabelle's process-per-agent architecture makes this both safer and simpler to implement than OpenClaw's shared-process version. Touch points: new tool in Orchestrator, AgentManager modifications, cascade-kill in halt manager.
-
-More impactful once code execution exists (subagents that can write code are much more useful), so implementing A before B is recommended.
-
-**Priority C: Lazy-Spawn / Idle-Kill**
-*Impact: Low | Effort: Low | ~50–80 lines*
-
-Previously Priority 10. Operational cleanliness — spawn agents on first message, kill after idle timeout. Not critical on 128GB but good practice. One file changed: `agent-manager.ts`.
-
-**Priority D: Shared HTTP Server**
+**Priority B: Shared HTTP Server**
 *Impact: Low | Effort: Medium | ~200–300 lines*
 
 Previously Priority 11. Architectural cleanup, only matters at 10+ agents. Defer indefinitely unless port management becomes a problem.
@@ -377,6 +395,10 @@ Previously Priority 11. Architectural cleanup, only matters at 10+ agents. Defer
 
 **Skill architecture.** Dual system (file-based + database) with Agent Skills standard compliance and progressive disclosure. OpenClaw has file-only skills with a marketplace. For a solo user, the dual system is more capable.
 
+**Subagent spawning.** Process-per-subagent model with true OS-level isolation. Dynamic port allocation, cascade-kill, max 5 concurrent per parent, single-level depth enforcement, tool policy inheritance. OpenClaw has subagent spawning but suffers from shared-process contention (write lock timeouts, model override bugs). Annabelle's architecture is structurally immune to these issues.
+
+**Agent lifecycle management.** Lazy-spawn on first message, idle-kill after configurable timeout, per-agent state tracking (`stopped`/`starting`/`running`/`stopping`), deduplication of concurrent spawn requests. OpenClaw spawns all agents eagerly on startup with no idle management.
+
 ### Areas at Parity
 
 **Session persistence.** Both use JSONL with compaction. Different implementation details (Annabelle: lazy-loading + cheap compaction model; OpenClaw: write locking + JSONL repair + tree structure). Functionally equivalent.
@@ -389,8 +411,6 @@ Previously Priority 11. Architectural cleanup, only matters at 10+ agents. Defer
 
 **Agent runtime flexibility.** Arbitrary code execution via Pi's 4 core tools. Annabelle cannot improvise. This is the biggest remaining gap. *Closable with Priority A.*
 
-**Subagent spawning.** Parallel work delegation. Annabelle's architecture is better suited for it but doesn't have it yet. *Closable with Priority B.*
-
 **Channel breadth.** 17+ messaging channels vs 2 (Telegram + Claude Desktop). Not a priority for a solo-user system, but a factual gap.
 
 **Voice, devices, browser.** Native apps, STT/TTS, camera, screen, location, CDP + Playwright. Entirely different product category. Not on the roadmap and not needed for the worker assistant use case.
@@ -399,6 +419,6 @@ Previously Priority 11. Architectural cleanup, only matters at 10+ agents. Defer
 
 ### The Strategic Picture
 
-In v1, Annabelle had significant gaps in 5 of 9 comparison areas. After implementing 7 priorities, it now has gaps in **2 areas that matter** (runtime flexibility, subagent spawning) and multiple areas where it's **ahead** of OpenClaw (user learning, memory pipeline, cost efficiency, safety, task management, skill architecture). The remaining 2 gaps are addressable with Priorities A and B — roughly 450–650 lines of new code total.
+In v1, Annabelle had significant gaps in 5 of 9 comparison areas. After implementing 9 priorities, it now has gaps in **1 area that matters** (runtime flexibility / code execution) and multiple areas where it's **ahead** of OpenClaw (user learning, memory pipeline, cost efficiency, safety, task management, skill architecture, subagent spawning). The remaining gap is addressable with Priority A — roughly 150–250 lines of new code.
 
 The core thesis from v1 holds but has strengthened: **Annabelle is a security-hardened, MCP-native orchestration layer** that now also has robust persistence, sophisticated user learning with vector-backed retrieval, and a standards-compliant skill system. The areas where OpenClaw dominates (channel breadth, voice/devices, browser automation, ecosystem scale) are product-category differences, not architectural deficiencies — they reflect a different product vision (platform vs personal assistant), not a worse one.

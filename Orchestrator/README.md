@@ -233,15 +233,16 @@ Or using tsx for development:
 
 ## Multi-Agent Architecture
 
-The Orchestrator manages multiple Thinker agent instances, each running as a separate process with its own LLM config, system prompt, and tool permissions.
+The Orchestrator manages multiple Thinker agent instances, each running as a separate process with its own LLM config, system prompt, and tool permissions. Agents are **lazy-spawned** on first message and **idle-killed** after inactivity.
 
 ### Message Flow
 
 1. **Orchestrator polls Telegram** via `ChannelPoller` (replaces Thinker's old direct polling)
 2. **MessageRouter** resolves which agent handles each message based on channel bindings
-3. **AgentManager** spawns Thinker processes, monitors health, and auto-restarts crashed agents
+3. **AgentManager.ensureRunning()** lazy-spawns the agent if not already running (deduplicates concurrent requests)
 4. **Orchestrator dispatches** the message to the resolved agent via HTTP POST
 5. **Orchestrator delivers** the response back to Telegram and stores it in Memory
+6. **Idle scanner** (every 5 min) kills agents with no activity beyond their `idleTimeoutMinutes`
 
 ```
 Telegram message arrives
@@ -249,6 +250,8 @@ Telegram message arrives
 ChannelPoller picks it up
        ↓
 MessageRouter resolves agent (exact chatId → wildcard → default)
+       ↓
+AgentManager.ensureRunning(agentId)  ← lazy-spawn if stopped
        ↓
 AgentManager.getClient(agentId).processMessage(msg)
        ↓
@@ -304,6 +307,7 @@ Agents are defined in a JSON config file (set via `AGENTS_CONFIG_PATH` env var):
 | `allowedTools` | Glob patterns of permitted tools (empty = all) |
 | `deniedTools` | Glob patterns of denied tools (evaluated after allow) |
 | `maxSteps` | Max ReAct steps per message (1-50) |
+| `idleTimeoutMinutes` | Minutes of inactivity before idle-kill (default: 30) |
 | `costControls` | Optional cost control config (see below) |
 
 ### Cost Controls
@@ -361,6 +365,35 @@ When a Thinker agent calls a tool via `POST /tools/call`, Orchestrator checks th
 - Empty `allowedTools` = all tools permitted (only `deniedTools` evaluated)
 
 Glob matching uses `*` as a wildcard (e.g., `gmail_*` matches `gmail_send_email`).
+
+### Subagent Spawning
+
+Agents can spawn temporary subagent processes for parallel task delegation via the `spawn_subagent` tool.
+
+**How it works:**
+
+1. Agent calls `spawn_subagent` with a task description and optional tool/model overrides
+2. `AgentManager.spawnSubagent()` creates a new Thinker process with `port: 0` (OS-assigned dynamic port)
+3. The subagent announces its actual port via `LISTENING_PORT=XXXXX` on stdout
+4. The task is dispatched to the subagent; the tool call **blocks until the subagent finishes**
+5. The subagent is immediately killed and cleaned up after returning its result
+
+**Safety features:**
+
+- **Single-level depth** — subagents cannot spawn their own subagents (`spawn_subagent` auto-denied)
+- **Max 5 concurrent** per parent agent
+- **Tool policy inheritance** — subagent tools are a subset of parent's, `deniedTools` are merged
+- **Cascade-kill** — stopping a parent kills all child subagents
+- **Auto-kill timer** — subagents that exceed their timeout (default 5 min, max 30) are forcefully killed
+
+### Lazy-Spawn / Idle-Kill
+
+Agents are registered on startup but not spawned until their first message arrives. This reduces resource usage when agents aren't active.
+
+- **`ensureRunning(agentId)`** — lazy-spawns with deduplication (concurrent callers share one spawn)
+- **Idle scanner** runs every 5 minutes, kills agents with no activity beyond their `idleTimeoutMinutes` (default: 30)
+- **Agent states:** `stopped` → `starting` → `running` → `stopping` → `stopped`
+- Subagents are excluded from idle scanning (they have their own auto-kill timer)
 
 ### Single-Agent Fallback
 

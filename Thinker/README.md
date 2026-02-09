@@ -14,7 +14,9 @@ Thinker is a passive AI reasoning engine that receives messages from Orchestrato
 - **Persona stored in Memorizer** profiles
 - **Dynamic tool selection** - keyword-based routing selects relevant tool groups per message
 - **Playbook seeding** - 12 default playbooks seeded on first startup
-- **Port 8006** for health checks
+- **Port 8006** for default agent; **port 0** for subagents (OS-assigned dynamic port)
+- **Lazy-spawn** - Orchestrator registers agents at startup, spawns only on first message
+- **Subagent support** - agents can spawn temporary Thinker subprocesses via `spawn_subagent`
 - **TypeScript** consistent with other MCPs
 - **Cost safeguards** - circuit breaker, rate limiting, reduced maxSteps (see Safety section)
 
@@ -473,8 +475,8 @@ inngest.createFunction(
 ```
 Thinker/
 ├── src/
-│   ├── index.ts                 # Entry point, HTTP server (POST /process-message)
-│   ├── config.ts                # Environment config loader (Zod)
+│   ├── index.ts                 # Entry point, HTTP server, LISTENING_PORT= announcement
+│   ├── config.ts                # Environment config loader (Zod), port 0 for subagents
 │   │
 │   ├── llm/
 │   │   ├── types.ts             # LLMProvider interface
@@ -494,12 +496,19 @@ Thinker/
 │   │   └── index.ts             # Barrel export
 │   │
 │   ├── agent/
-│   │   ├── loop.ts              # ReAct agent loop
+│   │   ├── loop.ts              # ReAct agent loop + DEFAULT_SYSTEM_PROMPT
 │   │   ├── tool-selector.ts     # Dynamic tool group selection by keywords
+│   │   ├── skill-loader.ts      # Inngest skill loader (proactive tasks)
+│   │   ├── fact-extractor.ts    # Extract facts from conversation for memory
 │   │   ├── playbook-seed.ts     # 12 default playbooks seeded on first startup
 │   │   ├── playbook-cache.ts    # In-memory playbook cache
 │   │   ├── playbook-classifier.ts # Playbook keyword matching
 │   │   ├── types.ts             # Agent state types
+│   │   └── index.ts             # Barrel export (Agent class)
+│   │
+│   ├── session/
+│   │   ├── store.ts             # Session file persistence (~/.annabelle/sessions/)
+│   │   ├── types.ts             # Session types
 │   │   └── index.ts             # Barrel export
 │   │
 │   ├── tracing/
@@ -509,7 +518,8 @@ Thinker/
 │   │   └── index.ts             # Barrel export
 │   │
 │   └── utils/
-│       └── sanitize.ts          # Input sanitization utilities
+│       ├── sanitize.ts          # Input sanitization utilities
+│       └── recover-tool-call.ts # Recover tool calls leaked as text by LLM
 │
 ├── package.json
 ├── tsconfig.json
@@ -538,13 +548,15 @@ Shared/
 
 ```
 1. Orchestrator receives Telegram message (via ChannelPoller)
-   └─→ MessageRouter resolves agent
+   └─→ MessageRouter resolves target agent
+   └─→ ensureRunning() — lazy-spawns agent if stopped
    └─→ POST /process-message to Thinker
 
 2. Thinker receives message:
+   └─→ /health returns 503 until agentRef is set (init gate)
    └─→ Create trace_id
    └─→ Select relevant tool groups (tool-selector.ts)
-   └─→ Load persona from Memory MCP
+   └─→ Load persona from session or persona file
    └─→ Retrieve relevant facts
    └─→ Build conversation context
 
@@ -552,9 +564,11 @@ Shared/
    └─→ System prompt + context + user message
    └─→ Available tools as functions (filtered by tool selector)
    └─→ Response: content and/or tool_calls
+   └─→ If LLM leaks tool call as text → recover-tool-call.ts detects & executes
 
 4. If tool_calls:
    └─→ Execute each via Orchestrator /tools/call
+   └─→ If spawn_subagent: Orchestrator spawns temporary Thinker on dynamic port
    └─→ Collect results
    └─→ Feed back to LLM
    └─→ Repeat until final response (maxSteps: 8)
@@ -563,6 +577,10 @@ Shared/
    └─→ Orchestrator sends via send_telegram
    └─→ Orchestrator stores conversation in Memory MCP
    └─→ Log trace complete
+
+6. Idle scanner (every 5 min):
+   └─→ Agents idle beyond idleTimeoutMinutes are stopped
+   └─→ Re-spawned on next message (lazy-spawn)
 ```
 
 ---
@@ -692,9 +710,11 @@ cd Shared && npx tsc --noEmit
 | Chat routing | Orchestrator's ChannelPoller + MessageRouter dispatch to agents |
 | Message delivery | Passive — Thinker receives messages via POST /process-message |
 | Orchestrator API | HTTP REST (/tools/list, /tools/call) |
-| Port | 8006 |
+| Port | 8006 (primary), 0 for subagents (OS-assigned dynamic port) |
 | Language | TypeScript |
 | Persona | Technical assistant (direct, concise) |
+| Subagent model | Synchronous — tool call blocks until subagent returns |
+| Agent lifecycle | Lazy-spawn on first message, idle-kill after inactivity |
 
 ---
 
