@@ -494,19 +494,19 @@ Enables parallel work — the most requested capability for autonomous agents. Y
 
 Touch points: new `spawn_subagent` tool in Orchestrator, `AgentManager` modifications for dynamic agent spawning with parent tracking, cascade-kill logic in halt manager, result callback routing. `Orchestrator/src/agents/agent-manager.ts` (spawn/track/kill), `Orchestrator/src/core/tool-router.ts` (new tool), `Orchestrator/src/core/halt-manager.ts` (cascade logic). No Thinker changes — subagents are just Thinker instances with additional metadata.
 
-### ⬜ Priority 8: File-Based Persona Configuration
-**Impact: Medium | Effort: Low | Codebase change: ~50–100 lines**
+### ✅ Priority 8: File-Based Persona Configuration
+**Impact: Medium | Effort: Low | Codebase change: ~80 lines | Implemented Feb 2026**
 
-Improves developer experience for tuning agent behavior. Small change, immediate quality-of-life improvement.
+Agent persona moved from a hardcoded `DEFAULT_SYSTEM_PROMPT` constant to an editable markdown file at `~/.annabelle/agents/{agentId}/instructions.md`. The default persona is version-controlled in the codebase at `Thinker/defaults/personas/annabelle/instructions.md` and auto-copied to the runtime directory by `start-all.sh` on first startup (never overwrites user edits). The Thinker loads the persona file at startup and uses it in the system prompt priority chain: `THINKER_SYSTEM_PROMPT_PATH` > persona file > profile override > hardcoded `DEFAULT_SYSTEM_PROMPT`. Both `buildContext()` (user messages) and `processProactiveTask()` (Inngest skills) use the same chain.
 
-Create `~/.annabelle/agents/<agentId>/instructions.md`. Add file-reading logic to Thinker's context manager. Touch points: `Thinker/src/agent/loop.ts` (read file at session start), `Thinker/src/config.ts` (new config path). Optionally, a setup script that initializes the directory with `git init`. No changes to Memory MCP — profiles continue to work for dynamic state.
+Files added: `Thinker/defaults/personas/annabelle/instructions.md`. Files modified: `Thinker/src/agent/loop.ts` (persona loading in `initialize()`, updated priority chain in `buildContext()` and `processProactiveTask()`), `Thinker/src/config.ts` (`personaDir` config field + `THINKER_PERSONA_DIR` env var), `start-all.sh` (auto-creates `~/.annabelle/agents/annabelle/` and copies default persona). No changes to Orchestrator or other MCPs.
 
-### ⬜ Priority 9: File-Based Skill Loading
-**Impact: Medium | Effort: Low-Medium | Codebase change: ~100–150 lines**
+### ✅ Priority 9: File-Based Skill Loading
+**Impact: Medium | Effort: Low-Medium | Codebase change: ~200 lines | Implemented Feb 2026**
 
-Complements existing playbooks with curated, version-controlled skills. Low risk, additive change.
+File-based skills compatible with the [Agent Skills](https://agentskills.io) open standard (by Anthropic) now coexist with database-driven playbooks. Skills are directories containing a `SKILL.md` file with YAML frontmatter + markdown instructions, placed in `~/.annabelle/skills/{skill-name}/SKILL.md`. Annabelle-specific extensions (`keywords`, `priority`, `required_tools`) use the spec's standard `metadata` block. Skills with keywords are matched via `classifyMessage()` identically to DB playbooks. Skills without keywords (pure agentskills.io format) are injected as an `<available_skills>` XML block in the system prompt for progressive disclosure — the LLM reads descriptions and decides when to activate. `start-all.sh` creates the skills directory on startup. The `yaml` npm package (zero-dependency, ~30KB) handles frontmatter parsing.
 
-Add a skill scanner to Thinker that reads `~/.annabelle/skills/` at startup, parses YAML frontmatter + Markdown instructions, and registers them alongside database playbooks. Touch points: new `Thinker/src/agent/skill-loader.ts`, modifications to `Thinker/src/agent/playbook-classifier.ts` (merge file-based skills into matching). No database changes — file-based skills coexist with database playbooks.
+Files added: `Thinker/src/agent/skill-loader.ts` (SKILL.md scanner + parser), `Thinker/tests/unit/skill-loader.test.ts` (17 tests). Files modified: `Thinker/src/agent/playbook-cache.ts` (merges file skills with DB playbooks, `getDescriptionOnlySkills()` method), `Thinker/src/agent/playbook-classifier.ts` (`source: 'database' | 'file'` field on `CachedPlaybook`), `Thinker/src/agent/loop.ts` (progressive disclosure injection in `buildContext()`), `Thinker/src/config.ts` (`skillsDir` config field + `THINKER_SKILLS_DIR` env var), `Thinker/package.json` (`yaml` dependency), `start-all.sh` (creates `~/.annabelle/skills/`). No changes to Orchestrator, Memorizer, or other MCPs.
 
 ### ⬜ Priority 10: Lazy-Spawn / Idle-Kill for Agents
 **Impact: Low | Effort: Low | Codebase change: ~50–80 lines**

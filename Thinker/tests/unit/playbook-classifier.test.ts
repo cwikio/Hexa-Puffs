@@ -13,6 +13,7 @@ const makePlaybook = (
   instructions: 'test instructions',
   priority: 0,
   requiredTools: [],
+  source: 'database',
   ...overrides,
 });
 
