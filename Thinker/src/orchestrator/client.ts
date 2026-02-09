@@ -342,6 +342,30 @@ export class OrchestratorClient {
   }
 
   /**
+   * List stored facts from Memory MCP (for dedup context in fact extraction)
+   */
+  async listFacts(
+    agentId: string,
+    limit: number = 30,
+    trace?: TraceContext
+  ): Promise<Array<{ fact: string; category: string }>> {
+    const response = await this.executeTool(
+      'memory_list_facts',
+      { agent_id: agentId, limit },
+      trace
+    );
+
+    if (!response.success || !response.result) {
+      return [];
+    }
+
+    const result = response.result as {
+      facts?: Array<{ fact: string; category: string }>;
+    };
+    return result.facts || [];
+  }
+
+  /**
    * Search conversations in Memory MCP
    */
   async searchConversations(

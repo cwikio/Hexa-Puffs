@@ -25,6 +25,16 @@ export const LogLevelSchema = z.enum(['debug', 'info', 'warn', 'error']);
 export type LogLevel = z.infer<typeof LogLevelSchema>;
 
 /**
+ * Post-conversation fact extraction configuration schema
+ */
+export const FactExtractionConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  idleMs: z.number().int().min(30_000).default(5 * 60 * 1000), // 5 min idle before extraction
+  maxTurns: z.number().int().min(2).default(10), // max recent turns to analyze
+  confidenceThreshold: z.number().min(0).max(1).default(0.7),
+});
+
+/**
  * Session persistence configuration schema
  */
 export const SessionConfigSchema = z.object({
@@ -95,6 +105,9 @@ export const ConfigSchema = z.object({
   // Compaction model — dedicated cheap model for session summarization
   compactionProvider: LLMProviderSchema.default('groq'),
   compactionModel: z.string().default('llama-3.1-8b-instant'),
+
+  // Post-conversation fact extraction
+  factExtraction: FactExtractionConfigSchema.default({}),
 
   // Cost controls (optional, configured via Orchestrator env vars)
   costControl: CostControlSchema.optional(),
@@ -168,6 +181,14 @@ export function loadConfig(): Config {
     // Compaction model — dedicated cheap model for session summarization
     compactionProvider: process.env.THINKER_COMPACTION_PROVIDER || 'groq',
     compactionModel: process.env.THINKER_COMPACTION_MODEL || 'llama-3.1-8b-instant',
+
+    // Post-conversation fact extraction
+    factExtraction: {
+      enabled: parseBoolean(process.env.THINKER_FACT_EXTRACTION_ENABLED, true),
+      idleMs: parseInteger(process.env.THINKER_FACT_EXTRACTION_IDLE_MS, 5 * 60 * 1000),
+      maxTurns: parseInteger(process.env.THINKER_FACT_EXTRACTION_MAX_TURNS, 10),
+      confidenceThreshold: parseNumber(process.env.THINKER_FACT_EXTRACTION_CONFIDENCE, 0.7),
+    },
 
     // Cost controls — only built when explicitly enabled via env var
     ...(parseBoolean(process.env.THINKER_COST_CONTROL_ENABLED, false) ? {

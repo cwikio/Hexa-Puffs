@@ -17,6 +17,7 @@ import { PlaybookCache } from './playbook-cache.js';
 import { classifyMessage } from './playbook-classifier.js';
 import { seedPlaybooks } from './playbook-seed.js';
 import { selectToolsForMessage } from './tool-selector.js';
+import { extractFactsFromConversation } from './fact-extractor.js';
 
 /**
  * Default system prompt for the agent
@@ -136,6 +137,9 @@ export class Agent {
   // Session persistence
   private sessionStore: SessionStore;
 
+  // Post-conversation fact extraction idle timers (per chatId)
+  private extractionTimers: Map<string, NodeJS.Timeout> = new Map();
+
   constructor(config: Config) {
     this.config = config;
     this.orchestrator = new OrchestratorClient(config);
@@ -155,6 +159,10 @@ export class Agent {
 
     if (config.sessionConfig.enabled) {
       console.log(`Session persistence enabled (dir: ${config.sessionsDir}, compaction: ${config.sessionConfig.compactionEnabled})`);
+    }
+
+    if (config.factExtraction.enabled) {
+      console.log(`Fact extraction enabled (idle: ${config.factExtraction.idleMs / 1000}s, maxTurns: ${config.factExtraction.maxTurns})`);
     }
   }
 
@@ -614,6 +622,9 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
         await this.logger.logResponseSent(trace, message.chatId, responseText.length);
       }
 
+      // Schedule post-conversation fact extraction (resets on each message)
+      this.scheduleFactExtraction(message.chatId);
+
       // Invalidate playbook cache if any skill-modifying tools were called
       const skillTools = ['memory_store_skill', 'memory_update_skill', 'memory_delete_skill'];
       if (toolsUsed.some((t) => skillTools.includes(t))) {
@@ -786,6 +797,100 @@ Complete the task step by step, using your available tools. When done, provide a
     }
   }
 
+  // ─── Post-Conversation Fact Extraction ─────────────────────────
+
+  /**
+   * Schedule fact extraction for a chat after idle timeout.
+   * Resets the timer on each new message so extraction only runs
+   * after the conversation goes quiet.
+   */
+  private scheduleFactExtraction(chatId: string): void {
+    if (!this.config.factExtraction.enabled) return;
+
+    // Clear existing timer for this chat
+    const existing = this.extractionTimers.get(chatId);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      this.extractionTimers.delete(chatId);
+      this.runFactExtraction(chatId).catch((error) => {
+        console.warn('[fact-extraction] Error (non-fatal):', error);
+      });
+    }, this.config.factExtraction.idleMs);
+
+    this.extractionTimers.set(chatId, timer);
+  }
+
+  /**
+   * Run post-conversation fact extraction for a chat.
+   * Reviews recent turns with awareness of existing facts to catch
+   * information the LLM didn't store during task-focused exchanges.
+   */
+  private async runFactExtraction(chatId: string): Promise<void> {
+    const state = this.conversationStates.get(chatId);
+    if (!state) return;
+
+    // Need enough conversation to extract from
+    const minMessages = 4; // at least 2 exchanges
+    if (state.messages.length < minMessages) return;
+
+    // Skip if already extracted for the current conversation state
+    if (state.lastExtractionAt && state.lastExtractionAt >= state.lastActivity) return;
+
+    console.log(`[fact-extraction] Running for chat ${chatId} (${state.messages.length} messages)`);
+
+    try {
+      // Gather recent text messages
+      const maxMessages = this.config.factExtraction.maxTurns * 2;
+      const recentMessages = state.messages
+        .filter(
+          (m): m is { role: 'user' | 'assistant'; content: string } =>
+            (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string',
+        )
+        .slice(-maxMessages);
+
+      if (recentMessages.length < minMessages) return;
+
+      // Fetch existing facts for dedup context
+      const existingFacts = await this.orchestrator.listFacts(this.config.thinkerAgentId);
+      const knownFactStrings = existingFacts.map((f) => `${f.fact} (${f.category})`);
+
+      // Run extraction with the cheap compaction model
+      const model = this.modelFactory.getCompactionModel();
+      const facts = await extractFactsFromConversation(
+        model,
+        recentMessages,
+        knownFactStrings,
+        this.config.factExtraction.confidenceThreshold,
+      );
+
+      if (facts.length === 0) {
+        console.log('[fact-extraction] No new facts found');
+        state.lastExtractionAt = Date.now();
+        return;
+      }
+
+      // Store each extracted fact via Orchestrator → Memorizer
+      let stored = 0;
+      for (const fact of facts) {
+        const success = await this.orchestrator.storeFact(
+          this.config.thinkerAgentId,
+          fact.fact,
+          fact.category,
+        );
+        if (success) stored++;
+      }
+
+      state.lastExtractionAt = Date.now();
+      console.log(`[fact-extraction] Stored ${stored}/${facts.length} new facts for chat ${chatId}`);
+    } catch (error) {
+      console.warn(
+        '[fact-extraction] Failed (non-fatal):',
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
   /**
    * Clean up old conversation states
    */
@@ -795,6 +900,12 @@ Complete the task step by step, using your available tools. When done, provide a
     for (const [chatId, state] of this.conversationStates) {
       if (now - state.lastActivity > maxAgeMs) {
         this.conversationStates.delete(chatId);
+        // Clear any pending extraction timer for this chat
+        const timer = this.extractionTimers.get(chatId);
+        if (timer) {
+          clearTimeout(timer);
+          this.extractionTimers.delete(chatId);
+        }
       }
     }
   }

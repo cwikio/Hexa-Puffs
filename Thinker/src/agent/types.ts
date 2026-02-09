@@ -11,6 +11,8 @@ export interface AgentState {
   compactionSummary?: string;
   /** Timestamp of last compaction, used for cooldown tracking */
   lastCompactionAt?: number;
+  /** Timestamp of last post-conversation fact extraction */
+  lastExtractionAt?: number;
 }
 
 /**
