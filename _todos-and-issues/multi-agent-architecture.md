@@ -1,4 +1,16 @@
-# Multi-Agent Architecture: Priorities 7, 10, 11
+# Multi-Agent Architecture
+
+## Completed Work (Phases 1-3)
+
+The original multi-agent plan (Phases 1-3) is fully implemented:
+
+- **Phase 1 — Polling moved to Orchestrator**: `ChannelManager` (channel-poller.ts), `ThinkerClient`, `POST /process-message` endpoint. Thinker no longer polls or sends responses directly.
+- **Phase 2 — Multi-agent config & spawn**: `AgentManager` spawns Thinker processes from `agents.json`. Per-agent LLM config, system prompts, cost controls with anomaly detection.
+- **Phase 3 — Routing & tool policies**: `MessageRouter` resolves (channel, chatId) → agentId. `ToolRouter` enforces per-agent allow/deny glob patterns. Thinker's direct Telegram client removed.
+
+---
+
+## Remaining Priorities (7, 10, 11)
 
 *Analysis of remaining agent lifecycle priorities from the Annabelle vs OpenClaw deep dive.*
 
