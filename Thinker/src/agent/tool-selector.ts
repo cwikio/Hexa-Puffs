@@ -6,7 +6,7 @@ import type { CoreTool } from 'ai';
  */
 const TOOL_GROUPS: Record<string, string[]> = {
   core: ['send_telegram', 'store_fact', 'search_memories', 'get_status'],
-  search: ['searcher_web_search', 'searcher_news_search'],
+  search: ['searcher_web_search', 'searcher_news_search', 'searcher_image_search'],
   memory: ['memory_*'],
   email: [
     'gmail_list_emails', 'gmail_get_email', 'gmail_send_email', 'gmail_reply_email',
@@ -53,6 +53,8 @@ const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
     groups: ['browser'] },
   { pattern: /cron|remind me|recurring|every\s+(day|hour|week|minute|morning|evening|\d)|daily at|weekly|hourly|schedule.*(task|job|remind)|per\s+(minute|hour|day|week)|for\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(minute|hour|day|week)|\d+\s*times|once\s+a\s+(day|week|hour|minute)|repeat/i,
     groups: ['jobs'] },
+  { pattern: /photo|picture|image|pic|show\s?me|gallery|wallpaper/i,
+    groups: ['search', 'telegram'] },
   { pattern: /status|health|mcp/i,
     groups: [] }, // core only
 ];

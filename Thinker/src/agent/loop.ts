@@ -81,6 +81,12 @@ When you need current information (weather, sports scores, news, real-time data)
 - freshness: Time filter - use "24h" for today's info (optional)
 Do NOT include freshness unless specifically needed for recent results.
 
+## Image Search
+When the user asks for photos, pictures, or images, use the searcher_image_search tool to find them.
+- It returns direct image URLs (image_url) and thumbnails (thumbnail_url).
+- You can send these images directly via telegram_send_media — it accepts URLs, not just local files.
+- For multiple images, send each one separately with telegram_send_media.
+
 ## Email (Gmail)
 You can send, read, and manage emails via Gmail. Key tools:
 - gmail_send_email: Send a new email (to, subject, body required; cc, bcc optional)
