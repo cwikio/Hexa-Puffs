@@ -67,6 +67,9 @@ import {
   synthesizeFactsToolDefinition,
   SynthesizeFactsInputSchema,
   handleSynthesizeFacts,
+  backfillEmbeddingsToolDefinition,
+  BackfillEmbeddingsInputSchema,
+  handleBackfillEmbeddings,
 } from './tools/index.js';
 
 export function createServer(): McpServer {
@@ -233,6 +236,15 @@ export function createServer(): McpServer {
     inputSchema: SynthesizeFactsInputSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     handler: async (params) => handleSynthesizeFacts(params),
+  });
+
+  // Embeddings
+  registerTool(server, {
+    name: 'backfill_embeddings',
+    description: backfillEmbeddingsToolDefinition.description,
+    inputSchema: BackfillEmbeddingsInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleBackfillEmbeddings(params),
   });
 
   return server;

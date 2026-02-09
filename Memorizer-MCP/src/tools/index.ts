@@ -83,6 +83,12 @@ export {
   handleSynthesizeFacts,
 } from './synthesis.js';
 
+export {
+  backfillEmbeddingsToolDefinition,
+  BackfillEmbeddingsInputSchema,
+  handleBackfillEmbeddings,
+} from './backfill-embeddings.js';
+
 // Import all definitions for convenience
 import { storeFactToolDefinition, listFactsToolDefinition, deleteFactToolDefinition, updateFactToolDefinition } from './facts.js';
 import { storeConversationToolDefinition, searchConversationsToolDefinition } from './conversations.js';
@@ -99,6 +105,7 @@ import {
 } from './skills.js';
 import { backfillExtractFactsToolDefinition } from './backfill.js';
 import { synthesizeFactsToolDefinition } from './synthesis.js';
+import { backfillEmbeddingsToolDefinition } from './backfill-embeddings.js';
 
 export const allToolDefinitions = [
   // Facts
@@ -128,4 +135,6 @@ export const allToolDefinitions = [
   // Backfill & Synthesis
   backfillExtractFactsToolDefinition,
   synthesizeFactsToolDefinition,
+  // Embeddings
+  backfillEmbeddingsToolDefinition,
 ];

@@ -4,7 +4,8 @@ import { dirname } from 'path';
 import { getConfig } from '../config/index.js';
 import { DatabaseError } from '../utils/errors.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
-import { SCHEMA_SQL, MIGRATIONS_SQL } from './schema.js';
+import { SCHEMA_SQL, MIGRATIONS_SQL, setupVectorSchema } from './schema.js';
+import * as sqliteVec from 'sqlite-vec';
 
 let db: Database.Database | null = null;
 
@@ -25,6 +26,18 @@ export function getDatabase(): Database.Database {
       db.pragma('journal_mode = WAL');
       db.pragma('foreign_keys = ON');
 
+      // Load sqlite-vec extension for vector search
+      let sqliteVecLoaded = false;
+      try {
+        sqliteVec.load(db);
+        sqliteVecLoaded = true;
+        logger.info('sqlite-vec extension loaded');
+      } catch (error) {
+        logger.warn('Failed to load sqlite-vec extension — vector search disabled', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       // Initialize schema
       db.exec(SCHEMA_SQL);
 
@@ -36,6 +49,9 @@ export function getDatabase(): Database.Database {
           // Column likely already exists — safe to ignore
         }
       }
+
+      // Set up FTS5 + vector search schema (idempotent)
+      setupVectorSchema(db, config.embedding.dimensions, sqliteVecLoaded);
 
       logger.info('Database initialized', { path: dbPath });
     } catch (error) {

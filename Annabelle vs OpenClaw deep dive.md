@@ -452,12 +452,20 @@ Files added: `Thinker/src/session/store.ts`, `types.ts`, `index.ts`. Files modif
 
 **Remaining gap:** Soft-trimming for large tool results (head+tail pattern for results >4K chars) is not yet implemented.
 
-### ⬜ Priority 2: Vector Memory (sqlite-vec + Hybrid Search)
-**Impact: High | Effort: Medium-High | Codebase change: ~400–500 lines**
+### ✅ Priority 2: Vector Memory (sqlite-vec + Hybrid Search)
+**Impact: High | Effort: Medium-High | Codebase change: ~500 lines | Implemented Feb 2026**
 
-The second largest gap. As fact count grows, keyword matching becomes actively harmful — missing relevant facts and returning irrelevant ones. Vector search transforms memory from a simple lookup to genuine understanding.
+`retrieve_memories` now uses a three-tier hybrid search replacing the old `LIKE %keyword%` approach. When an embedding provider is configured, queries run through **vector similarity** (sqlite-vec `vec0` table with cosine distance) and **FTS5 full-text search** (porter stemming + BM25 ranking) in parallel. Results are combined via min-max normalized weighted scoring (60% vector, 40% text, configurable). Graceful degradation: no embedding provider → FTS5-only; FTS5 fails → LIKE fallback; both fail → empty results, never errors.
 
-The change is primarily in Memory MCP: add `sqlite-vec` as a dependency, create a `vec_facts` table, add embedding computation on `store_fact`, add vector search path in `retrieve_memories`, implement hybrid scoring. Touch points: `Memorizer-MCP/src/db/` (schema + queries), `Memorizer-MCP/src/embeddings/` (new module for local + API providers), `Memorizer-MCP/src/tools/` (modified retrieval logic). A migration script for existing facts. No changes to Orchestrator or Thinker — the memory interface stays the same.
+**Embedding providers** follow the same factory + lazy wrapper pattern as `ai-provider.ts`: Ollama (raw `fetch` to `/api/embed`) and LM Studio (via `openai` npm package). Both are local/private — no data leaves the machine. Default provider is `none` (FTS5-only, zero-config). Key discovery: sqlite-vec requires `BigInt` for rowid on INSERT in better-sqlite3.
+
+**Database changes:** FTS5 external content table (`facts_fts`) with auto-sync triggers on INSERT/UPDATE/DELETE. `vec_facts` vec0 virtual table (768-dim default for `nomic-embed-text`). Both are auto-backfilled on first startup for pre-existing facts.
+
+**New tool:** `backfill_embeddings` — batch-embeds facts without vectors, call repeatedly until remaining is 0. All existing fact tools (`store_fact`, `update_fact`, `delete_fact`, `synthesize_facts`, `backfill_extract_facts`) now maintain embeddings automatically. Embedding failures never block fact storage.
+
+Files added: `src/embeddings/provider.ts`, `ollama-provider.ts`, `lmstudio-provider.ts`, `index.ts`, `fact-embeddings.ts`, `src/tools/backfill-embeddings.ts`. Files modified: `src/config/schema.ts`, `src/config/index.ts`, `src/db/schema.ts`, `src/db/index.ts`, `src/tools/memory.ts`, `facts.ts`, `synthesis.ts`, `backfill.ts`, `index.ts`, `src/server.ts`, `package.json`. Tests added: `tests/unit/vector-search.test.ts` (12 tests), `hybrid-search.test.ts` (11 tests), `embeddings.test.ts` (3 tests). No changes to Orchestrator or Thinker — the memory interface stays the same.
+
+Env vars: `EMBEDDING_PROVIDER` (`none`|`ollama`|`lmstudio`), `OLLAMA_EMBEDDING_BASE_URL`, `OLLAMA_EMBEDDING_MODEL`, `LMSTUDIO_EMBEDDING_BASE_URL`, `LMSTUDIO_EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS`, `EMBEDDING_VECTOR_WEIGHT`, `EMBEDDING_TEXT_WEIGHT`.
 
 ### ✅ Priority 3: Post-Conversation Fact Extraction
 **Impact: High | Effort: Low-Medium | Codebase change: ~100–150 lines | Implemented Feb 2026**

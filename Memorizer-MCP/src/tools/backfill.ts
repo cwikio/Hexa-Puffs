@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getDatabase, type ConversationRow } from '../db/index.js';
 import { getFactExtractor } from '../services/fact-extractor.js';
+import { embedFact } from '../embeddings/fact-embeddings.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
@@ -110,7 +111,9 @@ export async function handleBackfillExtractFacts(
 
         if (!result.skipped && result.facts.length > 0) {
           for (const fact of result.facts) {
-            insertFact.run(agent_id, fact.fact, fact.category, conv.id, fact.confidence);
+            const insertResult = insertFact.run(agent_id, fact.fact, fact.category, conv.id, fact.confidence);
+            const factId = Number(insertResult.lastInsertRowid);
+            await embedFact(factId, fact.fact);
             totalFactsExtracted++;
           }
         }
