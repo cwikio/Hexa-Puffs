@@ -115,6 +115,12 @@ AGENTS_DIR="$HOME/.annabelle/agents"
 SKILLS_DIR="$HOME/.annabelle/skills"
 mkdir -p "$AGENTS_DIR" "$SKILLS_DIR"
 
+# Git-init agents dir for passive change tracking of persona edits
+if [ ! -d "$AGENTS_DIR/.git" ]; then
+  git -C "$AGENTS_DIR" init -q
+  echo -e "  ${GREEN}✓ Initialized git in $AGENTS_DIR for change tracking${RESET}"
+fi
+
 # Copy default persona if not already present (never overwrites user edits)
 ANNABELLE_PERSONA_DIR="$AGENTS_DIR/annabelle"
 ANNABELLE_PERSONA_FILE="$ANNABELLE_PERSONA_DIR/instructions.md"
@@ -124,6 +130,8 @@ if [ ! -f "$ANNABELLE_PERSONA_FILE" ]; then
     mkdir -p "$ANNABELLE_PERSONA_DIR"
     cp "$DEFAULT_PERSONA_SRC" "$ANNABELLE_PERSONA_FILE"
     echo -e "  ${GREEN}✓ Copied default Annabelle persona to $ANNABELLE_PERSONA_FILE${RESET}"
+    git -C "$AGENTS_DIR" add -A && git -C "$AGENTS_DIR" commit -q -m "Initial default persona"
+    echo -e "  ${GREEN}✓ Committed initial persona to git${RESET}"
   else
     echo -e "  ${YELLOW}⚠ Default persona source not found at $DEFAULT_PERSONA_SRC${RESET}"
   fi
