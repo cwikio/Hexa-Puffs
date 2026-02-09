@@ -54,6 +54,7 @@ export {
   handleListTelegramSubscriptions,
   handleClearTelegramSubscriptions,
 } from './telegram-realtime.js';
+export { spawnSubagentToolDefinition, handleSpawnSubagent } from './spawn-subagent.js';
 
 export type { StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
 

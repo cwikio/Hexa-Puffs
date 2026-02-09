@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
+import type { AddressInfo } from 'net';
 import { loadConfig, validateProviderConfig, Config } from './config.js';
 import { Agent } from './agent/index.js';
 import { getProviderDisplayName } from './llm/providers.js';
@@ -111,9 +112,12 @@ async function main() {
   // Create and start HTTP server
   const app = createServer(config, startTime);
 
-  app.listen(config.thinkerPort, () => {
-    console.log(`HTTP server running on port ${config.thinkerPort}`);
-    console.log(`Health check: http://localhost:${config.thinkerPort}/health`);
+  const server = app.listen(config.thinkerPort, () => {
+    const actualPort = (server.address() as AddressInfo).port;
+    // Machine-parseable line for AgentManager to detect actual port (dynamic port allocation)
+    console.log(`LISTENING_PORT=${actualPort}`);
+    console.log(`HTTP server running on port ${actualPort}`);
+    console.log(`Health check: http://localhost:${actualPort}/health`);
   });
 
   // Initialize agent

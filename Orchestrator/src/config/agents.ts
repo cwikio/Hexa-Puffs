@@ -49,8 +49,8 @@ export const AgentDefinitionSchema = z.object({
   /** Whether this agent is active */
   enabled: z.boolean().default(true),
 
-  /** HTTP port for this agent's Thinker instance */
-  port: z.number().int().min(1).max(65535),
+  /** HTTP port for this agent's Thinker instance (0 = OS-assigned, used by subagents) */
+  port: z.number().int().min(0).max(65535),
 
   /** LLM provider to use */
   llmProvider: AgentLLMProviderSchema.default('groq'),
@@ -72,6 +72,9 @@ export const AgentDefinitionSchema = z.object({
 
   /** Maximum ReAct steps per message */
   maxSteps: z.number().int().min(1).max(50).default(8),
+
+  /** Minutes of inactivity before the agent is idle-killed (lazy-spawn restarts on next message) */
+  idleTimeoutMinutes: z.number().int().min(1).default(30),
 
   /** LLM cost controls — anomaly-based spike detection with pause/resume */
   costControls: CostControlsSchema.optional(),
@@ -125,6 +128,7 @@ export function getDefaultAgent(): AgentDefinition {
     allowedTools: [],
     deniedTools: [],
     maxSteps: 8,
+    idleTimeoutMinutes: 30,
   };
 }
 

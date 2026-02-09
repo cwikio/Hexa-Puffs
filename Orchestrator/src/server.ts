@@ -17,13 +17,15 @@ import {
   handleGetJobStatus,
   handleDeleteJob,
   handleTriggerBackfill,
+  spawnSubagentToolDefinition,
+  handleSpawnSubagent,
   type StandardResponse,
 } from './tools/index.js';
 
 // Custom tools that are not passthrough (orchestrator-specific)
-const customToolDefinitions = [statusToolDefinition, ...jobToolDefinitions];
+const customToolDefinitions = [statusToolDefinition, ...jobToolDefinitions, spawnSubagentToolDefinition];
 
-// Custom tool handlers
+// Custom tool handlers (simple tools that don't need caller context)
 const customToolHandlers: Record<
   string,
   (args: unknown) => Promise<StandardResponse>
@@ -35,6 +37,14 @@ const customToolHandlers: Record<
   get_job_status: handleGetJobStatus,
   delete_job: handleDeleteJob,
   trigger_backfill: handleTriggerBackfill,
+};
+
+// Context-aware tool handlers (need callerAgentId from _meta)
+const contextAwareToolHandlers: Record<
+  string,
+  (args: unknown, callerAgentId?: string) => Promise<StandardResponse>
+> = {
+  spawn_subagent: handleSpawnSubagent,
 };
 
 /**
@@ -169,6 +179,10 @@ export function createServerWithRouter(toolRouter: ToolRouter): Server {
             error: callResult.error || 'Tool call failed',
           };
         }
+      }
+      // Check if it's a context-aware custom tool (needs callerAgentId)
+      else if (contextAwareToolHandlers[name]) {
+        result = await contextAwareToolHandlers[name](args, callerAgentId);
       }
       // Check if it's a custom tool
       else if (customToolHandlers[name]) {
