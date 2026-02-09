@@ -48,7 +48,7 @@ The current architecture uses **Orchestrator as an agent router and protocol bri
 - **Claude Desktop/Code** connects via MCP stdio protocol
 - **Thinker agents** are spawned and managed by Orchestrator's AgentManager
 - **Orchestrator** polls channels (Telegram), routes messages to the correct agent, enforces per-agent tool policies
-- **Downstream MCPs** are spawned by Orchestrator via stdio (no separate HTTP ports)
+- **Downstream MCPs** are spawned by Orchestrator via stdio, or connected via HTTP for services that run independently
 
 ```mermaid
 flowchart TB
@@ -58,7 +58,7 @@ flowchart TB
 
     subgraph Orchestrator["Orchestrator MCP Server (:8010)"]
         direction TB
-        Tools["65+ Tools (passthrough)<br/>send_message, store_fact, send_email, etc."]
+        Tools["70+ Tools (passthrough)<br/>send_message, store_fact, send_email, etc."]
         Security["Security Coordinator<br/>(Guardian integration)"]
         HTTPAPI["HTTP REST API<br/>/tools/list, /tools/call"]
         subgraph MultiAgent["Multi-Agent Layer"]
@@ -81,12 +81,13 @@ flowchart TB
     subgraph MCPs["Downstream MCP Servers (spawned via stdio)"]
         Guardian["Guardian MCP<br/>(security scanning)"]
         OnePass["1Password MCP<br/>(credentials)"]
-        Telegram["Telegram MCP<br/>(messaging)"]
         Memory["Memory MCP<br/>(facts, conversations)"]
         Filer["Filer MCP<br/>(file operations)"]
+        Browser["Browser MCP<br/>(web automation)"]
     end
 
     subgraph HTTPMCPs["HTTP MCP Services (independent)"]
+        Telegram["Telegram MCP<br/>:8002<br/>(messaging)"]
         Searcher["Searcher MCP<br/>:8007<br/>(Brave Search)"]
         Gmail["Gmail MCP<br/>:8008<br/>(email)"]
     end
@@ -111,9 +112,10 @@ flowchart TB
     Agents -->|"API calls"| LLM
     Orchestrator -->|stdio| Guardian
     Orchestrator -->|stdio| OnePass
-    Orchestrator -->|stdio| Telegram
     Orchestrator -->|stdio| Memory
     Orchestrator -->|stdio| Filer
+    Orchestrator -->|stdio| Browser
+    Orchestrator -->|HTTP| Telegram
     Orchestrator -->|HTTP| Searcher
     Orchestrator -->|HTTP| Gmail
     Jobs -->|Events| InngestDev
@@ -143,7 +145,7 @@ flowchart TB
 │  HTTP REST API: /health, /tools/list, /tools/call               │
 │  MCP stdio: Standard MCP protocol for Claude Desktop            │
 │                                                                  │
-│  65+ Tools (passthrough): send_message, store_fact, create_file │
+│  70+ Tools (passthrough): send_message, store_fact, create_file │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  Multi-Agent Layer                                        │   │
@@ -176,22 +178,20 @@ flowchart TB
 ┌──────────────────────────────────┐ ┌────────────────────────────┐
 │  STDIO MCP SERVERS (spawned)     │ │  HTTP MCP SERVICES         │
 │  ┌──────────┐ ┌──────────┐      │ │  ┌──────────┐              │
-│  │ Guardian │ │ 1Password│      │ │  │ Searcher │              │
-│  │   MCP    │ │   MCP    │      │ │  │ (:8007)  │              │
+│  │ Guardian │ │ 1Password│      │ │  │ Telegram │              │
+│  │   MCP    │ │   MCP    │      │ │  │ (:8002)  │              │
 │  │ (stdio)  │ │ (stdio)  │      │ │  └──────────┘              │
 │  └──────────┘ └──────────┘      │ │  ┌──────────┐              │
-│  ┌──────────┐ ┌──────────┐      │ │  │  Gmail   │              │
-│  │ Telegram │ │  Memory  │      │ │  │ (:8008)  │              │
+│  ┌──────────┐ ┌──────────┐      │ │  │ Searcher │              │
+│  │  Memory  │ │ File Ops │      │ │  │ (:8007)  │              │
 │  │   MCP    │ │   MCP    │      │ │  └──────────┘              │
-│  │ (stdio)  │ │ (stdio)  │      │ │                            │
-│  └────┬─────┘ └──────────┘      │ └────────────────────────────┘
-│  ┌──────────┐       │           │
-│  │ File Ops │       │ GramJS    │
-│  │   MCP    │       ↓           │
-│  │ (stdio)  │ ┌──────────────┐  │
-│  └──────────┘ │  Telegram    │  │
-│               │  Servers     │  │
-│               └──────────────┘  │
+│  │ (stdio)  │ │ (stdio)  │      │ │  ┌──────────┐              │
+│  └──────────┘ └──────────┘      │ │  │  Gmail   │              │
+│  ┌──────────┐                   │ │  │ (:8008)  │              │
+│  │ Browser  │                   │ │  └──────────┘              │
+│  │   MCP    │                   │ │                            │
+│  │ (stdio)  │                   │ └────────────────────────────┘
+│  └──────────┘                   │
 └──────────────────────────────────┘
 ```
 
@@ -327,7 +327,7 @@ Persistent learning and personalization. Stores facts learned from conversations
 - Automatic fact extraction from conversations
 - Periodic synthesis of learnings
 
-**Phase 1 Scope:** Simple key-value and text storage. No vector database or semantic search initially.
+**Storage:** SQLite with sqlite-vec for hybrid search (vector embeddings + FTS5 full-text search).
 
 ### File Ops MCP
 
@@ -386,11 +386,20 @@ Email management via Gmail API with OAuth2 authentication. Runs as an independen
 
 **Key Features:**
 
-- 18 tools covering messages, drafts, labels, and attachments
+- 30 tools covering messages, drafts, labels, attachments, filters, and calendar
 - OAuth2 authentication (credentials stored at `~/.annabelle/gmail/`)
 - Optional background email polling with configurable interval
 - Optional Telegram notifications for new emails
 - HTTP transport (not spawned by Orchestrator)
+
+### Browser MCP
+
+**Status:** ✅ Implemented
+
+Headless browser automation via Playwright. Enables agents to navigate web pages, interact with elements, and extract content.
+
+- Uses `@playwright/mcp` for browser control
+- Spawned via stdio by Orchestrator (auto-discovered as "web" MCP)
 
 ### Thinker (Agent Runtime)
 
@@ -405,7 +414,7 @@ Passive AI reasoning engine that receives messages from Orchestrator via HTTP an
 - **LLM abstraction** - Supports Groq (cloud), LM Studio (local), Ollama (local), configurable per agent
 - **ReAct agent loop** - Multi-step reasoning with tool use via Vercel AI SDK (`maxSteps: 8`)
 - **Dynamic tool selection** - Keyword-based routing selects only relevant tool groups per message
-- **Playbook seeding** - 12 default playbooks seeded on first startup (email triage, research, daily briefing, etc.)
+- **Playbook seeding** - 8 default playbooks seeded on first startup (email triage, research, daily briefing, etc.)
 - **Config-driven personality** - System prompt loaded from file path provided by Orchestrator at spawn
 - **Context management** - Loads persona and facts from Memory MCP via Orchestrator's tool API
 - **Per-agent tool filtering** - Discovers only tools allowed by agent's policy (via `agentId` query param)
@@ -533,7 +542,7 @@ sequenceDiagram
         Orch->>Router: resolveAgents(channel, chatId)
         Router-->>Orch: agentId
         Orch->>Thinker: POST /process-message
-        Thinker->>Thinker: LLM generates response (Groq, maxSteps: 2)
+        Thinker->>Thinker: LLM generates response (Groq, maxSteps: 8)
         opt Tool calls needed
             Thinker->>Orch: GET /tools/list, POST /tools/call
             Orch->>Orch: Enforce tool policy for agentId
@@ -561,7 +570,7 @@ MessageRouter resolves agentId from channel bindings
        ↓
 POST /process-message to correct Thinker instance
        ↓
-LLM processes message (Groq, maxSteps: 2)
+LLM processes message (Groq, maxSteps: 8)
        ↓ (if tools needed)
 Thinker calls Orchestrator /tools/call (policy-filtered per agent)
        ↓
@@ -698,10 +707,9 @@ Layer 7: LLM Cost Controls
 
 ```
 ~/.annabelle/
-├── config/
-│   ├── orchestrator.yaml
-│   ├── agents.yaml
-│   └── mcp-servers.yaml
+├── agents/               ← Agent persona files
+│   └── annabelle/
+│       └── instructions.md
 ├── data/
 │   ├── memory.db          ← SQLite database
 │   └── grants.db          ← File access permissions
@@ -709,6 +717,9 @@ Layer 7: LLM Cost Controls
 │   ├── orchestrator.log
 │   ├── security.log
 │   └── audit.log
+├── sessions/             ← Thinker session state
+├── skills/               ← Agent playbooks
+├── gmail/                ← Gmail OAuth tokens
 └── memory-export/         ← Memory transparency files
     ├── profile.json
     ├── facts/
@@ -749,10 +760,11 @@ Layer 7: LLM Cost Controls
 
 - ✅ Security MCP (Guardian) - Prompt injection detection
 - ✅ 1Password MCP - Secure credential retrieval
-- ✅ Telegram MCP - Messaging with real-time event handling
-- ✅ Memory MCP - Fact storage, conversations, profiles
+- ✅ Telegram MCP - Messaging with real-time event handling (HTTP :8002)
+- ✅ Memory MCP - Fact storage, conversations, profiles, vector search
 - ✅ Filer MCP - File operations with grants
-- ✅ Orchestrator MCP - Central coordination with 65+ tools (protocol bridge)
+- ✅ Browser MCP - Headless browser automation via Playwright
+- ✅ Orchestrator MCP - Central coordination with 70+ tools (protocol bridge)
 - ✅ Searcher MCP - Web search via Brave Search (HTTP :8007)
 - ✅ Gmail MCP - Email management with OAuth2 (HTTP :8008)
 - ✅ Thinker - Autonomous AI agent with configurable LLM
@@ -764,8 +776,8 @@ Layer 7: LLM Cost Controls
   - Accepts MCP stdio from Claude Desktop/Code
   - Spawns and manages Thinker agent instances via AgentManager
   - Polls Telegram via ChannelPoller, routes messages to agents via MessageRouter
-  - Spawns downstream MCPs via stdio (Guardian, Telegram, 1Password, Memory, Filer)
-  - Connects to independent HTTP MCP services (Searcher :8007, Gmail :8008)
+  - Spawns downstream MCPs via stdio (Guardian, 1Password, Memory, Filer, Browser)
+  - Connects to independent HTTP MCP services (Telegram :8002, Searcher :8007, Gmail :8008)
 - Thinker instances receive messages from Orchestrator, process via LLM, return responses
 - Inngest handles scheduled and background tasks
 
@@ -800,7 +812,7 @@ Layer 7: LLM Cost Controls
 
 **Add:**
 
-- Vector embeddings for semantic search
+- ✅ Vector embeddings for semantic search (sqlite-vec) - Complete
 - Weekly memory synthesis
 - More MCP servers (GSuite, GitHub, Calendar)
 - Webhook processing
@@ -829,10 +841,12 @@ Layer 7: LLM Cost Controls
 | Telegram commands    | command-list.md               | Slash commands reference               |
 | Memory system        | Memorizer-MCP/README.md       | Facts, conversations, profiles         |
 | File operations      | Filer-MCP/README.md           | Workspace, grants, audit log           |
-| Gmail integration    | Gmail-MCP/README.md           | OAuth2, 18 tools, polling              |
+| Gmail integration    | Gmail-MCP/README.md           | OAuth2, 30 tools, polling              |
 | Telegram MCP         | Telegram-MCP/README.md        | GramJS, real-time events, 16 tools     |
 | 1Password            | Onepassword-MCP/README.md     | Read-only credential access            |
+| Browser automation   | Browser-MCP/README.md         | Playwright headless browser            |
 | Searcher             | Searcher-MCP/testing.md       | Brave Search integration               |
+| Getting started      | GETTING-STARTED.md            | Setup guide for new developers         |
 | Testing guide        | TESTING.md                    | Multi-level test strategy              |
 
 ---
@@ -844,12 +858,13 @@ Layer 7: LLM Cost Controls
 - Format: `{capability}-mcp`
 - Examples: `security-mcp`, `memory-mcp`, `telegram-mcp`
 - **Ports (new architecture):**
-  - Orchestrator HTTP: 8010
+  - Telegram HTTP: 8002
   - Thinker default agent: 8006 (additional agents get their own ports)
   - Searcher HTTP: 8007
   - Gmail HTTP: 8008
+  - Orchestrator HTTP: 8010
   - Inngest Dev Server: 8288
-  - Downstream MCPs: spawned via stdio (no ports)
+  - Stdio MCPs (Guardian, 1Password, Memory, Filer, Browser): no ports
 - **Legacy ports (individual HTTP mode):**
   - 8000-8005 range (backwards compatibility)
 
@@ -879,7 +894,7 @@ Layer 7: LLM Cost Controls
 | Single vs multi-user | Single user           | Simpler, personal assistant focus                            |
 | AI model             | **Model-agnostic**    | Works with Claude, LM Studio, Ollama, any OpenAI-compatible  |
 | Default AI           | User choice           | Claude (quality) OR LM Studio (privacy/free)                 |
-| Vector DB initially  | No                    | Simplicity first, add later if needed                        |
+| Vector DB            | sqlite-vec            | Hybrid search (vector + FTS5) in Memory MCP                  |
 | Memory transparency  | Yes                   | User control over what AI knows                              |
 | Obsidian integration | Deferred              | Nice-to-have, not core                                       |
 | Multi-agent          | **Yes (implemented)** | Orchestrator spawns agents, routes messages, enforces policy |
