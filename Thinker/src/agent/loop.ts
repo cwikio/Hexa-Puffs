@@ -70,7 +70,8 @@ When the user asks you to DO something (search, send, schedule, browse, etc.), j
 Never explain the tools you're using, the parameters you're passing, or the internal mechanics. The user wants results, not a narration of your workflow.
 
 ## Tool Use Guidelines
-- Answer general knowledge questions (geography, math, science, history) from your own knowledge. Do NOT use tools for these.
+- When the user explicitly asks you to use a specific tool or capability (e.g., "ask a subagent", "search for", "send an email"), ALWAYS use that tool — even if you could answer without it.
+- Answer general knowledge questions from your own knowledge ONLY when the user has NOT requested a specific tool.
 - Use tools when the task genuinely requires them — memory, file operations, web search, sending messages.
 - Do NOT call tools that aren't in your available tools list.
 - When a tool IS needed, use it without asking for permission (unless destructive).
@@ -569,7 +570,16 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
             selectedTools,
           );
           if (recovery.success) {
-            responseText = leak.preamble || 'Done.';
+            // Extract meaningful response from tool result (e.g. spawn_subagent returns {data: {response: "..."}})
+            let toolResponse = '';
+            if (recovery.result && typeof recovery.result === 'object') {
+              const res = recovery.result as Record<string, unknown>;
+              const data = res.data as Record<string, unknown> | undefined;
+              if (data?.response && typeof data.response === 'string') {
+                toolResponse = data.response;
+              }
+            }
+            responseText = leak.preamble || toolResponse || 'Done.';
             recoveredTools = [leak.toolName];
             console.log(`[tool-recovery] Recovery successful, response: "${responseText.substring(0, 80)}"`);
           } else {
@@ -878,7 +888,15 @@ Complete the task step by step, using your available tools. When done, provide a
             selectedTools,
           );
           if (recovery.success) {
-            responseText = leak.preamble || 'Task completed.';
+            let toolResponse = '';
+            if (recovery.result && typeof recovery.result === 'object') {
+              const res = recovery.result as Record<string, unknown>;
+              const data = res.data as Record<string, unknown> | undefined;
+              if (data?.response && typeof data.response === 'string') {
+                toolResponse = data.response;
+              }
+            }
+            responseText = leak.preamble || toolResponse || 'Task completed.';
             recoveredTools = [leak.toolName];
           } else {
             console.warn(`[tool-recovery] Proactive recovery failed: ${recovery.error}`);

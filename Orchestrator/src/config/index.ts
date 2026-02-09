@@ -90,8 +90,8 @@ export function loadConfig(): Config {
 
     thinkerUrl: getEnvString('THINKER_URL', 'http://localhost:8006'),
 
-    // Multi-agent config: loaded from file if AGENTS_CONFIG_PATH is set
-    agentsConfigPath: process.env.AGENTS_CONFIG_PATH || undefined,
+    // Multi-agent config: loaded from file (default: agents.json in MCPs root)
+    agentsConfigPath: process.env.AGENTS_CONFIG_PATH || resolve(mcpsRoot, 'agents.json'),
 
     // Auto-discovered channel MCPs
     channelMCPs: discovered

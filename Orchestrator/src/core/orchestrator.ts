@@ -541,6 +541,17 @@ export class Orchestrator {
       }
     }
 
+    // Lazy-spawn: ensure agent is running before dispatch
+    if (this.agentManager) {
+      const ready = await this.agentManager.ensureRunning(targetAgentId);
+      if (!ready) {
+        this.logger.error(`Cannot dispatch — agent "${targetAgentId}" failed to start`);
+        await this.sendToChannel(msg.channel, msg.chatId, 'Agent is currently unavailable. Please try again in a moment.');
+        return;
+      }
+      this.agentManager.updateActivity(targetAgentId);
+    }
+
     // Pre-dispatch: check if agent is already paused by cost controls
     if (this.agentManager?.isAgentPaused(targetAgentId)) {
       this.logger.warn(`Dropping message for cost-paused agent "${targetAgentId}"`);
@@ -675,6 +686,20 @@ export class Orchestrator {
    */
   getAgentDefinition(agentId: string): AgentDefinition | undefined {
     return this.agentDefinitions.get(agentId);
+  }
+
+  /**
+   * Register a dynamic agent definition (for subagent tool policy lookups).
+   */
+  registerAgentDefinition(def: AgentDefinition): void {
+    this.agentDefinitions.set(def.agentId, def);
+  }
+
+  /**
+   * Unregister a dynamic agent definition (cleanup after subagent killed).
+   */
+  unregisterAgentDefinition(agentId: string): void {
+    this.agentDefinitions.delete(agentId);
   }
 
   /**

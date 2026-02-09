@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
+import type { AddressInfo } from 'net';
 import { loadConfig, validateProviderConfig, Config } from './config.js';
 import { Agent } from './agent/index.js';
 import { getProviderDisplayName } from './llm/providers.js';
@@ -30,15 +31,27 @@ interface HealthResponse {
 }
 
 /**
- * Create and configure the Express HTTP server
+ * Holder for the Agent instance. Routes are registered at server creation
+ * but the agent is set later after initialization completes.
+ */
+let agentRef: Agent | null = null;
+
+/**
+ * Create and configure the Express HTTP server.
+ * All routes are registered upfront so they're available as soon as
+ * the server starts listening (avoids 404 race on /process-message).
  */
 function createServer(config: Config, startTime: number) {
   const app = express();
 
   app.use(express.json());
 
-  // Health check endpoint
+  // Health check endpoint — only returns 200 once agentRef is set (fully initialized)
   app.get('/health', (_req: Request, res: Response) => {
+    if (!agentRef) {
+      res.status(503).json({ status: 'initializing', service: 'thinker' });
+      return;
+    }
     const response: HealthResponse = {
       status: 'ok',
       service: 'thinker',
@@ -67,6 +80,120 @@ function createServer(config: Config, startTime: number) {
         executeSkill: '/execute-skill',
       },
     });
+  });
+
+  // Process message endpoint (dispatched by Orchestrator)
+  app.post('/process-message', async (req: Request, res: Response) => {
+    if (!agentRef) {
+      res.status(503).json({ success: false, error: 'Agent is still initializing' });
+      return;
+    }
+
+    const { id, chatId, senderId, text, date, agentId } = req.body;
+
+    if (!chatId || !text) {
+      res.status(400).json({ success: false, error: 'chatId and text are required' });
+      return;
+    }
+
+    console.log(`Received message dispatch: chat=${chatId}, agent=${agentId || 'default'}`);
+
+    try {
+      const result = await agentRef.processMessage({
+        id: id || `ext_${Date.now()}`,
+        chatId,
+        senderId: senderId || 'unknown',
+        text,
+        date: date || new Date().toISOString(),
+      });
+
+      res.json({
+        success: result.success,
+        response: result.response,
+        toolsUsed: result.toolsUsed,
+        totalSteps: result.totalSteps,
+        error: result.error,
+        ...(result.paused ? { paused: true } : {}),
+      });
+    } catch (error) {
+      console.error('Error processing dispatched message:', error);
+      res.status(500).json({
+        success: false,
+        toolsUsed: [],
+        totalSteps: 0,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  // Execute skill endpoint (proactive task execution via Inngest/cron)
+  app.post('/execute-skill', async (req: Request, res: Response) => {
+    if (!agentRef) {
+      res.status(503).json({ success: false, error: 'Agent is still initializing' });
+      return;
+    }
+
+    const { skillId, instructions, maxSteps, notifyOnCompletion, noTools } = req.body;
+
+    if (!instructions) {
+      res.status(400).json({ success: false, error: 'instructions is required' });
+      return;
+    }
+
+    console.log(`Received skill execution request: skillId=${skillId}, maxSteps=${maxSteps}`);
+
+    try {
+      const notifyChatId = notifyOnCompletion
+        ? (config.defaultNotifyChatId || undefined)
+        : undefined;
+
+      const result = await agentRef.processProactiveTask(
+        instructions,
+        maxSteps || 10,
+        notifyChatId,
+        noTools,
+      );
+
+      res.json({
+        success: result.success,
+        response: result.summary,
+        summary: result.summary,
+        toolsUsed: result.toolsUsed,
+        totalSteps: result.totalSteps,
+        error: result.error,
+      });
+    } catch (error) {
+      console.error('Error executing skill:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        summary: 'Skill execution failed',
+      });
+    }
+  });
+
+  // Cost control endpoints
+  app.get('/cost-status', (_req: Request, res: Response) => {
+    if (!agentRef) {
+      res.json({ enabled: false });
+      return;
+    }
+    const status = agentRef.getCostStatus();
+    if (!status) {
+      res.json({ enabled: false });
+      return;
+    }
+    res.json(status);
+  });
+
+  app.post('/cost-resume', (req: Request, res: Response) => {
+    if (!agentRef) {
+      res.status(503).json({ success: false, error: 'Agent is still initializing' });
+      return;
+    }
+    const resetWindow = req.body?.resetWindow === true;
+    const result = agentRef.resumeFromCostPause(resetWindow);
+    res.json(result);
   });
 
   return app;
@@ -111,12 +238,15 @@ async function main() {
   // Create and start HTTP server
   const app = createServer(config, startTime);
 
-  app.listen(config.thinkerPort, () => {
-    console.log(`HTTP server running on port ${config.thinkerPort}`);
-    console.log(`Health check: http://localhost:${config.thinkerPort}/health`);
+  const server = app.listen(config.thinkerPort, () => {
+    const actualPort = (server.address() as AddressInfo).port;
+    // Machine-parseable line for AgentManager to detect actual port (dynamic port allocation)
+    console.log(`LISTENING_PORT=${actualPort}`);
+    console.log(`HTTP server running on port ${actualPort}`);
+    console.log(`Health check: http://localhost:${actualPort}/health`);
   });
 
-  // Initialize agent
+  // Initialize agent and make it available to routes
   const agent = new Agent(config);
 
   try {
@@ -127,102 +257,8 @@ async function main() {
     console.log('Continuing with limited functionality...');
   }
 
-  // Register /process-message endpoint for Orchestrator-dispatched messages
-  app.post('/process-message', async (req: Request, res: Response) => {
-    const { id, chatId, senderId, text, date, agentId } = req.body;
-
-    if (!chatId || !text) {
-      res.status(400).json({ success: false, error: 'chatId and text are required' });
-      return;
-    }
-
-    console.log(`Received message dispatch: chat=${chatId}, agent=${agentId || 'default'}`);
-
-    try {
-      const result = await agent.processMessage({
-        id: id || `ext_${Date.now()}`,
-        chatId,
-        senderId: senderId || 'unknown',
-        text,
-        date: date || new Date().toISOString(),
-      });
-
-      res.json({
-        success: result.success,
-        response: result.response,
-        toolsUsed: result.toolsUsed,
-        totalSteps: result.totalSteps,
-        error: result.error,
-        ...(result.paused ? { paused: true } : {}),
-      });
-    } catch (error) {
-      console.error('Error processing dispatched message:', error);
-      res.status(500).json({
-        success: false,
-        toolsUsed: [],
-        totalSteps: 0,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  });
-
-  // Register /execute-skill endpoint for proactive task execution
-  app.post('/execute-skill', async (req: Request, res: Response) => {
-    const { skillId, instructions, maxSteps, notifyOnCompletion, noTools } = req.body;
-
-    if (!instructions) {
-      res.status(400).json({ success: false, error: 'instructions is required' });
-      return;
-    }
-
-    console.log(`Received skill execution request: skillId=${skillId}, maxSteps=${maxSteps}`);
-
-    try {
-      // Use defaultNotifyChatId from config if notification is requested
-      const notifyChatId = notifyOnCompletion
-        ? (config.defaultNotifyChatId || undefined)
-        : undefined;
-
-      const result = await agent.processProactiveTask(
-        instructions,
-        maxSteps || 10,
-        notifyChatId,
-        noTools,
-      );
-
-      res.json({
-        success: result.success,
-        response: result.summary,
-        summary: result.summary,
-        toolsUsed: result.toolsUsed,
-        totalSteps: result.totalSteps,
-        error: result.error,
-      });
-    } catch (error) {
-      console.error('Error executing skill:', error);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        summary: 'Skill execution failed',
-      });
-    }
-  });
-
-  // Cost control endpoints
-  app.get('/cost-status', (_req: Request, res: Response) => {
-    const status = agent.getCostStatus();
-    if (!status) {
-      res.json({ enabled: false });
-      return;
-    }
-    res.json(status);
-  });
-
-  app.post('/cost-resume', (req: Request, res: Response) => {
-    const resetWindow = req.body?.resetWindow === true;
-    const result = agent.resumeFromCostPause(resetWindow);
-    res.json(result);
-  });
+  // Make agent available to all routes registered in createServer()
+  agentRef = agent;
 
   // Thinker is now a passive agent runtime — Orchestrator dispatches messages via HTTP
   console.log('='.repeat(50));
