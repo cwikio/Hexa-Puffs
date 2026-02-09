@@ -1,6 +1,6 @@
 # Annabelle Architecture Deep Dive v2 — Comparison with OpenClaw & Roadmap
 
-*Updated February 2026. Reflects 6 of 11 original recommendations now implemented. Based on source code exploration of both projects.*
+*Updated February 2026. Reflects 7 of 11 original recommendations now implemented. Based on source code exploration of both projects.*
 
 *Annabelle: ~8 MCP packages, ~65 tools. OpenClaw: 300+ TypeScript files, 309 in agents alone, 52 skills, 176k GitHub stars.*
 
@@ -8,12 +8,12 @@
 
 ## Progress Since v1
 
-The original deep dive (January 2026) identified 11 prioritized recommendations. Six have been implemented:
+The original deep dive (January 2026) identified 11 prioritized recommendations. Seven have been implemented:
 
 | # | Recommendation | Status |
 |---|---|---|
 | 1 | Session Persistence + Compaction | ✅ Implemented |
-| 2 | Vector Memory (sqlite-vec + Hybrid Search) | ⬜ Open |
+| 2 | Vector Memory (sqlite-vec + Hybrid Search) | ✅ Implemented |
 | 3 | Post-Conversation Fact Extraction | ✅ Implemented |
 | 4 | Conversation History Backfill | ✅ Implemented |
 | 5 | Memory Synthesis (Weekly) | ✅ Implemented |
@@ -260,23 +260,37 @@ The shift comes from three implementations that OpenClaw has no equivalent for:
 
 **Weekly synthesis keeps the fact base clean.** After 6 months, you might have "prefers dark mode" (January), "switched to light mode for presentations" (March), and "uses auto dark mode" (May). Synthesis consolidates these into one coherent fact. Without synthesis, fact quality degrades over time as contradictions and duplicates accumulate. OpenClaw has no equivalent.
 
-**OpenClaw remains superior for retrieval.** Vector embeddings with hybrid search find semantically related facts that Annabelle's keyword matching misses. This is still the #2 priority recommendation. But having better retrieval of a smaller, less-maintained fact base (OpenClaw) is arguably worse than having keyword retrieval of a larger, better-maintained fact base (Annabelle). The extraction and synthesis pipeline means Annabelle's facts are more complete, more current, and less contradictory — even if the retrieval method is less sophisticated.
+**Annabelle is now also at parity or ahead on retrieval.** With the addition of sqlite-vec + FTS5 hybrid search (Priority 2, now implemented), Annabelle uses the same core technique as OpenClaw: vector embeddings combined with text search, union-ranked with configurable weights (60% vector / 40% FTS5 by default). Embedding providers are local-first (Ollama with nomic-embed-text, or LM Studio), with graceful degradation to FTS5-only or LIKE fallback if embeddings are unavailable. New facts are automatically embedded on creation, re-embedded on update, and cleaned up on deletion. A `backfill_embeddings` tool processes existing facts in batches. Combined with the superior extraction and synthesis pipeline, Annabelle now has better data *and* comparable retrieval.
 
 **Annabelle remains superior for transparency and control.** 11 memory tools, structured categories, confidence scores, export to `~/.annabelle/memory-export/`. OpenClaw's free-form markdown files are harder to audit.
 
 ### Remaining Recommendations
 
-**Vector memory (Priority 2) is the remaining gap.** Adding `sqlite-vec` for semantic retrieval would combine Annabelle's now-superior extraction/synthesis pipeline with semantic-level retrieval — comprehensively ahead of OpenClaw on every dimension of user learning.
+**No remaining recommendations for user learning.** With vector memory now implemented (see Section 8), Annabelle is comprehensively ahead of OpenClaw on every dimension of user learning — better extraction, better maintenance, AND better retrieval.
 
 ---
 
-## 8. Memory Architecture
+## 8. Memory Architecture ✅ VECTOR MEMORY IMPLEMENTED
 
-### How Annabelle Works
+### How Annabelle Works — Current State
 
-Memory MCP uses SQLite with 4 tables: `facts`, `conversations`, `profiles`, `skills`. Retrieval splits query into keywords, runs `LIKE %keyword%` against facts, ranks by keyword overlap + confidence/freshness. 11 memory tools. No semantic understanding — "I enjoy cycling" won't match "hobbies" or "exercise."
+Memory MCP uses SQLite with 4 tables (`facts`, `conversations`, `profiles`, `skills`) plus two virtual tables: **`facts_fts`** (FTS5 with porter stemming) and **`vec_facts`** (sqlite-vec for vector embeddings). 12+ memory tools including the new `backfill_embeddings`.
 
-However, the **quality** of what's stored has improved dramatically: post-conversation extraction catches facts missed in real-time, history backfill recovered past knowledge, and weekly synthesis keeps the fact base clean and non-contradictory. The stored facts are more complete and better maintained than before.
+**Retrieval uses a 3-tier hybrid search strategy:**
+
+1. **Full hybrid** (when embedding provider is configured): vector similarity search via sqlite-vec runs in parallel with FTS5 BM25 text search. Results are union-ranked with configurable weights (default 60% vector / 40% text). Min-max normalization ensures fair scoring across both strategies.
+2. **FTS5-only** (when no embedding provider): full-text search with porter stemming. Still far better than the old keyword matching — "running" matches "run", BM25 scoring ranks by relevance.
+3. **LIKE fallback** (if FTS5 returns nothing): the original `LIKE %keyword%` search as a last resort.
+
+**Embedding providers are local-first:** Ollama (default model: nomic-embed-text, 768 dimensions) or LM Studio. No external API calls — embeddings run on the local machine. Provider set via `EMBEDDING_PROVIDER` env var (`ollama`, `lmstudio`, or `none`).
+
+**Automatic embedding lifecycle:** New facts are embedded on `store_fact` via `embedFact()`. Updated facts are re-embedded via `reembedFact()` (delete + re-insert). Deleted facts have their embeddings cleaned up via `deleteFactEmbedding()`. Embedding failures never block fact storage — they log a warning and continue.
+
+**Backfill for existing facts:** The `backfill_embeddings` tool finds facts without entries in `vec_facts` (via LEFT JOIN), embeds them in configurable batches (default 50, max 200), and reports progress (processed/embedded/failed/remaining). Call repeatedly until remaining is 0.
+
+**FTS5 stays in sync automatically** via SQLite triggers on INSERT/UPDATE/DELETE. The FTS5 index is fully rebuilt on every startup to prevent SQLITE_CORRUPT_VTAB errors from content table drift.
+
+Implementation: `Memorizer-MCP/src/embeddings/` (provider interface, Ollama provider, LM Studio provider, fact embedding helpers), `db/schema.ts` (FTS5 + vec0 DDL, triggers), `tools/memory.ts` (hybrid search with `vectorSearch()`, `fts5Search()`, `likeFallbackSearch()`, `hybridRank()`, `normalizeScores()`), `tools/backfill-embeddings.ts`, `config/schema.ts` (EmbeddingConfigSchema). Tests: `embeddings.test.ts`, `hybrid-search.test.ts`, `vector-search.test.ts`.
 
 ### How OpenClaw Works
 
@@ -284,34 +298,37 @@ However, the **quality** of what's stored has improved dramatically: post-conver
 
 ### Which Architecture Is Superior — Updated Assessment
 
-**OpenClaw's retrieval is still clearly superior.** Vector embeddings with hybrid search solve semantic similarity — "where does the user live in Europe?" finds "Tomasz lives in Kraków" because embeddings are geometrically close. Annabelle's `LIKE %keyword%` cannot do this. This fundamental gap has not changed.
+**Annabelle is now ahead on the complete memory pipeline.** This is a reversal from v1, where OpenClaw had clearly superior retrieval.
 
-**However, the practical impact has narrowed.** With post-conversation extraction, history backfill, and weekly synthesis, Annabelle's fact base is now significantly more complete and better maintained than before. The retrieval method matters less when you have more facts and fewer contradictions — keyword matching against a comprehensive, well-organized fact base catches more than semantic search against a sparse, unsynthesized one.
+**Retrieval is now at parity.** Both systems use sqlite-vec for vector search combined with text search (FTS5/BM25), union-ranked with configurable weights. Both support local embedding providers and graceful degradation to text-only search. The core retrieval technique is identical. OpenClaw has a wider provider chain (node-llama-cpp → OpenAI → Gemini → keyword), Annabelle has a simpler two-provider setup (Ollama or LM Studio) with FTS5 as a strong middle tier before the LIKE fallback.
 
-**The combination of both — semantic retrieval + comprehensive extraction/synthesis — would be the clear winner.** This is why vector memory remains Priority 2.
+**Annabelle is ahead on data quality.** Post-conversation extraction, history backfill, and weekly synthesis have no equivalent in OpenClaw. Better retrieval of a well-maintained fact base beats equivalent retrieval of an unsynthesized one.
 
-### Remaining Recommendations
+**Annabelle is ahead on transparency.** 12+ structured memory tools, fact categories, confidence scores, export capability. OpenClaw's free-form markdown files are harder to audit and manage.
 
-All four original recommendations remain open and unchanged:
+**OpenClaw remains ahead on storage format flexibility.** Markdown chunks can store arbitrary structured content — code snippets, long-form notes, lists. Annabelle's facts are short strings. For a personal assistant, short facts cover the vast majority of user knowledge; for a coding assistant that needs to remember entire file structures, markdown chunks would be better.
 
-1. **Add `sqlite-vec` for vector storage** — `vec_facts` table alongside existing `facts`. Compute embeddings on `store_fact`, vector search in `retrieve_memories`.
-2. **Implement hybrid search** — vector (70%) + FTS5 BM25 (30%), union of both result sets.
-3. **Start with local embeddings** — `node-llama-cpp` with auto-downloaded GGUF model, fall back to OpenAI, fall back to BM25-only.
-4. **Migrate existing facts** — one-time embedding computation for all existing facts.
+### No Remaining Recommendations
 
-Estimated effort: ~400–500 lines, primarily in `Memorizer-MCP/src/db/` and a new `Memorizer-MCP/src/embeddings/` module.
+All four original recommendations have been implemented:
+
+1. ✅ **sqlite-vec for vector storage** — `vec_facts` table with `vec0(embedding float[768])`, embeddings computed on `store_fact`.
+2. ✅ **Hybrid search** — vector (60%) + FTS5 BM25 (40%), union of both result sets, min-max normalized.
+3. ✅ **Local embeddings** — Ollama (nomic-embed-text) or LM Studio, graceful fallback to FTS5-only then LIKE.
+4. ✅ **Migrate existing facts** — `backfill_embeddings` tool processes unembedded facts in batches.
 
 ---
 
 ## 9. Summary — Revised Priority List
 
-With 6 of 11 recommendations implemented, the remaining 5 are re-ranked by current impact-to-effort ratio.
+With 7 of 11 recommendations implemented, the remaining 4 are re-ranked by current impact-to-effort ratio.
 
 ### Completed ✅
 
 | # | What | When | Key Outcome |
 |---|---|---|---|
 | 1 | Session Persistence + Compaction | Feb 2026 | Sessions survive restarts. Compaction uses cheap model. Context stays manageable. |
+| 2 | Vector Memory (sqlite-vec + Hybrid Search) | Feb 2026 | Hybrid retrieval: vector (60%) + FTS5 (40%). Local embeddings via Ollama. Graceful degradation. Backfill tool for existing facts. |
 | 3 | Post-Conversation Fact Extraction | Feb 2026 | Facts caught that LLM missed during task focus. Idle-triggered, deduped. |
 | 4 | Conversation History Backfill | Feb 2026 | Months of past conversations mined for facts. One-time catch-up. |
 | 5 | Memory Synthesis (Weekly) | Feb 2026 | Duplicates merged, contradictions resolved, stale facts flagged. |
@@ -320,33 +337,26 @@ With 6 of 11 recommendations implemented, the remaining 5 are re-ranked by curre
 
 ### Remaining — Re-ranked
 
-**Priority A: Vector Memory (sqlite-vec + Hybrid Search)**
-*Impact: High | Effort: Medium-High | ~400–500 lines*
-
-Previously Priority 2, stays at the top. The largest remaining technical gap. Annabelle's fact base is now much better (thanks to extraction, backfill, synthesis), but retrieval is still keyword-based. Adding semantic retrieval would make the memory system comprehensively superior to OpenClaw's on every dimension — better extraction, better maintenance, AND better retrieval.
-
-The effort is self-contained in Memorizer-MCP. No changes to Orchestrator or Thinker. The memory tool interface stays the same — callers don't know or care whether retrieval uses keywords or vectors.
-
-**Priority B: Code Execution Tool**
+**Priority A: Code Execution Tool**
 *Impact: High | Effort: Medium | ~150–250 lines*
 
-Previously Priority 6, elevated to B because it's now the **single largest capability gap** with OpenClaw's runtime. With session persistence, user learning, persona config, and skills all implemented, the inability to improvise by writing and running code is the most visible limitation.
+Previously Priority 6, now the **single largest capability gap** with OpenClaw's runtime. With session persistence, user learning, vector memory, persona config, and skills all implemented, the inability to improvise by writing and running code is the most visible remaining limitation.
 
 New MCP or tool in Filer MCP. Guardian integration for code scanning. Docker sandbox optional but recommended. This also unlocks future value from subagent spawning — subagents that can write and execute code are dramatically more useful than subagents limited to pre-built tools.
 
-**Priority C: Subagent Spawning**
+**Priority B: Subagent Spawning**
 *Impact: High | Effort: Medium | ~300–400 lines*
 
 Previously Priority 7. Enables parallel work — spawn 3 research subagents instead of doing research sequentially. Annabelle's process-per-agent architecture makes this both safer and simpler to implement than OpenClaw's shared-process version. Touch points: new tool in Orchestrator, AgentManager modifications, cascade-kill in halt manager.
 
-More impactful once code execution exists (subagents that can write code are much more useful), so implementing B before C is recommended.
+More impactful once code execution exists (subagents that can write code are much more useful), so implementing A before B is recommended.
 
-**Priority D: Lazy-Spawn / Idle-Kill**
+**Priority C: Lazy-Spawn / Idle-Kill**
 *Impact: Low | Effort: Low | ~50–80 lines*
 
 Previously Priority 10. Operational cleanliness — spawn agents on first message, kill after idle timeout. Not critical on 128GB but good practice. One file changed: `agent-manager.ts`.
 
-**Priority E: Shared HTTP Server**
+**Priority D: Shared HTTP Server**
 *Impact: Low | Effort: Medium | ~200–300 lines*
 
 Previously Priority 11. Architectural cleanup, only matters at 10+ agents. Defer indefinitely unless port management becomes a problem.
@@ -357,7 +367,7 @@ Previously Priority 11. Architectural cleanup, only matters at 10+ agents. Defer
 
 ### Areas Where Annabelle Is Now Ahead
 
-**User learning.** With post-conversation extraction, history backfill, and weekly synthesis, Annabelle has a more complete and better-maintained knowledge base about the user than OpenClaw. This is a genuine competitive advantage — OpenClaw has no equivalent pipeline.
+**User learning and memory.** With post-conversation extraction, history backfill, weekly synthesis, AND sqlite-vec hybrid search, Annabelle now has better data quality *and* comparable retrieval to OpenClaw. The complete memory pipeline — extraction, maintenance, and retrieval — is ahead. OpenClaw has no equivalent extraction/synthesis pipeline.
 
 **Session cost efficiency.** Compaction using a dedicated cheap model (Llama 3.1 8B Instant) rather than the main agent model. OpenClaw uses the session model, which is more expensive per compaction call.
 
@@ -377,11 +387,9 @@ Previously Priority 11. Architectural cleanup, only matters at 10+ agents. Defer
 
 ### Areas Where OpenClaw Is Still Ahead
 
-**Agent runtime flexibility.** Arbitrary code execution via Pi's 4 core tools. Annabelle cannot improvise. This is the biggest remaining gap. *Closable with Priority B.*
+**Agent runtime flexibility.** Arbitrary code execution via Pi's 4 core tools. Annabelle cannot improvise. This is the biggest remaining gap. *Closable with Priority A.*
 
-**Memory retrieval.** Vector embeddings + hybrid search vs keyword matching. Annabelle's fact base is now better, but retrieval is still primitive. *Closable with Priority A.*
-
-**Subagent spawning.** Parallel work delegation. Annabelle's architecture is better suited for it but doesn't have it yet. *Closable with Priority C.*
+**Subagent spawning.** Parallel work delegation. Annabelle's architecture is better suited for it but doesn't have it yet. *Closable with Priority B.*
 
 **Channel breadth.** 17+ messaging channels vs 2 (Telegram + Claude Desktop). Not a priority for a solo-user system, but a factual gap.
 
@@ -391,6 +399,6 @@ Previously Priority 11. Architectural cleanup, only matters at 10+ agents. Defer
 
 ### The Strategic Picture
 
-In v1, Annabelle had significant gaps in 5 of 9 comparison areas. After implementing 6 priorities, it now has gaps in **3 areas that matter** (runtime flexibility, memory retrieval, subagent spawning) and multiple areas where it's **ahead** of OpenClaw (user learning, cost efficiency, safety, task management, skill architecture). The remaining 3 gaps are addressable with Priorities A, B, and C — roughly 850–1,150 lines of new code total.
+In v1, Annabelle had significant gaps in 5 of 9 comparison areas. After implementing 7 priorities, it now has gaps in **2 areas that matter** (runtime flexibility, subagent spawning) and multiple areas where it's **ahead** of OpenClaw (user learning, memory pipeline, cost efficiency, safety, task management, skill architecture). The remaining 2 gaps are addressable with Priorities A and B — roughly 450–650 lines of new code total.
 
-The core thesis from v1 holds but has strengthened: **Annabelle is a security-hardened, MCP-native orchestration layer** that now also has robust persistence, sophisticated user learning, and a standards-compliant skill system. The areas where OpenClaw dominates (channel breadth, voice/devices, browser automation, ecosystem scale) are product-category differences, not architectural deficiencies — they reflect a different product vision (platform vs personal assistant), not a worse one.
+The core thesis from v1 holds but has strengthened: **Annabelle is a security-hardened, MCP-native orchestration layer** that now also has robust persistence, sophisticated user learning with vector-backed retrieval, and a standards-compliant skill system. The areas where OpenClaw dominates (channel breadth, voice/devices, browser automation, ecosystem scale) are product-category differences, not architectural deficiencies — they reflect a different product vision (platform vs personal assistant), not a worse one.
