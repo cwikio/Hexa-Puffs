@@ -595,9 +595,23 @@ export class Orchestrator {
     } else {
       this.logger.error(`Agent processing failed: ${result.error}`);
       // Send brief error notification — adapter filters by botUserId + botMessagePatterns
-      await this.sendToChannel(msg.channel, msg.chatId,
-        `Sorry, I couldn't complete that request. Please try again.`);
+      const userMessage = this.getUserErrorMessage(result.error);
+      await this.sendToChannel(msg.channel, msg.chatId, userMessage);
     }
+  }
+
+  /**
+   * Map known error patterns to user-friendly messages.
+   */
+  private getUserErrorMessage(error?: string): string {
+    if (!error) return 'Sorry, I couldn\'t complete that request. Please try again.';
+
+    const lower = error.toLowerCase();
+    if (lower.includes('forbidden') || lower.includes('403') || lower.includes('access denied')) {
+      return 'Groq API error — are you on VPN? Turn it off and try again.';
+    }
+
+    return 'Sorry, I couldn\'t complete that request. Please try again.';
   }
 
   /**

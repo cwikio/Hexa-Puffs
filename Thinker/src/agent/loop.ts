@@ -705,7 +705,14 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
         totalSteps: result.steps.length,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      let errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      // Tag LLM provider errors so upstream can show helpful messages (e.g. "Are you on VPN?")
+      const lowerErr = errorMessage.toLowerCase();
+      if (lowerErr.includes('forbidden') || lowerErr.includes('403') || lowerErr.includes('access denied')) {
+        errorMessage = `${providerInfo.provider} API error: ${errorMessage}`;
+      }
+
       console.error('Error processing message:', errorMessage);
 
       await this.logger.logError(trace, errorMessage);
