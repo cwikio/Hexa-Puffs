@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getDatabase, type FactRow, FACT_CATEGORIES } from '../db/index.js';
 import { createAIProvider } from '../services/ai-provider.js';
 import { getConfig } from '../config/index.js';
+import { reembedFact, deleteFactEmbedding } from '../embeddings/fact-embeddings.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
@@ -189,10 +190,12 @@ export async function handleSynthesizeFacts(
               db.prepare(
                 `UPDATE facts SET fact = ?, updated_at = datetime('now') WHERE id = ?`,
               ).run(action.updated_text, action.keep_id);
+              await reembedFact(action.keep_id, action.updated_text);
               // Delete the duplicate facts
               for (const deleteId of action.delete_ids) {
                 if (validIds.has(deleteId) && deleteId !== action.keep_id) {
                   db.prepare(`DELETE FROM facts WHERE id = ?`).run(deleteId);
+                  deleteFactEmbedding(deleteId);
                   totalDeletions++;
                 }
               }
@@ -202,6 +205,7 @@ export async function handleSynthesizeFacts(
             case 'delete': {
               if (!validIds.has(action.fact_id)) break;
               db.prepare(`DELETE FROM facts WHERE id = ?`).run(action.fact_id);
+              deleteFactEmbedding(action.fact_id);
               totalDeletions++;
               break;
             }
@@ -210,6 +214,7 @@ export async function handleSynthesizeFacts(
               db.prepare(
                 `UPDATE facts SET fact = ?, updated_at = datetime('now') WHERE id = ?`,
               ).run(action.new_text, action.fact_id);
+              await reembedFact(action.fact_id, action.new_text);
               totalUpdates++;
               break;
             }

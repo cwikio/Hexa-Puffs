@@ -31,7 +31,24 @@ vi.mock('../../src/config/index.js', () => ({
   getConfig: vi.fn(() => ({
     database: { path: '/tmp/test.db' },
     export: { path: '/tmp/export' },
+    embedding: {
+      provider: 'none',
+      vectorWeight: 0.6,
+      textWeight: 0.4,
+    },
   })),
+}));
+
+// Mock the embeddings
+vi.mock('../../src/embeddings/index.js', () => ({
+  getEmbeddingProvider: vi.fn(() => null),
+  isVectorSearchEnabled: vi.fn(() => false),
+}));
+
+vi.mock('../../src/embeddings/fact-embeddings.js', () => ({
+  embedFact: vi.fn(),
+  reembedFact: vi.fn(),
+  deleteFactEmbedding: vi.fn(),
 }));
 
 // Mock the logger
@@ -66,6 +83,7 @@ const EXPECTED_TOOLS = [
   'delete_skill',
   'backfill_extract_facts',
   'synthesize_facts',
+  'backfill_embeddings',
 ];
 
 const READ_ONLY_TOOLS = [
@@ -107,8 +125,8 @@ describe('Memorizer MCP Server Registration', () => {
     await client.close();
   });
 
-  it('should register all 19 tools', () => {
-    expect(tools).toHaveLength(19);
+  it('should register all 20 tools', () => {
+    expect(tools).toHaveLength(20);
   });
 
   it('should register tools with correct names', () => {

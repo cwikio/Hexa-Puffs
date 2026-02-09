@@ -19,3 +19,12 @@ export {
   type NewsSearchToolResult,
   type NewsResult,
 } from "./news-search.js";
+
+export {
+  imageSearchSchema,
+  handleImageSearch,
+  type ImageSearchInput,
+  type ImageSearchData,
+  type ImageSearchToolResult,
+  type ImageSearchResult,
+} from "./image-search.js";

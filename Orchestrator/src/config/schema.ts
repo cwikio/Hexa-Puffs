@@ -50,6 +50,15 @@ export const ChannelPollingConfigSchema = z.object({
 
 export type ChannelPollingConfig = z.infer<typeof ChannelPollingConfigSchema>;
 
+export const ChannelMCPEntrySchema = z.object({
+  name: z.string(),
+  botPatterns: z.array(z.string()).optional(),
+  chatRefreshIntervalMs: z.number().optional(),
+  maxMessageAgeMs: z.number().optional(),
+});
+
+export type ChannelMCPEntry = z.infer<typeof ChannelMCPEntrySchema>;
+
 export const ConfigSchema = z.object({
   // Transport for incoming connections (from Claude Desktop/Thinker)
   transport: z.enum(['stdio', 'sse', 'http']).default('stdio'),
@@ -84,6 +93,9 @@ export const ConfigSchema = z.object({
 
   // Channel bindings: map (channel, chatId) → agentId
   bindings: z.array(ChannelBindingSchema).optional(),
+
+  // Auto-discovered channel MCPs (populated by scanner, not set manually)
+  channelMCPs: z.array(ChannelMCPEntrySchema).default([]),
 
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });

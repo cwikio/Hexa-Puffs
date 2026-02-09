@@ -30,7 +30,10 @@ export const CostControlsSchema = z.object({
   /** Minimum baseline tokens before spike detection activates (prevents cold-start false positives) */
   minimumBaselineTokens: z.number().int().min(100).default(1000),
 
-  /** Telegram chat ID to send cost alert notifications to (falls back to message sender) */
+  /** Channel to send cost alert notifications to (falls back to originating channel) */
+  notifyChannel: z.string().optional(),
+
+  /** Chat ID to send cost alert notifications to (falls back to message sender) */
   notifyChatId: z.string().optional(),
 });
 
@@ -63,6 +66,9 @@ export const AgentDefinitionSchema = z.object({
 
   /** Glob patterns for denied tools (evaluated after allowedTools) */
   deniedTools: z.array(z.string()).default([]),
+
+  /** LLM temperature (0-2). Lower = more deterministic, better tool calling. */
+  temperature: z.number().min(0).max(2).optional(),
 
   /** Maximum ReAct steps per message */
   maxSteps: z.number().int().min(1).max(50).default(8),

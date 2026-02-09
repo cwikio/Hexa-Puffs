@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getDatabase, type FactRow, FACT_CATEGORIES } from '../db/index.js';
 import { isFactSafe } from '../services/sanitizer.js';
+import { embedFact, reembedFact, deleteFactEmbedding } from '../embeddings/fact-embeddings.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
@@ -228,10 +229,14 @@ export async function handleStoreFact(args: unknown): Promise<StandardResponse<S
       )
       .run(agent_id, fact, category, source ?? null);
 
-    logger.info('Fact stored', { fact_id: result.lastInsertRowid, category });
+    const factId = Number(result.lastInsertRowid);
+    logger.info('Fact stored', { fact_id: factId, category });
+
+    // Generate and store embedding (best-effort, never blocks fact storage)
+    await embedFact(factId, fact);
 
     const response: StoreFactData = {
-      fact_id: Number(result.lastInsertRowid),
+      fact_id: factId,
       stored_at: new Date().toISOString(),
     };
 
@@ -319,8 +324,11 @@ export async function handleDeleteFact(args: unknown): Promise<StandardResponse<
       return createError(`Fact with ID ${fact_id} not found`);
     }
 
-    // Delete the fact
+    // Delete the fact (FTS5 trigger handles facts_fts cleanup)
     db.prepare(`DELETE FROM facts WHERE id = ?`).run(fact_id);
+
+    // Clean up vector embedding
+    deleteFactEmbedding(fact_id);
 
     logger.info('Fact deleted', { fact_id });
 
@@ -362,6 +370,9 @@ export async function handleUpdateFact(args: unknown): Promise<StandardResponse<
     db.prepare(
       `UPDATE facts SET fact = ?, category = ?, updated_at = datetime('now'), last_accessed_at = datetime('now') WHERE id = ?`
     ).run(fact, newCategory, fact_id);
+
+    // Re-embed the updated fact text
+    await reembedFact(fact_id, fact);
 
     logger.info('Fact updated', { fact_id, old_fact: existing.fact, new_fact: fact });
 

@@ -1,4 +1,4 @@
-import { tool } from 'ai';
+import { tool, jsonSchema } from 'ai';
 import { z } from 'zod';
 import type { CoreTool } from 'ai';
 import type { OrchestratorClient } from './client.js';
@@ -7,94 +7,13 @@ import type { TraceContext } from '../tracing/types.js';
 import { getTraceLogger } from '../tracing/logger.js';
 
 /**
- * Convert JSON Schema property to Zod schema
- * This is a simplified converter for common types
- */
-function jsonSchemaToZod(property: unknown): z.ZodTypeAny {
-  if (!property || typeof property !== 'object') {
-    return z.unknown();
-  }
-
-  const prop = property as Record<string, unknown>;
-  const type = prop.type as string | undefined;
-  const description = prop.description as string | undefined;
-
-  let schema: z.ZodTypeAny;
-
-  switch (type) {
-    case 'string':
-      if (prop.enum && Array.isArray(prop.enum)) {
-        schema = z.enum(prop.enum as [string, ...string[]]);
-      } else {
-        schema = z.string();
-      }
-      break;
-    case 'number':
-    case 'integer':
-      schema = z.number();
-      break;
-    case 'boolean':
-      schema = z.boolean();
-      break;
-    case 'array':
-      const items = prop.items;
-      schema = z.array(jsonSchemaToZod(items));
-      break;
-    case 'object':
-      const properties = prop.properties as Record<string, unknown> | undefined;
-      if (properties) {
-        const shape: Record<string, z.ZodTypeAny> = {};
-        for (const [key, value] of Object.entries(properties)) {
-          shape[key] = jsonSchemaToZod(value);
-        }
-        schema = z.object(shape);
-      } else {
-        schema = z.record(z.unknown());
-      }
-      break;
-    default:
-      schema = z.unknown();
-  }
-
-  if (description) {
-    schema = schema.describe(description);
-  }
-
-  return schema;
-}
-
-/**
- * Convert Orchestrator tool definition to Zod schema
- * Uses preprocess to handle null/undefined args (LLMs sometimes pass null for no-arg tools)
- */
-function orchestratorToolToZodSchema(
-  tool: OrchestratorTool
-): z.ZodTypeAny {
-  const properties = tool.inputSchema.properties || {};
-  const required = tool.inputSchema.required || [];
-
-  const shape: Record<string, z.ZodTypeAny> = {};
-
-  for (const [key, value] of Object.entries(properties)) {
-    let propSchema = jsonSchemaToZod(value);
-
-    // Make optional if not required
-    if (!required.includes(key)) {
-      propSchema = propSchema.nullish();
-    }
-
-    shape[key] = propSchema;
-  }
-
-  // Preprocess to convert null/undefined to empty object (LLMs often pass null for tools with no params)
-  return z.preprocess(
-    (val) => (val === null || val === undefined ? {} : val),
-    z.object(shape)
-  );
-}
-
-/**
- * Create Vercel AI SDK tools from Orchestrator tools
+ * Create Vercel AI SDK tools from Orchestrator tools.
+ *
+ * Uses `jsonSchema()` to pass the MCP's original JSON Schema directly to the
+ * AI SDK, avoiding a lossy JSON Schema → Zod → JSON Schema roundtrip that
+ * was stripping type information from tool parameters (e.g. `"query":{}` instead
+ * of `"query":{"type":"string"}`), which caused Groq/Maverick to intermittently
+ * output tool calls as text instead of using the structured tool_calls API.
  */
 export function createToolsFromOrchestrator(
   orchestratorTools: OrchestratorTool[],
@@ -110,11 +29,12 @@ export function createToolsFromOrchestrator(
       continue;
     }
 
-    const zodSchema = orchestratorToolToZodSchema(orchTool);
+    // Pass the MCP's original JSON Schema directly — no lossy Zod conversion
+    const schema = jsonSchema(orchTool.inputSchema);
 
     const wrappedTool = tool({
       description: orchTool.description,
-      parameters: zodSchema,
+      parameters: schema,
       execute: async (args) => {
         // Normalize null/undefined args to empty object (for tools with no parameters)
         const normalizedArgs = (args ?? {}) as Record<string, unknown>;

@@ -81,6 +81,12 @@ When you need current information (weather, sports scores, news, real-time data)
 - freshness: Time filter - use "24h" for today's info (optional)
 Do NOT include freshness unless specifically needed for recent results.
 
+## Image Search
+When the user asks for photos, pictures, or images, use the searcher_image_search tool to find them.
+- It returns direct image URLs (image_url) and thumbnails (thumbnail_url).
+- You can send these images directly via telegram_send_media — it accepts URLs, not just local files.
+- For multiple images, send each one separately with telegram_send_media.
+
 ## Email (Gmail)
 You can send, read, and manage emails via Gmail. Key tools:
 - gmail_send_email: Send a new email (to, subject, body required; cc, bcc optional)
@@ -437,7 +443,9 @@ export class Agent {
           system: context.systemPrompt,
           messages: [...context.conversationHistory, { role: 'user', content: message.text }],
           tools: selectedTools,
+          toolChoice: 'auto',
           maxSteps: 8,
+          temperature: this.config.temperature,
           abortSignal: agentAbort,
         });
       } catch (toolError) {
@@ -458,29 +466,58 @@ export class Agent {
               system: context.systemPrompt,
               messages: [...context.conversationHistory, { role: 'user', content: message.text }],
               tools: selectedTools,
+              toolChoice: 'auto',
               maxSteps: 8,
+              temperature: this.config.temperature,
               abortSignal: agentAbort,
             });
           } catch (retryError) {
-            // Second attempt also failed - fall back to text-only with modified prompt
             const retryErrorMsg = retryError instanceof Error ? retryError.message : '';
-            console.warn(`Tool retry also failed, falling back to text-only: ${retryErrorMsg}`);
+            console.warn(`Tool retry failed: ${retryErrorMsg}`);
 
-            // Modify system prompt to make clear tools are unavailable
-            const textOnlyPrompt = context.systemPrompt + `
+            // Second retry: rephrase the message with explicit context from the last assistant turn
+            const lastAssistantMsg = context.conversationHistory
+              .filter((m) => m.role === 'assistant')
+              .at(-1);
+            if (lastAssistantMsg && typeof lastAssistantMsg.content === 'string') {
+              const rephrasedText = `Context from the previous response: "${lastAssistantMsg.content.substring(0, 300)}"\n\nThe user is now asking: ${message.text}`;
+              try {
+                console.warn('Trying rephrased message with tools...');
+                result = await generateText({
+                  model: this.modelFactory.getModel(),
+                  system: context.systemPrompt,
+                  messages: [...context.conversationHistory, { role: 'user', content: rephrasedText }],
+                  tools: selectedTools,
+                  toolChoice: 'auto',
+                  maxSteps: 8,
+                  temperature: this.config.temperature,
+                  abortSignal: agentAbort,
+                });
+              } catch (rephraseError) {
+                const rephraseErrorMsg = rephraseError instanceof Error ? rephraseError.message : '';
+                console.warn(`Rephrased retry also failed, falling back to text-only: ${rephraseErrorMsg}`);
+                result = undefined;
+              }
+            }
 
-IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are temporarily unavailable.
-- If the user asks about current weather, news, or real-time data, apologize and explain you cannot search right now.
-- Answer only from your built-in knowledge.
-- Do NOT pretend you can look something up or "check" something - be honest that tools are unavailable.`;
+            // Final fallback: text-only with improved prompt
+            if (!result) {
+              const textOnlyPrompt = context.systemPrompt + `
 
-            result = await generateText({
-              model: this.modelFactory.getModel(),
-              system: textOnlyPrompt,
-              messages: [...context.conversationHistory, { role: 'user', content: message.text }],
-              abortSignal: agentAbort,
-            });
-            usedTextOnlyFallback = true;
+IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for this response.
+- First, check the conversation history above — if it already contains relevant data (e.g., search results, email content, etc.), use that information to answer.
+- Only say you cannot help if the conversation history has NO relevant context for the question.
+- Do NOT pretend you can look something up — be honest that tools are temporarily unavailable if you truly have no data to answer with.`;
+
+              result = await generateText({
+                model: this.modelFactory.getModel(),
+                system: textOnlyPrompt,
+                messages: [...context.conversationHistory, { role: 'user', content: message.text }],
+                temperature: this.config.temperature,
+                abortSignal: agentAbort,
+              });
+              usedTextOnlyFallback = true;
+            }
           }
         } else {
           throw toolError;
@@ -559,6 +596,7 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
                   { role: 'user', content: message.text },
                   { role: 'user', content: `Here are the results from the tools that were called:\n\n${resultsText}` },
                 ],
+                temperature: this.config.temperature,
               });
               // Record summarization call tokens
               this.costMonitor?.recordUsage(
@@ -762,8 +800,9 @@ Complete the task step by step, using your available tools. When done, provide a
         model: this.modelFactory.getModel(),
         system: systemPromptWithContext,
         messages: [{ role: 'user', content: taskInstructions }],
-        ...(selectedTools ? { tools: selectedTools } : {}),
+        ...(selectedTools ? { tools: selectedTools, toolChoice: 'auto' as const } : {}),
         maxSteps,
+        temperature: this.config.temperature,
         abortSignal: AbortSignal.timeout(90_000),
       });
 

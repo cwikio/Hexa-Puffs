@@ -45,6 +45,17 @@ export function loadConfig(): Config {
       skipShortConversations: getEnvNumber('SKIP_SHORT_CONVERSATIONS', 50),
     },
 
+    embedding: {
+      provider: getEnvString('EMBEDDING_PROVIDER', 'none'),
+      ollamaBaseUrl: getEnvString('OLLAMA_EMBEDDING_BASE_URL', 'http://localhost:11434'),
+      ollamaModel: getEnvString('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text'),
+      lmstudioBaseUrl: getEnvString('LMSTUDIO_EMBEDDING_BASE_URL', 'http://localhost:1234/v1'),
+      lmstudioModel: getEnvString('LMSTUDIO_EMBEDDING_MODEL', 'text-embedding-nomic-embed-text-v1.5'),
+      dimensions: getEnvNumber('EMBEDDING_DIMENSIONS', 768),
+      vectorWeight: getEnvNumber('EMBEDDING_VECTOR_WEIGHT', 0.6),
+      textWeight: getEnvNumber('EMBEDDING_TEXT_WEIGHT', 0.4),
+    },
+
     logLevel: getEnvString('LOG_LEVEL', 'info'),
   };
 
@@ -70,4 +81,4 @@ export function getConfig(): Config {
   return configInstance;
 }
 
-export { type Config, type AIProviderConfig, type ExtractionConfig } from './schema.js';
+export { type Config, type AIProviderConfig, type ExtractionConfig, type EmbeddingConfig } from './schema.js';

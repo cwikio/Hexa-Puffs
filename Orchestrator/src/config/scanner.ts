@@ -16,14 +16,21 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'fs';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { getEnvBoolean } from '@mcp/shared/Utils/config.js';
 
+export interface ChannelManifestConfig {
+  botPatterns?: string[];
+  chatRefreshIntervalMs?: number;
+  maxMessageAgeMs?: number;
+}
+
 export interface AnnabelleManifest {
   mcpName: string;
   transport?: 'stdio' | 'http';
   sensitive?: boolean;
-  role?: 'guardian';
+  role?: 'guardian' | 'channel';
   timeout?: number;
   required?: boolean;
   httpPort?: number;
+  channel?: ChannelManifestConfig;
 }
 
 export interface DiscoveredMCP {
@@ -39,6 +46,10 @@ export interface DiscoveredMCP {
   sensitive: boolean;
   /** Whether this is the Guardian MCP */
   isGuardian: boolean;
+  /** Whether this is a channel MCP (input/output for messages) */
+  isChannel: boolean;
+  /** Optional channel adapter configuration from manifest */
+  channelConfig?: ChannelManifestConfig;
   /** Default timeout in ms */
   timeout: number;
   /** Whether Orchestrator should fail if this MCP doesn't start */
@@ -109,6 +120,8 @@ export function scanForMCPs(mcpsRoot: string): DiscoveredMCP[] {
       transport: manifest.transport ?? 'stdio',
       sensitive: manifest.sensitive ?? false,
       isGuardian: manifest.role === 'guardian',
+      isChannel: manifest.role === 'channel',
+      channelConfig: manifest.channel,
       timeout: manifest.timeout ?? 30000,
       required: manifest.required ?? false,
       httpPort: manifest.httpPort,

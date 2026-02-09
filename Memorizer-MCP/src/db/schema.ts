@@ -1,3 +1,5 @@
+import { logger } from '@mcp/shared/Utils/logger.js';
+
 // SQL schema definitions for the Memory MCP database
 
 export const SCHEMA_SQL = `
@@ -156,4 +158,69 @@ export interface SkillRow {
   last_run_summary: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// --- FTS5 + Vector Search Schema ---
+
+/**
+ * FTS5 full-text index on fact text.
+ * Uses external content table (references facts, no data duplication).
+ * Porter stemming for matching word variants ("running" → "run").
+ */
+export const FTS5_SCHEMA_SQL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
+    fact,
+    content=facts,
+    content_rowid=id,
+    tokenize='porter unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS facts_fts_ai AFTER INSERT ON facts BEGIN
+    INSERT INTO facts_fts(rowid, fact) VALUES (new.id, new.fact);
+END;
+
+CREATE TRIGGER IF NOT EXISTS facts_fts_ad AFTER DELETE ON facts BEGIN
+    INSERT INTO facts_fts(facts_fts, rowid, fact) VALUES('delete', old.id, old.fact);
+END;
+
+CREATE TRIGGER IF NOT EXISTS facts_fts_au AFTER UPDATE ON facts BEGIN
+    INSERT INTO facts_fts(facts_fts, rowid, fact) VALUES('delete', old.id, old.fact);
+    INSERT INTO facts_fts(rowid, fact) VALUES (new.id, new.fact);
+END;
+`;
+
+/**
+ * Set up FTS5 and vector search schemas.
+ * Called during database initialization, after the base schema and migrations.
+ * Idempotent — safe to call on every startup.
+ */
+export function setupVectorSchema(db: import('better-sqlite3').Database, dimensions: number, sqliteVecLoaded: boolean): void {
+
+  // 1. Create FTS5 virtual table and triggers
+  try {
+    db.exec(FTS5_SCHEMA_SQL);
+    logger.info('FTS5 schema initialized');
+  } catch (error) {
+    logger.warn('Failed to create FTS5 tables', { error });
+  }
+
+  // 2. Create vec0 virtual table for vector search (only if sqlite-vec is loaded)
+  if (sqliteVecLoaded) {
+    try {
+      db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS vec_facts USING vec0(embedding float[${dimensions}])`);
+      logger.info('vec_facts table initialized', { dimensions });
+    } catch (error) {
+      logger.warn('Failed to create vec_facts table', { error });
+    }
+  }
+
+  // 3. Rebuild FTS5 index from content table on every startup.
+  //    This is more reliable than incremental backfill and fixes
+  //    SQLITE_CORRUPT_VTAB when the external content table is out of sync.
+  try {
+    db.exec("INSERT INTO facts_fts(facts_fts) VALUES('rebuild')");
+    logger.info('FTS5 index rebuilt');
+  } catch (error) {
+    logger.warn('FTS5 rebuild failed', { error });
+  }
 }

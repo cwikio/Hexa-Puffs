@@ -59,7 +59,7 @@ export const ConfigSchema = z.object({
 
   // Groq settings
   groqApiKey: z.string().optional(),
-  groqModel: z.string().default('llama-3.3-70b-versatile'),
+  groqModel: z.string().default('moonshotai/kimi-k2-instruct-0905'),
 
   // LM Studio settings
   lmstudioBaseUrl: z.string().url().default('http://localhost:1234/v1'),
@@ -68,6 +68,10 @@ export const ConfigSchema = z.object({
   // Ollama settings
   ollamaBaseUrl: z.string().url().default('http://localhost:11434'),
   ollamaModel: z.string().default('llama3.2'),
+
+  // LLM temperature (0-2). Lower = more deterministic, better tool calling.
+  // kimi-k2 recommends 0.6 general / 0.3 for tool calling
+  temperature: z.number().min(0).max(2).default(0.6),
 
   // Orchestrator connection
   orchestratorUrl: z.string().url().default('http://localhost:8000'),
@@ -155,11 +159,12 @@ export function loadConfig(): Config {
     thinkerEnabled: parseBoolean(process.env.THINKER_ENABLED, true),
     llmProvider: process.env.THINKER_LLM_PROVIDER || 'groq',
     groqApiKey: process.env.GROQ_API_KEY,
-    groqModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    groqModel: process.env.GROQ_MODEL || 'moonshotai/kimi-k2-instruct-0905',
     lmstudioBaseUrl: process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234/v1',
     lmstudioModel: process.env.LMSTUDIO_MODEL || undefined,
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
     ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2',
+    temperature: parseNumber(process.env.THINKER_TEMPERATURE, 0.6),
     orchestratorUrl: process.env.ORCHESTRATOR_URL || 'http://localhost:8000',
     orchestratorTimeout: parseInteger(process.env.ORCHESTRATOR_TIMEOUT, 30000),
     thinkerPort: parseInteger(process.env.THINKER_PORT, 8006),

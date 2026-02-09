@@ -13,7 +13,7 @@ export const IncomingAgentMessageSchema = z.object({
   senderId: z.string(),
   text: z.string(),
   date: z.string(),
-  channel: z.string().default('telegram'),
+  channel: z.string(),
   agentId: z.string().default('main'),
 });
 

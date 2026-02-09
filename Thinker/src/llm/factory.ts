@@ -1,4 +1,4 @@
-import type { LanguageModelV1 } from 'ai';
+import type { LanguageModel } from 'ai';
 import type { Config } from '../config.js';
 import {
   createGroqProvider,
@@ -12,7 +12,7 @@ import {
 /**
  * Create a language model instance based on configuration
  */
-export function createLanguageModel(config: Config): LanguageModelV1 {
+export function createLanguageModel(config: Config): LanguageModel {
   const modelId = getModelId(config);
   const providerName = getProviderDisplayName(config.llmProvider);
 
@@ -43,8 +43,8 @@ export function createLanguageModel(config: Config): LanguageModelV1 {
  * Model factory that caches the model instance
  */
 export class ModelFactory {
-  private model: LanguageModelV1 | null = null;
-  private compactionModel: LanguageModelV1 | null = null;
+  private model: LanguageModel | null = null;
+  private compactionModel: LanguageModel | null = null;
   private config: Config;
 
   constructor(config: Config) {
@@ -54,7 +54,7 @@ export class ModelFactory {
   /**
    * Get or create the language model
    */
-  getModel(): LanguageModelV1 {
+  getModel(): LanguageModel {
     if (!this.model) {
       this.model = createLanguageModel(this.config);
     }
@@ -66,7 +66,7 @@ export class ModelFactory {
    * Uses a dedicated small model (e.g. llama-3.1-8b-instant) to minimize cost.
    * Falls back to the main agent model if compaction model is not configured.
    */
-  getCompactionModel(): LanguageModelV1 {
+  getCompactionModel(): LanguageModel {
     if (!this.compactionModel) {
       if (this.config.compactionProvider && this.config.compactionModel) {
         this.compactionModel = createCompactionModel(this.config);

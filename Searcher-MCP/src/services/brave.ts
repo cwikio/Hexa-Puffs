@@ -140,3 +140,38 @@ export async function newsSearch(
     freshness: mapFreshness(params.freshness),
   });
 }
+
+export interface BraveImageResult {
+  title: string;
+  url: string;
+  properties: {
+    url: string;
+  };
+  thumbnail: {
+    src: string;
+  };
+  source: string;
+}
+
+export interface BraveImageSearchResponse {
+  query: {
+    original: string;
+  };
+  results: BraveImageResult[];
+}
+
+export interface ImageSearchParams {
+  query: string;
+  count?: number;
+  safesearch?: "off" | "moderate" | "strict";
+}
+
+export async function imageSearch(
+  params: ImageSearchParams
+): Promise<BraveImageSearchResponse> {
+  return braveRequest<BraveImageSearchResponse>("/images/search", {
+    q: params.query,
+    count: params.count,
+    safesearch: params.safesearch,
+  });
+}

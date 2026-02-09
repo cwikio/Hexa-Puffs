@@ -28,7 +28,8 @@ import { SecurityCoordinator } from './security.js';
 import { SessionManager } from './sessions.js';
 import { ToolExecutor, type ToolRegistry } from './tools.js';
 import { ToolRouter } from './tool-router.js';
-import { ChannelPoller } from './channel-poller.js';
+import { ChannelManager } from './channel-poller.js';
+import { GenericChannelAdapter } from './adapters/generic-channel-adapter.js';
 import { ThinkerClient } from './thinker-client.js';
 import { AgentManager, type AgentStatus } from './agent-manager.js';
 import { MessageRouter } from './message-router.js';
@@ -77,7 +78,7 @@ export class Orchestrator {
   private toolRouter: ToolRouter;
 
   // Channel polling & agent dispatch (multi-agent)
-  private channelPoller: ChannelPoller | null = null;
+  private channelManager: ChannelManager | null = null;
   private agentManager: AgentManager | null = null;
   private messageRouter: MessageRouter | null = null;
   // Agent definitions (kept for tool policy lookups)
@@ -480,17 +481,27 @@ export class Orchestrator {
   private async startChannelPolling(): Promise<void> {
     this.logger.info('Starting channel polling...');
 
-    // Create and initialize channel poller
-    this.channelPoller = new ChannelPoller(this.toolRouter, {
+    const manager = new ChannelManager({
       intervalMs: this.config.channelPolling.intervalMs,
       maxMessagesPerCycle: this.config.channelPolling.maxMessagesPerCycle,
     });
 
-    this.channelPoller.onMessage = (msg) => this.dispatchMessage(msg);
+    // Auto-register adapters for every discovered channel MCP — no special cases
+    for (const entry of this.config.channelMCPs) {
+      const adapterConfig = {
+        botPatterns: entry.botPatterns,
+        chatRefreshIntervalMs: entry.chatRefreshIntervalMs,
+        maxMessageAgeMs: entry.maxMessageAgeMs,
+      };
+      manager.registerAdapter(new GenericChannelAdapter(entry.name, this.toolRouter, adapterConfig));
+    }
 
-    await this.channelPoller.initialize();
-    this.channelPoller.start();
+    manager.onMessage = (msg: IncomingAgentMessage) => this.dispatchMessage(msg);
 
+    await manager.initialize();
+    manager.start();
+
+    this.channelManager = manager;
     this.logger.info('Channel polling started');
   }
 
@@ -498,9 +509,9 @@ export class Orchestrator {
    * Stop channel polling.
    */
   stopChannelPolling(): void {
-    if (this.channelPoller) {
-      this.channelPoller.stop();
-      this.channelPoller = null;
+    if (this.channelManager) {
+      this.channelManager.stop();
+      this.channelManager = null;
       this.logger.info('Channel polling stopped');
     }
   }
@@ -515,16 +526,7 @@ export class Orchestrator {
       const result = await this.slashCommands.tryHandle(msg);
       if (result.handled) {
         const response = result.response || result.error || 'Command processed.';
-        if (msg.channel === 'telegram') {
-          try {
-            await this.toolRouter.routeToolCall('telegram_send_message', {
-              chat_id: msg.chatId,
-              message: response,
-            });
-          } catch (error) {
-            this.logger.error('Failed to send slash command response', { error });
-          }
-        }
+        await this.sendToChannel(msg.channel, msg.chatId, response);
         this.logger.info(`Slash command handled: ${msg.text.split(' ')[0]}`, { command: msg.text, response });
         return;
       }
@@ -542,16 +544,8 @@ export class Orchestrator {
     // Pre-dispatch: check if agent is already paused by cost controls
     if (this.agentManager?.isAgentPaused(targetAgentId)) {
       this.logger.warn(`Dropping message for cost-paused agent "${targetAgentId}"`);
-      if (msg.channel === 'telegram') {
-        try {
-          await this.toolRouter.routeToolCall('telegram_send_message', {
-            chat_id: msg.chatId,
-            message: `Agent is currently paused due to cost controls and is not processing messages.`,
-          });
-        } catch {
-          // Best-effort notification
-        }
-      }
+      await this.sendToChannel(msg.channel, msg.chatId,
+        `Agent is currently paused due to cost controls and is not processing messages.`);
       return;
     }
 
@@ -574,29 +568,19 @@ export class Orchestrator {
         this.agentManager.markPaused(targetAgentId, result.error || 'Cost limit exceeded');
       }
 
-      // Send Telegram notification
+      // Send notification to configured channel (or fall back to originating channel)
       const agentDef = this.agentDefinitions.get(targetAgentId);
+      const notifyChannel = agentDef?.costControls?.notifyChannel || msg.channel;
       const notifyChatId = agentDef?.costControls?.notifyChatId || msg.chatId;
-      try {
-        await this.toolRouter.routeToolCall('telegram_send_message', {
-          chat_id: notifyChatId,
-          message: `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nReason: ${result.error}\n\nThe agent will not process messages until resumed.`,
-        });
-      } catch (notifyError) {
-        this.logger.error('Failed to send cost pause notification', { error: notifyError });
-      }
+      await this.sendToChannel(notifyChannel, notifyChatId,
+        `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nReason: ${result.error}\n\nThe agent will not process messages until resumed.`);
 
       return;
     }
 
     if (result.success && result.response) {
       // Send response back to the originating channel
-      if (msg.channel === 'telegram') {
-        await this.toolRouter.routeToolCall('telegram_send_message', {
-          chat_id: msg.chatId,
-          message: result.response,
-        });
-      }
+      await this.sendToChannel(msg.channel, msg.chatId, result.response);
 
       // Store conversation in memory
       await this.toolRouter.routeToolCall('memory_store_conversation', {
@@ -610,17 +594,26 @@ export class Orchestrator {
       );
     } else {
       this.logger.error(`Agent processing failed: ${result.error}`);
-      // Send brief error notification — ChannelPoller filters by botUserId + botMessagePatterns
-      if (msg.channel === 'telegram') {
-        try {
-          await this.toolRouter.routeToolCall('telegram_send_message', {
-            chat_id: msg.chatId,
-            message: `Sorry, I couldn't complete that request. Please try again.`,
-          });
-        } catch {
-          // Best-effort notification
-        }
+      // Send brief error notification — adapter filters by botUserId + botMessagePatterns
+      await this.sendToChannel(msg.channel, msg.chatId,
+        `Sorry, I couldn't complete that request. Please try again.`);
+    }
+  }
+
+  /**
+   * Send a message to a channel via its adapter.
+   * Looks up the adapter from the ChannelManager and delegates to it.
+   */
+  private async sendToChannel(channel: string, chatId: string, message: string): Promise<void> {
+    const adapter = this.channelManager?.getAdapter(channel);
+    if (adapter) {
+      try {
+        await adapter.sendMessage(chatId, message);
+      } catch (error) {
+        this.logger.error(`Failed to send to channel "${channel}"`, { error });
       }
+    } else {
+      this.logger.warn(`No adapter for channel "${channel}" — response dropped`);
     }
   }
 
@@ -678,17 +671,17 @@ export class Orchestrator {
   }
 
   /**
-   * Get the ChannelPoller (for kill switch — stop/start polling).
+   * Get the ChannelManager (for kill switch — stop/start polling).
    */
-  getChannelPoller(): ChannelPoller | null {
-    return this.channelPoller;
+  getChannelManager(): ChannelManager | null {
+    return this.channelManager;
   }
 
   /**
    * Restart channel polling (used by /resume telegram).
    */
   async restartChannelPolling(): Promise<void> {
-    if (this.channelPoller) return; // already running
+    if (this.channelManager) return; // already running
     if (this.config.channelPolling.enabled) {
       await this.startChannelPolling();
     }

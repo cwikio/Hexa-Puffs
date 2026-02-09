@@ -204,6 +204,11 @@ export class AgentManager {
         break;
     }
 
+    // Temperature
+    if (definition.temperature !== undefined) {
+      env.THINKER_TEMPERATURE = String(definition.temperature);
+    }
+
     // Disable self-polling and direct response — Orchestrator handles these
     env.THINKER_POLLING_ENABLED = 'false';
     env.THINKER_SEND_RESPONSE_DIRECTLY = 'false';

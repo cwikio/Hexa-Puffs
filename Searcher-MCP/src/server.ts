@@ -13,6 +13,9 @@ import {
   newsSearchSchema,
   handleNewsSearch,
   type NewsSearchInput,
+  imageSearchSchema,
+  handleImageSearch,
+  type ImageSearchInput,
 } from "./tools/index.js";
 
 export function createServer(): McpServer {
@@ -51,6 +54,23 @@ export function createServer(): McpServer {
     },
     handler: async (params) => {
       const result = await handleNewsSearch(params as NewsSearchInput);
+      return createSuccess(result);
+    },
+  });
+
+  registerTool(server, {
+    name: "image_search",
+    description:
+      "Search for images on the web. Returns direct image URLs and thumbnails. Use for finding photos, pictures, or visual content.\n\nArgs:\n  - query (string): Image search query\n  - count (number, optional): Number of results, 1-20 (default: 5)\n  - safesearch (string, optional): 'off', 'moderate', or 'strict' (default: 'moderate')\n\nReturns: { results: [{ title, source_url, image_url, thumbnail_url, source }], total_count, query }",
+    inputSchema: imageSearchSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (params) => {
+      const result = await handleImageSearch(params as ImageSearchInput);
       return createSuccess(result);
     },
   });
