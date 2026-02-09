@@ -1,3 +1,5 @@
+import { logger } from '@mcp/shared/Utils/logger.js';
+
 // SQL schema definitions for the Memory MCP database
 
 export const SCHEMA_SQL = `
@@ -193,7 +195,6 @@ END;
  * Idempotent — safe to call on every startup.
  */
 export function setupVectorSchema(db: import('better-sqlite3').Database, dimensions: number, sqliteVecLoaded: boolean): void {
-  const { logger } = require('@mcp/shared/Utils/logger.js');
 
   // 1. Create FTS5 virtual table and triggers
   try {
