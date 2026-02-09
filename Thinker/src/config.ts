@@ -59,7 +59,7 @@ export const ConfigSchema = z.object({
 
   // Groq settings
   groqApiKey: z.string().optional(),
-  groqModel: z.string().default('llama-3.3-70b-versatile'),
+  groqModel: z.string().default('moonshotai/kimi-k2-instruct-0905'),
 
   // LM Studio settings
   lmstudioBaseUrl: z.string().url().default('http://localhost:1234/v1'),
@@ -155,7 +155,7 @@ export function loadConfig(): Config {
     thinkerEnabled: parseBoolean(process.env.THINKER_ENABLED, true),
     llmProvider: process.env.THINKER_LLM_PROVIDER || 'groq',
     groqApiKey: process.env.GROQ_API_KEY,
-    groqModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    groqModel: process.env.GROQ_MODEL || 'moonshotai/kimi-k2-instruct-0905',
     lmstudioBaseUrl: process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234/v1',
     lmstudioModel: process.env.LMSTUDIO_MODEL || undefined,
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',

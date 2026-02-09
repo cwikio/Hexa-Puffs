@@ -214,19 +214,13 @@ export function setupVectorSchema(db: import('better-sqlite3').Database, dimensi
     }
   }
 
-  // 3. Backfill FTS5 for any facts that existed before FTS5 was created
+  // 3. Rebuild FTS5 index from content table on every startup.
+  //    This is more reliable than incremental backfill and fixes
+  //    SQLITE_CORRUPT_VTAB when the external content table is out of sync.
   try {
-    const existing = db.prepare(
-      'SELECT COUNT(*) as count FROM facts WHERE id NOT IN (SELECT rowid FROM facts_fts)'
-    ).get() as { count: number };
-
-    if (existing.count > 0) {
-      db.exec(
-        'INSERT INTO facts_fts(rowid, fact) SELECT id, fact FROM facts WHERE id NOT IN (SELECT rowid FROM facts_fts)'
-      );
-      logger.info('Backfilled FTS5 index', { count: existing.count });
-    }
+    db.exec("INSERT INTO facts_fts(facts_fts) VALUES('rebuild')");
+    logger.info('FTS5 index rebuilt');
   } catch (error) {
-    logger.warn('FTS5 backfill failed', { error });
+    logger.warn('FTS5 rebuild failed', { error });
   }
 }
