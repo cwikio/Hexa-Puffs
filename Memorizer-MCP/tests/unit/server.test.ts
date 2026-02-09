@@ -64,6 +64,8 @@ const EXPECTED_TOOLS = [
   'get_skill',
   'update_skill',
   'delete_skill',
+  'backfill_extract_facts',
+  'synthesize_facts',
 ];
 
 const READ_ONLY_TOOLS = [
@@ -81,6 +83,7 @@ const DESTRUCTIVE_TOOLS = [
   'delete_fact',
   'import_memory',
   'delete_skill',
+  'synthesize_facts',
 ];
 
 describe('Memorizer MCP Server Registration', () => {
@@ -104,8 +107,8 @@ describe('Memorizer MCP Server Registration', () => {
     await client.close();
   });
 
-  it('should register all 17 tools', () => {
-    expect(tools).toHaveLength(17);
+  it('should register all 19 tools', () => {
+    expect(tools).toHaveLength(19);
   });
 
   it('should register tools with correct names', () => {

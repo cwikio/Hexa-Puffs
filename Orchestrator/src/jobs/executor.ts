@@ -41,6 +41,8 @@ const BACKWARD_COMPAT_MAP: Record<string, string> = {
   'list_grants': 'filer_list_grants',
   'get_workspace_info': 'filer_get_workspace_info',
   'get_audit_log': 'filer_get_audit_log',
+  'backfill_extract_facts': 'memory_backfill_extract_facts',
+  'synthesize_facts': 'memory_synthesize_facts',
 };
 
 /**

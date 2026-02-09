@@ -519,6 +519,43 @@ export async function handleDeleteJob(args: unknown): Promise<StandardResponse> 
   }
 }
 
+// Tool: trigger_backfill
+export const triggerBackfillToolDefinition = {
+  name: 'trigger_backfill',
+  description:
+    'Trigger a one-time conversation history backfill. Processes old conversations that were never ' +
+    'mined for facts, extracting user information in batches. Progress and completion are reported via Telegram. ' +
+    'Safe to call multiple times — it only processes conversations not yet extracted.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+  },
+};
+
+export async function handleTriggerBackfill(_args: unknown): Promise<StandardResponse> {
+  try {
+    await inngest.send({
+      name: 'memory/backfill.start',
+      data: {},
+    });
+
+    logger.info('Conversation backfill triggered');
+
+    return {
+      success: true,
+      data: {
+        message: 'Backfill started. Progress will be reported via Telegram.',
+      },
+    };
+  } catch (error) {
+    logger.error('Failed to trigger backfill', { error });
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 // Export all job tool definitions
 export const jobToolDefinitions = [
   createJobToolDefinition,
@@ -526,4 +563,5 @@ export const jobToolDefinitions = [
   listJobsToolDefinition,
   getJobStatusToolDefinition,
   deleteJobToolDefinition,
+  triggerBackfillToolDefinition,
 ];

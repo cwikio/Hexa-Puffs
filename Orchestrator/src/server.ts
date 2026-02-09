@@ -16,6 +16,7 @@ import {
   handleListJobs,
   handleGetJobStatus,
   handleDeleteJob,
+  handleTriggerBackfill,
   type StandardResponse,
 } from './tools/index.js';
 
@@ -33,6 +34,7 @@ const customToolHandlers: Record<
   list_jobs: handleListJobs,
   get_job_status: handleGetJobStatus,
   delete_job: handleDeleteJob,
+  trigger_backfill: handleTriggerBackfill,
 };
 
 /**

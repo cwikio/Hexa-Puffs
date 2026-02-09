@@ -71,6 +71,18 @@ export {
   handleDeleteSkill,
 } from './skills.js';
 
+export {
+  backfillExtractFactsToolDefinition,
+  BackfillExtractFactsInputSchema,
+  handleBackfillExtractFacts,
+} from './backfill.js';
+
+export {
+  synthesizeFactsToolDefinition,
+  SynthesizeFactsInputSchema,
+  handleSynthesizeFacts,
+} from './synthesis.js';
+
 // Import all definitions for convenience
 import { storeFactToolDefinition, listFactsToolDefinition, deleteFactToolDefinition, updateFactToolDefinition } from './facts.js';
 import { storeConversationToolDefinition, searchConversationsToolDefinition } from './conversations.js';
@@ -85,6 +97,8 @@ import {
   updateSkillToolDefinition,
   deleteSkillToolDefinition,
 } from './skills.js';
+import { backfillExtractFactsToolDefinition } from './backfill.js';
+import { synthesizeFactsToolDefinition } from './synthesis.js';
 
 export const allToolDefinitions = [
   // Facts
@@ -111,4 +125,7 @@ export const allToolDefinitions = [
   getSkillToolDefinition,
   updateSkillToolDefinition,
   deleteSkillToolDefinition,
+  // Backfill & Synthesis
+  backfillExtractFactsToolDefinition,
+  synthesizeFactsToolDefinition,
 ];

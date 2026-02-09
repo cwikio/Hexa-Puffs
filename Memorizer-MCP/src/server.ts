@@ -61,6 +61,12 @@ import {
   handleGetSkill,
   handleUpdateSkill,
   handleDeleteSkill,
+  backfillExtractFactsToolDefinition,
+  BackfillExtractFactsInputSchema,
+  handleBackfillExtractFacts,
+  synthesizeFactsToolDefinition,
+  SynthesizeFactsInputSchema,
+  handleSynthesizeFacts,
 } from './tools/index.js';
 
 export function createServer(): McpServer {
@@ -210,6 +216,23 @@ export function createServer(): McpServer {
     inputSchema: DeleteSkillInputSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     handler: async (params) => handleDeleteSkill(params),
+  });
+
+  // Backfill & Synthesis
+  registerTool(server, {
+    name: 'backfill_extract_facts',
+    description: backfillExtractFactsToolDefinition.description,
+    inputSchema: BackfillExtractFactsInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleBackfillExtractFacts(params),
+  });
+
+  registerTool(server, {
+    name: 'synthesize_facts',
+    description: synthesizeFactsToolDefinition.description,
+    inputSchema: SynthesizeFactsInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    handler: async (params) => handleSynthesizeFacts(params),
   });
 
   return server;

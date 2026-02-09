@@ -40,6 +40,7 @@ export {
   handleListJobs,
   handleGetJobStatus,
   handleDeleteJob,
+  handleTriggerBackfill,
 } from './jobs.js';
 export {
   getNewTelegramMessagesTool,
