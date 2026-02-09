@@ -385,9 +385,9 @@ OpenClaw's approach of writing unstructured markdown to memory files is flexible
 
 ### How Annabelle Works
 
-Memory MCP uses SQLite with 4 tables: `facts`, `conversations`, `profiles`, `skills`. Retrieval in `retrieve_memories` splits the query into keywords, runs `LIKE %keyword%` queries against the facts table, and ranks results by a combination of keyword overlap and confidence/freshness. Facts are categorized (preference, background, pattern, project, contact, decision) with 60% keyword-overlap deduplication on storage. There are 11 memory tools covering store, list, delete, search, profile management, stats, export, and import.
+Memory MCP uses SQLite with 4 tables: `facts`, `conversations`, `profiles`, `skills`, plus FTS5 (`facts_fts`) and vector (`vec_facts` via sqlite-vec) virtual tables. Facts are categorized (preference, background, pattern, project, contact, decision) with 60% keyword-overlap deduplication on storage. There are 20 memory tools covering store, list, delete, search, profile management, stats, export, import, backfill, synthesis, and embedding management.
 
-The system has no semantic understanding. "I enjoy cycling" stored as a fact will not match a query about "hobbies" or "exercise" because there is no keyword overlap. Similarly, "Tomasz lives in Kraków" won't match "where does the user live in Europe?" because "Europe" doesn't appear in the stored fact. As the fact count grows, keyword matching becomes increasingly inadequate — relevant facts are missed while irrelevant ones (with coincidental keyword matches) are returned.
+~~The system has no semantic understanding.~~ **Update (Feb 2026):** `retrieve_memories` now uses hybrid search — vector similarity (sqlite-vec, 60% weight) combined with FTS5 full-text search (porter stemming + BM25, 40% weight). Embedding providers: Ollama and LM Studio (both local/private). Graceful degradation: hybrid → FTS5-only → LIKE fallback. See Priority 2 for implementation details.
 
 ### How OpenClaw Works
 
@@ -403,37 +403,43 @@ OpenClaw's memory system spans **43 files** with a fundamentally different archi
 
 ### Which Architecture Is Superior
 
-**OpenClaw's memory architecture is clearly superior.** This is the largest capability gap between the two systems.
+~~**OpenClaw's memory architecture is clearly superior.** This is the largest capability gap between the two systems.~~ **Update (Feb 2026):** This gap is now largely closed. Annabelle implements the same hybrid search pattern: sqlite-vec for vector similarity + FTS5 for keyword matching, union-based ranking, graceful degradation. See Priority 2.
 
 Vector embeddings with hybrid search solve a fundamental problem that keyword matching cannot: semantic similarity. "Where does the user live in Europe?" finds "Tomasz lives in Kraków" because the embeddings for these sentences are geometrically close in the embedding space, even with zero keyword overlap. As fact count grows (hundreds to thousands), semantic retrieval becomes not just better but necessary — keyword matching at scale returns too many false positives (coincidental word matches) and misses too many true positives (semantically relevant facts with different wording).
 
-OpenClaw's architecture is also more resilient. The auto-fallback chain (local → OpenAI → Gemini → BM25-only) means memory always works, with degraded but functional retrieval when embedding providers are unavailable. Annabelle's `LIKE %keyword%` doesn't have a better mode to fall back from — it's already the minimum viable implementation.
+OpenClaw's architecture is also more resilient. The auto-fallback chain (local → OpenAI → Gemini → BM25-only) means memory always works, with degraded but functional retrieval when embedding providers are unavailable. ~~Annabelle's `LIKE %keyword%` doesn't have a better mode to fall back from — it's already the minimum viable implementation.~~ **Update:** Annabelle now degrades: hybrid → FTS5-only → LIKE fallback. Remaining difference: OpenClaw has an automatic provider fallback chain; Annabelle requires manual provider configuration.
 
 The union-based hybrid approach (rather than intersection) is a particularly smart design choice. It ensures that both semantically similar results AND exact keyword matches contribute to the final ranking. A query for "error ERR_CONNECTION_REFUSED" benefits from BM25 matching the exact error code, while a query for "network problems" benefits from vector similarity even if no stored fact contains those exact words.
 
 ### Recommendations
 
-**Recommendation 1: Add `sqlite-vec` for vector storage in Memory MCP.**
+**Recommendation 1: Add `sqlite-vec` for vector storage in Memory MCP.** ✅ *Implemented Feb 2026*
 
 Install the `sqlite-vec` SQLite extension and add a `vec_facts` table alongside the existing `facts` table. When a fact is stored, compute its embedding and store the vector in `vec_facts`. When querying, compute the query embedding and use cosine similarity to find the closest facts.
 
 *Justification:* This is the single highest-impact improvement to Annabelle's memory system. It transforms retrieval from literal keyword matching to semantic understanding. Every fact stored becomes findable by meaning, not just by exact words. The implementation is additive — the existing `facts` table and keyword-based retrieval remain unchanged. Vector search is layered on top, and results from both are merged. `sqlite-vec` keeps everything in the existing SQLite database — no new infrastructure (no Postgres, no Pinecone, no separate vector database).
 
-**Recommendation 2: Implement hybrid search with weighted scoring.**
+**Recommendation 2: Implement hybrid search with weighted scoring.** ✅ *Implemented Feb 2026*
 
 Combine vector similarity (70% weight) with FTS5 full-text search (30% weight). Take the union of both result sets. Use OpenClaw's proven scoring formula: `finalScore = 0.7 * vectorScore + 0.3 * textScore`.
 
+*Implementation note:* Implemented with 60/40 weighting (vector/text) instead of 70/30, better suited for short fact strings. Weights are configurable via `EMBEDDING_VECTOR_WEIGHT` and `EMBEDDING_TEXT_WEIGHT`.
+
 *Justification:* Neither vector search nor keyword search alone is optimal. Vector search excels at semantic similarity but can miss exact matches (specific error codes, names, dates). BM25 keyword search excels at exact token matching but misses semantic relationships. The weighted union gives the best of both — semantic understanding from vectors, precision from keywords. OpenClaw's 70/30 split is empirically validated across their user base.
 
-**Recommendation 3: Start with local embeddings, fall back to API providers.**
+**Recommendation 3: Start with local embeddings, fall back to API providers.** ✅ *Partially implemented Feb 2026*
 
 Use `node-llama-cpp` with an auto-downloaded GGUF embedding model for local, free, offline-capable embeddings. Fall back to OpenAI's `text-embedding-3-small` if local fails. Fall back to BM25-only if both fail.
 
+*Implementation note:* Implemented with Ollama and LM Studio as local-only providers (no cloud APIs — user requirement). `node-llama-cpp` was not used; Ollama provides equivalent local embedding via `nomic-embed-text`. Auto-fallback chain between providers is not yet implemented — requires manual `EMBEDDING_PROVIDER` config.
+
 *Justification:* Local embeddings are free, fast (no API latency), and work offline. On a 128GB MacBook Pro, running a small embedding model locally is trivial — embedding models are 50–200MB, not multi-gigabyte LLMs. The fallback chain ensures memory always works: best quality with local embeddings → good quality with API embeddings → acceptable quality with keyword-only search. This mirrors OpenClaw's resilience model.
 
-**Recommendation 4: Migrate existing facts to vector storage.**
+**Recommendation 4: Migrate existing facts to vector storage.** ✅ *Implemented Feb 2026*
 
 After implementing vector search, run a one-time migration that computes embeddings for all existing facts and populates the `vec_facts` table. Add a background job (Inngest) that re-embeds facts periodically if the embedding model changes.
+
+*Implementation note:* Implemented as `backfill_embeddings` MCP tool (batch-processes facts without vectors). FTS5 is auto-backfilled on startup. Inngest periodic re-embedding is not yet implemented — manual `backfill_embeddings` calls required after model changes.
 
 *Justification:* Without migration, existing facts would only be findable via keyword search until they're re-stored. A one-time migration ensures all historical facts benefit from semantic retrieval immediately. The Inngest background job handles the edge case where you switch embedding models (different models produce incompatible vectors). Re-embedding ~1,000 facts with a local model takes seconds.
 
@@ -466,6 +472,8 @@ Files added: `Thinker/src/session/store.ts`, `types.ts`, `index.ts`. Files modif
 Files added: `src/embeddings/provider.ts`, `ollama-provider.ts`, `lmstudio-provider.ts`, `index.ts`, `fact-embeddings.ts`, `src/tools/backfill-embeddings.ts`. Files modified: `src/config/schema.ts`, `src/config/index.ts`, `src/db/schema.ts`, `src/db/index.ts`, `src/tools/memory.ts`, `facts.ts`, `synthesis.ts`, `backfill.ts`, `index.ts`, `src/server.ts`, `package.json`. Tests added: `tests/unit/vector-search.test.ts` (12 tests), `hybrid-search.test.ts` (11 tests), `embeddings.test.ts` (3 tests). No changes to Orchestrator or Thinker — the memory interface stays the same.
 
 Env vars: `EMBEDDING_PROVIDER` (`none`|`ollama`|`lmstudio`), `OLLAMA_EMBEDDING_BASE_URL`, `OLLAMA_EMBEDDING_MODEL`, `LMSTUDIO_EMBEDDING_BASE_URL`, `LMSTUDIO_EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS`, `EMBEDDING_VECTOR_WEIGHT`, `EMBEDDING_TEXT_WEIGHT`.
+
+**Remaining gap:** No auto-fallback chain across providers (Ollama → LM Studio → FTS5-only). Currently requires manual `EMBEDDING_PROVIDER` config. Re-embedding on model change is manual via `backfill_embeddings`.
 
 ### ✅ Priority 3: Post-Conversation Fact Extraction
 **Impact: High | Effort: Low-Medium | Codebase change: ~100–150 lines | Implemented Feb 2026**
