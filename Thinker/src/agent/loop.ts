@@ -349,6 +349,9 @@ export class Agent {
     });
     systemPrompt += `\n\n## Current Date & Time\n${formatter.format(now)} (${tz})`;
 
+    // Inject chat context so the LLM uses the correct chat_id in tool calls
+    systemPrompt += `\n\n## Current Chat\nchat_id: ${chatId}`;
+
     // Inject compaction summary from previous conversation context
     if (state.compactionSummary) {
       systemPrompt += `\n\n## Previous Conversation Context\n${state.compactionSummary}`;
