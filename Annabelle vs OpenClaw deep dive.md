@@ -466,19 +466,19 @@ After a conversation goes idle for 5 minutes (configurable via `THINKER_FACT_EXT
 
 Files added: `Thinker/src/agent/fact-extractor.ts`. Files modified: `Thinker/src/agent/loop.ts` (idle timer scheduling + extraction orchestration), `Thinker/src/agent/types.ts` (`lastExtractionAt` on `AgentState`), `Thinker/src/config.ts` (`FactExtractionConfigSchema` + env vars), `Thinker/src/orchestrator/client.ts` (`listFacts` method). No changes to Memorizer-MCP, Orchestrator, or other MCPs.
 
-### ⬜ Priority 4: Conversation History Backfill
-**Impact: High (one-time) | Effort: Low | Codebase change: ~50–80 lines**
+### ✅ Priority 4: Conversation History Backfill
+**Impact: High (one-time) | Effort: Low | Codebase change: ~160 lines | Implemented Feb 2026**
 
-Recovers user knowledge from months of existing conversation history that was never mined for facts. A one-time Inngest background job that processes the `conversations` table in batches.
+Recovers user knowledge from existing conversation history that was never mined for facts. An event-triggered Inngest job (`memory/backfill.start`) processes the `conversations` table in batches of 10, using the existing `FactExtractor` in Memorizer-MCP. Finds unprocessed conversations via LEFT JOIN on `facts.source`. Rate-limited with `step.sleep('batch-delay', '3s')` between batches to stay within Groq's 30 req/min limit. Sends Telegram notifications at start and completion. Can be triggered manually via the `trigger_backfill` Orchestrator tool.
 
-Touch points: a new Inngest function in `Orchestrator/src/jobs/` that reads conversation batches, sends them to the LLM for fact extraction, and calls `store_fact` for new discoveries. Uses existing Memory MCP tools and Inngest infrastructure. No changes to Thinker, Orchestrator core, or other MCPs. Run once, then disable.
+Files added: `Memorizer-MCP/src/tools/backfill.ts` (new `backfill_extract_facts` MCP tool). Files modified: `Memorizer-MCP/src/server.ts` (registerTool), `Memorizer-MCP/src/tools/index.ts` (exports), `Orchestrator/src/jobs/functions.ts` (`conversationBackfillFunction`), `Orchestrator/src/tools/jobs.ts` (`trigger_backfill` tool + handler), `Orchestrator/src/server.ts`, `Orchestrator/src/core/http-handlers.ts`, `Orchestrator/src/jobs/executor.ts` (backward compat mapping).
 
-### ⬜ Priority 5: Memory Synthesis (Weekly)
-**Impact: Medium-High | Effort: Low-Medium | Codebase change: ~80–120 lines**
+### ✅ Priority 5: Memory Synthesis (Weekly)
+**Impact: Medium-High | Effort: Low-Medium | Codebase change: ~180 lines | Implemented Feb 2026**
 
-Consolidates accumulated facts over time — merging duplicates, resolving contradictions, flagging stale information. Already planned in Annabelle's Phase 3 and the Inngest infrastructure exists.
+Consolidates accumulated facts weekly — merging duplicates, resolving contradictions, flagging stale information. Runs as an Inngest cron job every Sunday at 3 AM (`0 3 * * 0`). Processes facts per category (capped at 100 oldest per category for LLM quality), sends a structured synthesis prompt to Groq, and applies merge/delete/update actions via existing DB operations. Validates all LLM-suggested fact IDs against actual IDs before applying changes. Sends Telegram summary with per-category breakdown on completion.
 
-Touch points: a new Inngest cron function in `Orchestrator/src/jobs/` that loads all facts, groups by category, sends to LLM for synthesis, and applies updates via Memory MCP tools. Similar to backfill — uses existing infrastructure, no structural changes.
+Files added: `Memorizer-MCP/src/tools/synthesis.ts` (new `synthesize_facts` MCP tool). Files modified: `Memorizer-MCP/src/server.ts` (registerTool), `Memorizer-MCP/src/tools/index.ts` (exports), `Orchestrator/src/jobs/functions.ts` (`memorySynthesisFunction` + updated `jobFunctions` array), `Orchestrator/src/jobs/executor.ts` (backward compat mapping).
 
 ### ⬜ Priority 6: Code Execution Tool
 **Impact: High | Effort: Medium | Codebase change: ~150–250 lines**
