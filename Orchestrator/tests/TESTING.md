@@ -26,7 +26,7 @@ Thinker (HTTP :8006) ←── Proactive task tests call here
 ### Start the full stack
 
 ```bash
-cd /Users/tomasz/Coding/AI\ Assistants/MCPs
+cd <repo-root>
 ./start-all.sh
 ```
 

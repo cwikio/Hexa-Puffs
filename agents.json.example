@@ -17,7 +17,7 @@
         "spikeMultiplier": 3.0,
         "hardCapTokensPerHour": 250000,
         "minimumBaselineTokens": 1000,
-        "notifyChatId": "8304042211"
+        "notifyChatId": "<YOUR_TELEGRAM_CHAT_ID>"
       }
     }
   ],

@@ -4,7 +4,7 @@ import type { StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
 
 export const telegramToolDefinition = {
   name: 'send_telegram',
-  description: 'Send a message via Telegram. The message will be security-scanned before sending. The chat_id parameter is required - use a numeric chat ID like "8304042211".',
+  description: 'Send a message via Telegram. The message will be security-scanned before sending. The chat_id parameter is required - use a numeric chat ID.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -14,7 +14,7 @@ export const telegramToolDefinition = {
       },
       chat_id: {
         type: 'string',
-        description: 'Chat ID to send the message to (required). Use the numeric chat ID (e.g., "8304042211").',
+        description: 'Chat ID to send the message to (required). Use the numeric chat ID.',
       },
     },
     required: ['message', 'chat_id'],

@@ -168,7 +168,7 @@ The recommended way to start everything is using the launch script, which starts
 - Inngest Dev Server (port 8288) - job management dashboard
 
 ```bash
-cd /Users/tomasz/Coding/AI\ Assistants/MCPs
+cd <repo-root>
 ./start-all.sh
 ```
 
@@ -282,7 +282,7 @@ Agents are defined in a JSON config file (set via `AGENTS_CONFIG_PATH` env var):
         "spikeMultiplier": 3.0,
         "hardCapTokensPerHour": 250000,
         "minimumBaselineTokens": 1000,
-        "notifyChatId": "8304042211"
+        "notifyChatId": "<YOUR_TELEGRAM_CHAT_ID>"
       }
     }
   ],

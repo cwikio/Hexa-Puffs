@@ -33,5 +33,11 @@ pnpm-debug.log*
 coverage/
 .nyc_output/
 
+# Agent config (contains personal chat IDs)
+agents.json
+
+# Claude IDE settings
+.claude/
+
 # Misc
 .cache/

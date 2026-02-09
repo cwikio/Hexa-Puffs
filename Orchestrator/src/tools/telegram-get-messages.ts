@@ -10,7 +10,7 @@ export const getMessagesToolDefinition = {
     properties: {
       chat_id: {
         type: 'string',
-        description: 'Chat ID to get messages from (required). Use the numeric chat ID (e.g., "8304042211").',
+        description: 'Chat ID to get messages from (required). Use the numeric chat ID.',
       },
       limit: {
         type: 'number',

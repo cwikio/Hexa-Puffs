@@ -1,6 +1,6 @@
 # Telegram MCP Server
 
-MCP server for Telegram using MTProto protocol. Enables AI agents to send messages, manage chats, contacts, and media. Once it is added to Claude Desktop, it automatically starts run.sh script.
+MCP server for Telegram using MTProto protocol. Enables AI agents to send messages, manage chats, contacts, and media.
 
 ---
 
@@ -9,7 +9,7 @@ MCP server for Telegram using MTProto protocol. Enables AI agents to send messag
 ### 1. Install
 
 ```bash
-cd /Users/tomasz/Coding/MCPs/Telegram
+cd Telegram-MCP
 npm install
 npm run build
 ```
@@ -47,11 +47,19 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "telegram": {
-      "command": "/Users/tomasz/Coding/MCPs/Telegram/run.sh"
+      "command": "node",
+      "args": ["<repo-root>/Telegram-MCP/dist/src/index.js"],
+      "env": {
+        "TELEGRAM_API_ID": "<your_api_id>",
+        "TELEGRAM_API_HASH": "<your_api_hash>",
+        "TELEGRAM_SESSION": "<your_session_string>"
+      }
     }
   }
 }
 ```
+
+Replace `<repo-root>` with the absolute path to your cloned repository.
 
 ### 5. Restart Claude Desktop
 
@@ -225,7 +233,7 @@ This enables near-real-time message awareness without constant polling from the 
 ### Send a message
 
 ```
-Send "Hello!" to chat 8304042211
+Send "Hello!" to chat 123456789
 ```
 
 ### List chats

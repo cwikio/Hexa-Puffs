@@ -13,26 +13,31 @@ Annabelle is a personal AI assistant built on MCP (Model Context Protocol) archi
 
 ---
 
-Paste this to claude if you want to launch annabelle from there. it autostarts whenever claude is launched.
-to ad mcps cmd shift g and then ~/Library/Application Support/Claude/claude_desktop_config.json
+### Claude Desktop Integration
 
+To use Annabelle as an MCP server in Claude Desktop, edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
     "annabelle": {
       "command": "node",
       "args": [
-        "/Users/tomasz/Coding/AI Assistants/MCPs/Orchestrator/dist/Orchestrator/src/index.js"
+        "<repo-root>/Orchestrator/dist/Orchestrator/src/index.js"
       ],
       "env": {
         "TRANSPORT": "stdio",
         "TELEGRAM_MCP_URL": "http://localhost:8002",
-        "GUARDIAN_MCP_URL": "http://localhost:8003",
-        "ONEPASSWORD_MCP_URL": "http://localhost:8001",
-        "FILER_MCP_URL": "http://localhost:8004",
-        "MEMORY_MCP_URL": "http://localhost:8005",
         "SECURITY_FAIL_MODE": "open",
         "SCAN_ALL_INPUTS": "false",
         "LOG_LEVEL": "info"
       }
     }
+  }
+}
+```
+
+Replace `<repo-root>` with the absolute path to your cloned repository.
 
 ## Architecture Layers
 
@@ -614,7 +619,7 @@ Orchestrator spawns and manages multiple Thinker instances, each with its own LL
         "spikeMultiplier": 3.0,
         "hardCapTokensPerHour": 250000,
         "minimumBaselineTokens": 1000,
-        "notifyChatId": "8304042211"
+        "notifyChatId": "<YOUR_TELEGRAM_CHAT_ID>"
       }
     }
   ],

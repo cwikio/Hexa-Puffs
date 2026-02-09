@@ -22,7 +22,7 @@ An MCP (Model Context Protocol) server that provides read-only access to your 1P
 ### Step 2: Configure Environment
 
 ```bash
-cd /Users/tomasz/Coding/MCPs/OnePassword4Agents
+cd Onepassword-MCP
 cp .env.example .env
 ```
 
@@ -53,7 +53,7 @@ Edit Claude Desktop config file:
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
-        "--env-file", "/Users/tomasz/Coding/MCPs/OnePassword4Agents/.env",
+        "--env-file", "<repo-root>/Onepassword-MCP/.env",
         "onepassword-mcp"
       ]
     }
@@ -95,19 +95,6 @@ Use this if you want to test the server independently or use with HTTP clients.
 Expected response: `{"status":"healthy","transport":"http"}`
 
 ## Troubleshooting
-
-### Run Diagnostic Script
-
-```bash
-bash /Users/tomasz/Coding/MCPs/OnePassword4Agents/diagnose.sh
-```
-
-This checks:
-- Docker is running
-- MCP container is running
-- Health endpoint responds
-- 1Password CLI works
-- Lists your accessible vaults
 
 ### Manual Checks
 
