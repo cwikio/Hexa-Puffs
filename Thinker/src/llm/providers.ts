@@ -12,6 +12,29 @@ import type { ProviderName } from './types.js';
 export function createGroqProvider(config: Config) {
   return createGroq({
     apiKey: config.groqApiKey || '',
+    // DEBUG: log raw request/response to diagnose tool calling
+    fetch: async (url, init) => {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
+      if (body?.tools) {
+        console.log(`[GROQ-DEBUG] Request has ${body.tools.length} tools, tool_choice=${JSON.stringify(body.tool_choice)}`);
+        console.log(`[GROQ-DEBUG] First tool: ${JSON.stringify(body.tools[0]?.function?.name)}`);
+      }
+      const response = await globalThis.fetch(url, init);
+      // Clone to read body without consuming it
+      const cloned = response.clone();
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const json: any = await cloned.json();
+        const choice = json?.choices?.[0];
+        if (choice) {
+          console.log(`[GROQ-DEBUG] Response finish_reason=${choice.finish_reason}, has_tool_calls=${!!choice.message?.tool_calls}, content_length=${choice.message?.content?.length ?? 0}`);
+          if (choice.message?.content && !choice.message?.tool_calls) {
+            console.log(`[GROQ-DEBUG] Content preview: ${choice.message.content.substring(0, 200)}`);
+          }
+        }
+      } catch { /* streaming or parse error, ignore */ }
+      return response;
+    },
   });
 }
 
