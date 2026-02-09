@@ -20,6 +20,7 @@ import { classifyMessage } from './playbook-classifier.js';
 import { seedPlaybooks } from './playbook-seed.js';
 import { selectToolsForMessage } from './tool-selector.js';
 import { extractFactsFromConversation } from './fact-extractor.js';
+import { detectLeakedToolCall, recoverLeakedToolCall } from '../utils/recover-tool-call.js';
 
 /**
  * Default system prompt for the agent
@@ -73,6 +74,7 @@ Never explain the tools you're using, the parameters you're passing, or the inte
 - Use tools when the task genuinely requires them — memory, file operations, web search, sending messages.
 - Do NOT call tools that aren't in your available tools list.
 - When a tool IS needed, use it without asking for permission (unless destructive).
+- CRITICAL: Always use the structured function calling API to invoke tools. NEVER write tool calls as JSON text in your response (e.g. {"name": "tool", "parameters": {...}}). If you want to call a tool, call it — don't describe the call.
 
 ## Web Search Tool
 When you need current information (weather, sports scores, news, real-time data), use the searcher_web_search tool:
@@ -543,8 +545,41 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       // Record token usage in cost monitor
       this.costMonitor?.recordUsage(promptTokens, completionTokens);
 
-      // Extract and sanitize response text (removes any leaked function call syntax)
-      let responseText = sanitizeResponseText(result.text || '');
+      // ─── Tool Call Recovery ───────────────────────────────────────
+      // Groq/Llama sometimes leaks tool calls as text instead of using
+      // structured function calling. Detect and execute when this happens.
+      let responseText: string;
+      let recoveredTools: string[] = [];
+
+      const shouldAttemptRecovery =
+        result.finishReason === 'stop' &&
+        (!result.toolCalls || result.toolCalls.length === 0) &&
+        result.text;
+
+      if (shouldAttemptRecovery) {
+        const leak = detectLeakedToolCall(result.text, selectedTools);
+        if (leak.detected) {
+          console.log(`[tool-recovery] Leaked tool detected: ${leak.toolName}`);
+          const recovery = await recoverLeakedToolCall(
+            leak.toolName,
+            leak.parameters,
+            selectedTools,
+          );
+          if (recovery.success) {
+            responseText = leak.preamble || 'Done.';
+            recoveredTools = [leak.toolName];
+            console.log(`[tool-recovery] Recovery successful, response: "${responseText.substring(0, 80)}"`);
+          } else {
+            console.warn(`[tool-recovery] Recovery failed: ${recovery.error}`);
+            responseText = sanitizeResponseText(result.text || '');
+          }
+        } else {
+          responseText = sanitizeResponseText(result.text || '');
+        }
+      } else {
+        // Normal path: sanitize any leaked syntax
+        responseText = sanitizeResponseText(result.text || '');
+      }
 
       // If no text response but we have tool results, extract text from steps
       // This handles cases where the LLM only emits tool calls without a final text response
@@ -663,11 +698,13 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
         }
       }
 
-      // Collect tools used
+      // Collect tools used (include any recovered leaked tool calls)
       const toolsUsed = usedTextOnlyFallback
         ? ['(text-only fallback)']
-        : result.steps
-          .flatMap((step) => step.toolCalls?.map((tc) => tc.toolName) || []);
+        : [
+            ...result.steps.flatMap((step) => step.toolCalls?.map((tc) => tc.toolName) || []),
+            ...recoveredTools,
+          ];
 
       // Send response to Telegram and store conversation
       // (skip when Orchestrator handles delivery — sendResponseDirectly=false)
@@ -819,9 +856,42 @@ Complete the task step by step, using your available tools. When done, provide a
         result.usage?.completionTokens || 0
       );
 
-      const responseText = sanitizeResponseText(result.text || 'Task completed without summary.');
-      const toolsUsed = result.steps
-        .flatMap((step) => step.toolCalls?.map((tc) => tc.toolName) || []);
+      // ─── Tool Call Recovery (proactive tasks) ─────────────────────
+      let responseText: string;
+      let recoveredTools: string[] = [];
+
+      if (
+        selectedTools &&
+        result.finishReason === 'stop' &&
+        (!result.toolCalls || result.toolCalls.length === 0) &&
+        result.text
+      ) {
+        const leak = detectLeakedToolCall(result.text, selectedTools);
+        if (leak.detected) {
+          console.log(`[tool-recovery] Proactive task: leaked tool detected: ${leak.toolName}`);
+          const recovery = await recoverLeakedToolCall(
+            leak.toolName,
+            leak.parameters,
+            selectedTools,
+          );
+          if (recovery.success) {
+            responseText = leak.preamble || 'Task completed.';
+            recoveredTools = [leak.toolName];
+          } else {
+            console.warn(`[tool-recovery] Proactive recovery failed: ${recovery.error}`);
+            responseText = sanitizeResponseText(result.text || 'Task completed without summary.');
+          }
+        } else {
+          responseText = sanitizeResponseText(result.text || 'Task completed without summary.');
+        }
+      } else {
+        responseText = sanitizeResponseText(result.text || 'Task completed without summary.');
+      }
+
+      const toolsUsed = [
+        ...result.steps.flatMap((step) => step.toolCalls?.map((tc) => tc.toolName) || []),
+        ...recoveredTools,
+      ];
 
       console.log(`Proactive task completed (${result.steps.length} steps, tools: ${toolsUsed.join(', ') || 'none'})`);
 

@@ -18,8 +18,8 @@ const SANITIZE_PATTERNS: RegExp[] = [
   // Thinking tags: <think>...</think> or <thinking>...</thinking>
   /<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi,
 
-  // JSON-style function calls: {"function": ...} or {"tool_call": ...}
-  /\{"(?:function|tool_call)"\s*:\s*"[^"]+"\s*,?\s*(?:"(?:parameters|arguments)"\s*:\s*\{[^}]*\})?\s*\}/gi,
+  // JSON-style function calls: {"function": ...}, {"tool_call": ...}, or {"name": ..., "parameters": ...}
+  /\{"(?:function|tool_call|name)"\s*:\s*"[^"]+"\s*,?\s*(?:"(?:parameters|arguments)"\s*:\s*\{[\s\S]*?\})?\s*\}/gi,
 
   // Action tags: [Action: tool_name] or [[tool_name]]
   /\[(?:Action:\s*)?[a-z_]+(?:\s*\([^)]*\))?\]/gi,
