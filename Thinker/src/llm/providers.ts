@@ -18,6 +18,13 @@ export function createGroqProvider(config: Config) {
       if (body?.tools) {
         console.log(`[GROQ-DEBUG] Request has ${body.tools.length} tools, tool_choice=${JSON.stringify(body.tool_choice)}`);
         console.log(`[GROQ-DEBUG] First tool: ${JSON.stringify(body.tools[0]?.function?.name)}`);
+        // Dump image_search tool definition to see exact schema
+        const imgTool = body.tools.find((t: { function?: { name?: string } }) => t.function?.name === 'searcher_image_search');
+        if (imgTool) {
+          console.log(`[GROQ-DEBUG] image_search tool: ${JSON.stringify(imgTool)}`);
+        }
+        // Dump first tool to see format
+        console.log(`[GROQ-DEBUG] First tool full: ${JSON.stringify(body.tools[0])}`);
       }
       const response = await globalThis.fetch(url, init);
       // Clone to read body without consuming it

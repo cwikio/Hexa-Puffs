@@ -180,10 +180,10 @@ export class SlashCommandHandler {
 
     // Telegram & Inngest state
     const haltManager = this.orchestrator.getHaltManager();
-    const pollerRunning = this.orchestrator.getChannelPoller() !== null;
+    const pollerRunning = this.orchestrator.getChannelManager() !== null;
     const inngestHalted = haltManager.isTargetHalted('inngest');
 
-    output += `\nTelegram: ${pollerRunning ? 'polling' : 'stopped'}`;
+    output += `\nChannels: ${pollerRunning ? 'polling' : 'stopped'}`;
     output += `\nInngest: ${inngestHalted ? 'halted' : 'active'}`;
 
     // Browser
@@ -462,12 +462,12 @@ Keep it concise. No markdown formatting — plain text only.`;
     }
 
     if (target === 'all' || target === 'telegram') {
-      const poller = this.orchestrator.getChannelPoller();
-      if (poller) {
+      const manager = this.orchestrator.getChannelManager();
+      if (manager) {
         this.orchestrator.stopChannelPolling();
-        results.push('Telegram: polling stopped');
+        results.push('Channels: polling stopped');
       } else {
-        results.push('Telegram: polling was not running');
+        results.push('Channels: polling was not running');
       }
       if (target !== 'all') haltManager.addTarget('telegram', 'manual kill');
     }
@@ -519,12 +519,12 @@ Keep it concise. No markdown formatting — plain text only.`;
     }
 
     if (target === 'all' || target === 'telegram') {
-      const poller = this.orchestrator.getChannelPoller();
-      if (!poller) {
+      const manager = this.orchestrator.getChannelManager();
+      if (!manager) {
         await this.orchestrator.restartChannelPolling();
-        results.push('Telegram: polling restarted');
+        results.push('Channels: polling restarted');
       } else {
-        results.push('Telegram: polling was already running');
+        results.push('Channels: polling was already running');
       }
       haltManager.removeTarget('telegram');
     }
@@ -1277,7 +1277,7 @@ Keep it concise. No markdown formatting — plain text only.`;
 
   /**
    * Extract typed data from a ToolRouter result.
-   * Same pattern as ChannelPoller.extractData().
+   * Same pattern as GenericChannelAdapter.extractData().
    */
   private extractData<T>(result: { success: boolean; content?: unknown; error?: string }): T | null {
     try {

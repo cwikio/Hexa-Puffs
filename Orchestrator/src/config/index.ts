@@ -93,6 +93,11 @@ export function loadConfig(): Config {
     // Multi-agent config: loaded from file if AGENTS_CONFIG_PATH is set
     agentsConfigPath: process.env.AGENTS_CONFIG_PATH || undefined,
 
+    // Auto-discovered channel MCPs
+    channelMCPs: discovered
+      .filter((mcp) => mcp.isChannel)
+      .map((mcp) => ({ name: mcp.name, ...mcp.channelConfig })),
+
     logLevel: getEnvString('LOG_LEVEL', 'info'),
   };
 

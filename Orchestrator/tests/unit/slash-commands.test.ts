@@ -99,7 +99,7 @@ function createMocks(statusOverrides?: Partial<OrchestratorStatus>) {
     ]),
     callGuardianTool: vi.fn().mockResolvedValue(null),
     getHaltManager: vi.fn().mockReturnValue(mockHaltManager),
-    getChannelPoller: vi.fn().mockReturnValue({}),
+    getChannelManager: vi.fn().mockReturnValue({}),
   } as unknown as Orchestrator;
 
   const handler = new SlashCommandHandler(mockToolRouter, mockOrchestrator);

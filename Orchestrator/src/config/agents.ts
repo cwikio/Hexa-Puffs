@@ -30,7 +30,10 @@ export const CostControlsSchema = z.object({
   /** Minimum baseline tokens before spike detection activates (prevents cold-start false positives) */
   minimumBaselineTokens: z.number().int().min(100).default(1000),
 
-  /** Telegram chat ID to send cost alert notifications to (falls back to message sender) */
+  /** Channel to send cost alert notifications to (falls back to originating channel) */
+  notifyChannel: z.string().optional(),
+
+  /** Chat ID to send cost alert notifications to (falls back to message sender) */
   notifyChatId: z.string().optional(),
 });
 
