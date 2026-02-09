@@ -4,7 +4,6 @@
  * Provides project conventions on top of the SDK's registerTool():
  * - Handler returns StandardResponse, wrapper formats for MCP content
  * - Consistent error handling with StandardResponse on failures
- * - SDK handles Zod validation internally (no manual safeParse needed)
  * - Tool annotations support
  */
 

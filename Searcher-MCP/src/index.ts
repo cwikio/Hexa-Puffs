@@ -11,6 +11,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { createServer } from "./server.js";
 import { createServer as createHttpServer } from "node:http";
 import { getConfig } from "./utils/config.js";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   webSearchSchema,
   handleWebSearch,
@@ -82,31 +83,19 @@ async function main() {
                 name: "web_search",
                 description:
                   "Search the web for current information, facts, documentation, or any topic. Returns titles, URLs, and descriptions. Use freshness to filter by recency: '24h' for today's info, 'week' for this week, 'month' for this month. Do NOT use this for questions you can answer from your own knowledge.",
-                inputSchema: {
-                  type: "object",
-                  properties: webSearchSchema.shape,
-                  required: ["query"],
-                },
+                inputSchema: zodToJsonSchema(webSearchSchema),
               },
               {
                 name: "news_search",
                 description:
                   "Search recent news articles. Use this instead of web_search when the user asks about current events, breaking news, or recent developments. Returns headlines, sources, and publication dates.",
-                inputSchema: {
-                  type: "object",
-                  properties: newsSearchSchema.shape,
-                  required: ["query"],
-                },
+                inputSchema: zodToJsonSchema(newsSearchSchema),
               },
               {
                 name: "image_search",
                 description:
                   "Search for images on the web. Returns direct image URLs and thumbnails. Use for finding photos, pictures, or visual content.",
-                inputSchema: {
-                  type: "object",
-                  properties: imageSearchSchema.shape,
-                  required: ["query"],
-                },
+                inputSchema: zodToJsonSchema(imageSearchSchema),
               },
             ],
           })
