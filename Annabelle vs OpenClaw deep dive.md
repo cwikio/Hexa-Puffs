@@ -459,12 +459,12 @@ The second largest gap. As fact count grows, keyword matching becomes actively h
 
 The change is primarily in Memory MCP: add `sqlite-vec` as a dependency, create a `vec_facts` table, add embedding computation on `store_fact`, add vector search path in `retrieve_memories`, implement hybrid scoring. Touch points: `Memorizer-MCP/src/db/` (schema + queries), `Memorizer-MCP/src/embeddings/` (new module for local + API providers), `Memorizer-MCP/src/tools/` (modified retrieval logic). A migration script for existing facts. No changes to Orchestrator or Thinker — the memory interface stays the same.
 
-### ⬜ Priority 3: Post-Conversation Fact Extraction
-**Impact: High | Effort: Low-Medium | Codebase change: ~100–150 lines**
+### ✅ Priority 3: Post-Conversation Fact Extraction
+**Impact: High | Effort: Low-Medium | Codebase change: ~100–150 lines | Implemented Feb 2026**
 
-Neither Annabelle nor OpenClaw systematically extracts user information from conversations. Both rely on the LLM choosing to store facts during conversation, which is unreliable — especially during task-focused exchanges. This is the single feature most likely to make Annabelle learn better than OpenClaw.
+After a conversation goes idle for 5 minutes (configurable via `THINKER_FACT_EXTRACTION_IDLE_MS`), Thinker reviews recent turns using the cheap compaction model (Groq Llama 8B) and extracts user facts that were missed during task-focused exchanges. It fetches existing facts first to avoid duplicates, then stores new discoveries via the Memory MCP's `store_fact` tool. This complements the existing per-turn extraction in Memorizer-MCP by adding multi-turn context awareness and known-fact deduplication.
 
-The change adds a post-conversation extraction step to Thinker: after a conversation goes idle (5 minutes with no new messages), or after each turn, send the exchange to a lightweight LLM call that extracts structured facts. Touch points: `Thinker/src/agent/loop.ts` (trigger extraction after idle timeout), a new `Thinker/src/agent/fact-extractor.ts` (LLM prompt + fact comparison + `store_fact` calls). Uses existing Memory MCP tools — no database changes, no Orchestrator changes. The extraction LLM call uses Groq with a small model for minimal cost (~100–200 tokens per extraction).
+Files added: `Thinker/src/agent/fact-extractor.ts`. Files modified: `Thinker/src/agent/loop.ts` (idle timer scheduling + extraction orchestration), `Thinker/src/agent/types.ts` (`lastExtractionAt` on `AgentState`), `Thinker/src/config.ts` (`FactExtractionConfigSchema` + env vars), `Thinker/src/orchestrator/client.ts` (`listFacts` method). No changes to Memorizer-MCP, Orchestrator, or other MCPs.
 
 ### ⬜ Priority 4: Conversation History Backfill
 **Impact: High (one-time) | Effort: Low | Codebase change: ~50–80 lines**
