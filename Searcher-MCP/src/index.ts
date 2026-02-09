@@ -16,6 +16,8 @@ import {
   handleWebSearch,
   newsSearchSchema,
   handleNewsSearch,
+  imageSearchSchema,
+  handleImageSearch,
 } from "./tools/index.js";
 
 const TRANSPORT = process.env.TRANSPORT || "stdio";
@@ -96,6 +98,16 @@ async function main() {
                   required: ["query"],
                 },
               },
+              {
+                name: "image_search",
+                description:
+                  "Search for images on the web. Returns direct image URLs and thumbnails. Use for finding photos, pictures, or visual content.",
+                inputSchema: {
+                  type: "object",
+                  properties: imageSearchSchema.shape,
+                  required: ["query"],
+                },
+              },
             ],
           })
         );
@@ -115,10 +127,8 @@ async function main() {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const toolMap: Record<string, { handler: (input: any) => Promise<unknown>; schema: any }> = {
               web_search: { handler: handleWebSearch, schema: webSearchSchema },
-              news_search: {
-                handler: handleNewsSearch,
-                schema: newsSearchSchema,
-              },
+              news_search: { handler: handleNewsSearch, schema: newsSearchSchema },
+              image_search: { handler: handleImageSearch, schema: imageSearchSchema },
             };
 
             const tool = toolMap[name];
