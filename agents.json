@@ -6,6 +6,7 @@
       "port": 8006,
       "llmProvider": "groq",
       "model": "moonshotai/kimi-k2-instruct-0905",
+      "temperature": 0.6,
       "systemPrompt": "",
       "allowedTools": [],
       "deniedTools": [],

@@ -444,6 +444,7 @@ export class Agent {
           messages: [...context.conversationHistory, { role: 'user', content: message.text }],
           tools: selectedTools,
           maxSteps: 8,
+          temperature: this.config.temperature,
           abortSignal: agentAbort,
         });
       } catch (toolError) {
@@ -465,6 +466,7 @@ export class Agent {
               messages: [...context.conversationHistory, { role: 'user', content: message.text }],
               tools: selectedTools,
               maxSteps: 8,
+              temperature: this.config.temperature,
               abortSignal: agentAbort,
             });
           } catch (retryError) {
@@ -485,6 +487,7 @@ export class Agent {
                   messages: [...context.conversationHistory, { role: 'user', content: rephrasedText }],
                   tools: selectedTools,
                   maxSteps: 8,
+                  temperature: this.config.temperature,
                   abortSignal: agentAbort,
                 });
               } catch (rephraseError) {
@@ -507,6 +510,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
                 model: this.modelFactory.getModel(),
                 system: textOnlyPrompt,
                 messages: [...context.conversationHistory, { role: 'user', content: message.text }],
+                temperature: this.config.temperature,
                 abortSignal: agentAbort,
               });
               usedTextOnlyFallback = true;
@@ -589,6 +593,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
                   { role: 'user', content: message.text },
                   { role: 'user', content: `Here are the results from the tools that were called:\n\n${resultsText}` },
                 ],
+                temperature: this.config.temperature,
               });
               // Record summarization call tokens
               this.costMonitor?.recordUsage(
@@ -794,6 +799,7 @@ Complete the task step by step, using your available tools. When done, provide a
         messages: [{ role: 'user', content: taskInstructions }],
         ...(selectedTools ? { tools: selectedTools } : {}),
         maxSteps,
+        temperature: this.config.temperature,
         abortSignal: AbortSignal.timeout(90_000),
       });
 

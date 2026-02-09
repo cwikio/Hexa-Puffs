@@ -64,6 +64,9 @@ export const AgentDefinitionSchema = z.object({
   /** Glob patterns for denied tools (evaluated after allowedTools) */
   deniedTools: z.array(z.string()).default([]),
 
+  /** LLM temperature (0-2). Lower = more deterministic, better tool calling. */
+  temperature: z.number().min(0).max(2).optional(),
+
   /** Maximum ReAct steps per message */
   maxSteps: z.number().int().min(1).max(50).default(8),
 
