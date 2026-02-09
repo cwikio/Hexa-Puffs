@@ -78,7 +78,7 @@ export const ConfigSchema = z.object({
   orchestratorTimeout: z.number().int().min(1000).default(30_000),
 
   // Thinker HTTP server
-  thinkerPort: z.number().int().min(1).max(65535).default(8006),
+  thinkerPort: z.number().int().min(0).max(65535).default(8006), // 0 = OS-assigned (subagents)
 
   // Response delivery: when false, processMessage returns result without sending to Telegram
   // (Orchestrator handles delivery in channel-polling mode)

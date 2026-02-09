@@ -107,7 +107,8 @@ export async function handleCallTool(
         arguments: Record<string, unknown>;
       };
 
-      logger.debug(`HTTP /tools/call - executing ${name}`);
+      const callerAgentId = req.headers['x-agent-id'] as string | undefined;
+      logger.debug(`HTTP /tools/call - executing ${name}`, { callerAgentId });
 
       let result: StandardResponse;
 
@@ -149,8 +150,7 @@ export async function handleCallTool(
       }
       // Check if it's a context-aware custom tool (needs callerAgentId)
       else if (contextAwareToolHandlers[name]) {
-        // HTTP calls don't have agent context — callerAgentId will be undefined
-        result = await contextAwareToolHandlers[name](args, undefined);
+        result = await contextAwareToolHandlers[name](args, callerAgentId);
       }
       // Check if it's a custom tool
       else if (customToolHandlers[name]) {

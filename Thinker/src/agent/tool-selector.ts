@@ -5,7 +5,7 @@ import type { CoreTool } from 'ai';
  * Glob patterns (e.g. "memory_*") are expanded against the full tool map at runtime.
  */
 const TOOL_GROUPS: Record<string, string[]> = {
-  core: ['send_telegram', 'store_fact', 'search_memories', 'get_status'],
+  core: ['send_telegram', 'store_fact', 'search_memories', 'get_status', 'spawn_subagent'],
   search: ['searcher_web_search', 'searcher_news_search', 'searcher_image_search'],
   memory: ['memory_*'],
   email: [
@@ -55,6 +55,8 @@ const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
     groups: ['jobs'] },
   { pattern: /photo|picture|image|pic|show\s?me|gallery|wallpaper/i,
     groups: ['search', 'telegram'] },
+  { pattern: /subagent|sub.?agent|delegate|parallel.*task|spawn/i,
+    groups: [] }, // core includes spawn_subagent
   { pattern: /status|health|mcp/i,
     groups: [] }, // core only
 ];
