@@ -11,6 +11,8 @@ export interface CachedPlaybook {
   keywords: string[];
   priority: number;
   requiredTools: string[];
+  /** Where this playbook came from: 'database' (Memorizer) or 'file' (~/.annabelle/skills/) */
+  source: 'database' | 'file';
 }
 
 /**
@@ -62,5 +64,6 @@ export function parseSkillToPlaybook(
     keywords: keywords.map((k) => k.toLowerCase()),
     priority: (triggerConfig?.priority as number | undefined) ?? 0,
     requiredTools: (skill.required_tools as string[] | undefined) ?? [],
+    source: 'database',
   };
 }

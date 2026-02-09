@@ -1,4 +1,6 @@
 import { readFile } from 'fs/promises';
+import { resolve } from 'path';
+import { homedir } from 'os';
 import { generateText, type CoreMessage, type CoreTool } from 'ai';
 import type { LanguageModelV1 } from 'ai';
 import type { Config } from '../config.js';
@@ -121,6 +123,7 @@ export class Agent {
   private logger = getTraceLogger();
   private playbookCache: PlaybookCache;
   private customSystemPrompt: string | null = null;
+  private personaPrompt: string | null = null;
 
   // Rate limiting
   private lastApiCallTime = 0;
@@ -144,7 +147,8 @@ export class Agent {
     this.config = config;
     this.orchestrator = new OrchestratorClient(config);
     this.modelFactory = new ModelFactory(config);
-    this.playbookCache = new PlaybookCache(this.orchestrator, config.thinkerAgentId);
+    const resolvedSkillsDir = config.skillsDir.replace(/^~/, homedir());
+    this.playbookCache = new PlaybookCache(this.orchestrator, config.thinkerAgentId, resolvedSkillsDir);
     this.sessionStore = new SessionStore(
       config.sessionsDir,
       config.thinkerAgentId,
@@ -181,6 +185,16 @@ export class Agent {
         console.error(`Failed to load system prompt from ${this.config.systemPromptPath}:`, error);
         // Fall through to DEFAULT_SYSTEM_PROMPT
       }
+    }
+
+    // Load persona file from ~/.annabelle/agents/{agentId}/instructions.md
+    const personaDir = this.config.personaDir.replace(/^~/, homedir());
+    const personaPath = resolve(personaDir, this.config.thinkerAgentId, 'instructions.md');
+    try {
+      this.personaPrompt = await readFile(personaPath, 'utf-8');
+      console.log(`Loaded persona from ${personaPath} (${this.personaPrompt.length} chars)`);
+    } catch {
+      console.log(`No persona file at ${personaPath}, using defaults`);
     }
 
     // Check Orchestrator health
@@ -281,8 +295,8 @@ export class Agent {
 
     await this.logger.logContextLoaded(trace, memories.facts.length, !!profile);
 
-    // Build system prompt (priority: custom file > profile override > built-in default)
-    let systemPrompt = this.customSystemPrompt || DEFAULT_SYSTEM_PROMPT;
+    // Build system prompt (priority: custom file > persona file > built-in default)
+    let systemPrompt = this.customSystemPrompt || this.personaPrompt || DEFAULT_SYSTEM_PROMPT;
 
     if (profile?.profile_data?.persona?.system_prompt) {
       systemPrompt = profile.profile_data.persona.system_prompt;
@@ -298,6 +312,18 @@ export class Agent {
         .map((pb) => `### Playbook: ${pb.name}\n${pb.instructions}`)
         .join('\n\n');
       systemPrompt += `\n\n## Workflow Guidance\nFollow these steps when relevant:\n\n${section}`;
+    }
+
+    // Inject available skills for progressive disclosure (keyword-less file-based skills)
+    const descriptionOnlySkills = this.playbookCache.getDescriptionOnlySkills();
+    if (descriptionOnlySkills.length > 0) {
+      const skillsXml = descriptionOnlySkills
+        .map(
+          (s) =>
+            `  <skill>\n    <name>${s.name}</name>\n    <description>${s.description ?? ''}</description>\n  </skill>`,
+        )
+        .join('\n');
+      systemPrompt += `\n\n<available_skills>\n${skillsXml}\n</available_skills>`;
     }
 
     // Add current date/time context
@@ -706,8 +732,9 @@ IMPORTANT: Due to a technical issue, your tools (web search, memory, etc.) are t
       }
       this.lastApiCallTime = Date.now();
 
-      // Build system prompt for autonomous task
-      const systemPrompt = `${DEFAULT_SYSTEM_PROMPT}
+      // Build system prompt for autonomous task (same priority chain as buildContext)
+      const basePrompt = this.customSystemPrompt || this.personaPrompt || DEFAULT_SYSTEM_PROMPT;
+      const systemPrompt = `${basePrompt}
 
 ## Current Task
 You are executing an autonomous scheduled task. There is no user message — follow the instructions below as your goal.

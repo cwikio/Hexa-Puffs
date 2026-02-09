@@ -108,6 +108,32 @@ sleep 2
 # Create log directory
 mkdir -p ~/.annabelle/logs
 
+# ─── Persona & Skills Initialization ──────────────────────────────────────────
+echo -e "${BOLD}${CYAN}=== Initializing Persona & Skills ===${RESET}"
+
+AGENTS_DIR="$HOME/.annabelle/agents"
+SKILLS_DIR="$HOME/.annabelle/skills"
+mkdir -p "$AGENTS_DIR" "$SKILLS_DIR"
+
+# Copy default persona if not already present (never overwrites user edits)
+ANNABELLE_PERSONA_DIR="$AGENTS_DIR/annabelle"
+ANNABELLE_PERSONA_FILE="$ANNABELLE_PERSONA_DIR/instructions.md"
+DEFAULT_PERSONA_SRC="$SCRIPT_DIR/Thinker/defaults/personas/annabelle/instructions.md"
+if [ ! -f "$ANNABELLE_PERSONA_FILE" ]; then
+  if [ -f "$DEFAULT_PERSONA_SRC" ]; then
+    mkdir -p "$ANNABELLE_PERSONA_DIR"
+    cp "$DEFAULT_PERSONA_SRC" "$ANNABELLE_PERSONA_FILE"
+    echo -e "  ${GREEN}✓ Copied default Annabelle persona to $ANNABELLE_PERSONA_FILE${RESET}"
+  else
+    echo -e "  ${YELLOW}⚠ Default persona source not found at $DEFAULT_PERSONA_SRC${RESET}"
+  fi
+else
+  echo -e "  ${BLUE}✓ Annabelle persona already exists${RESET}"
+fi
+
+echo -e "  ${BLUE}✓ Skills directory ready at $SKILLS_DIR${RESET}"
+echo ""
+
 # ─── Inngest Dev Server ──────────────────────────────────────────────────────
 echo -e "${BOLD}Starting Inngest Dev Server (port 8288)...${RESET}"
 cd "$SCRIPT_DIR/Orchestrator"

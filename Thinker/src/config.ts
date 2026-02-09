@@ -87,6 +87,12 @@ export const ConfigSchema = z.object({
   // Set by Orchestrator's AgentManager when spawning agents with custom prompts
   systemPromptPath: z.string().optional(),
 
+  // Directory containing per-agent persona files (~/.annabelle/agents/{agentId}/instructions.md)
+  personaDir: z.string().default('~/.annabelle/agents'),
+
+  // Directory containing file-based skills (~/.annabelle/skills/{skill-name}/SKILL.md)
+  skillsDir: z.string().default('~/.annabelle/skills'),
+
   // Proactive tasks
   proactiveTasksEnabled: z.boolean().default(true),
   defaultNotifyChatId: z.string().optional(),
@@ -160,6 +166,8 @@ export function loadConfig(): Config {
     sendResponseDirectly: parseBoolean(process.env.THINKER_SEND_RESPONSE_DIRECTLY, false),
     thinkerAgentId: process.env.THINKER_AGENT_ID || 'thinker',
     systemPromptPath: process.env.THINKER_SYSTEM_PROMPT_PATH || undefined,
+    personaDir: process.env.THINKER_PERSONA_DIR || '~/.annabelle/agents',
+    skillsDir: process.env.THINKER_SKILLS_DIR || '~/.annabelle/skills',
     proactiveTasksEnabled: parseBoolean(process.env.PROACTIVE_TASKS_ENABLED, true),
     defaultNotifyChatId: process.env.DEFAULT_NOTIFY_CHAT_ID || undefined,
     userTimezone: process.env.USER_TIMEZONE || 'Europe/Warsaw',
