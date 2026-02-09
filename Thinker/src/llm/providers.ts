@@ -1,13 +1,16 @@
 import { createOpenAI } from '@ai-sdk/openai';
+import { createGroq } from '@ai-sdk/groq';
+import type { LanguageModel } from 'ai';
 import type { Config } from '../config.js';
 import type { ProviderName } from './types.js';
 
 /**
- * Create Groq provider using OpenAI-compatible API
+ * Create Groq provider using the dedicated @ai-sdk/groq package.
+ * This handles tool calling properly for Groq-hosted models (Llama 4, etc.)
+ * instead of the generic OpenAI-compatible provider which can misformat tool calls.
  */
 export function createGroqProvider(config: Config) {
-  return createOpenAI({
-    baseURL: 'https://api.groq.com/openai/v1',
+  return createGroq({
     apiKey: config.groqApiKey || '',
   });
 }
@@ -57,7 +60,7 @@ export function getModelId(config: Config): string {
  * Create a language model for session compaction (cheap summarization).
  * Uses a dedicated provider/model configured via compactionProvider + compactionModel.
  */
-export function createCompactionModel(config: Config): ReturnType<ReturnType<typeof createOpenAI>> {
+export function createCompactionModel(config: Config): LanguageModel {
   const provider = config.compactionProvider;
   const modelId = config.compactionModel;
 
