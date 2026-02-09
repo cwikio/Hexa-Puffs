@@ -14,9 +14,9 @@ export const imageSearchSchema = z.object({
     .transform((v) => Math.max(1, Math.min(20, v)))
     .describe("Number of results (1-20, default 5)"),
   safesearch: z
-    .enum(["off", "moderate", "strict"])
-    .default("moderate")
-    .describe("Safe search level"),
+    .enum(["off", "strict"])
+    .default("strict")
+    .describe("Safe search level (Brave image API only supports 'off' or 'strict')"),
 });
 
 export type ImageSearchInput = z.infer<typeof imageSearchSchema>;
