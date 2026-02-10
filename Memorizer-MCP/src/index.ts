@@ -5,7 +5,7 @@ import { getConfig } from './config/index.js';
 import { closeDatabase } from './db/index.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { startTransport } from '@mcp/shared/Transport/dual-transport.js';
-import { type StandardResponse } from './types/responses.js';
+import { type StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
 import {
   handleStoreFact,
   handleListFacts,

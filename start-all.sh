@@ -19,31 +19,10 @@ RESET='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ─── MCP Auto-Discovery ──────────────────────────────────────────────────────
-# Scans sibling directories for package.json files with "annabelle" manifests.
-# Same logic as Orchestrator's scanner.ts, but in bash via node -e.
+# Uses the shared discovery module from @mcp/shared.
 # Output: one line per MCP — name|transport|port|dir|sensitive
 discover_mcps() {
-  MCPS_ROOT="$SCRIPT_DIR" node <<'DISCOVER_SCRIPT'
-const fs = require("fs");
-const path = require("path");
-const root = process.env.MCPS_ROOT;
-const entries = fs.readdirSync(root);
-for (const entry of entries) {
-  const dir = path.join(root, entry);
-  try {
-    if (!fs.statSync(dir).isDirectory()) continue;
-  } catch (_) { continue; }
-  const pkg = path.join(dir, "package.json");
-  if (!fs.existsSync(pkg)) continue;
-  try {
-    const p = JSON.parse(fs.readFileSync(pkg, "utf-8"));
-    const m = p.annabelle;
-    if (!m || !m.mcpName) continue;
-    const parts = [m.mcpName, m.transport || "stdio", m.httpPort || "", dir, m.sensitive ? "1" : "0"];
-    console.log(parts.join("|"));
-  } catch (_) {}
-}
-DISCOVER_SCRIPT
+  MCPS_ROOT="$SCRIPT_DIR" node "$SCRIPT_DIR/Shared/dist/Discovery/cli.js"
 }
 
 echo -e "${BOLD}${BLUE}=== Launching Annabelle MCP Stack ===${RESET}\n"

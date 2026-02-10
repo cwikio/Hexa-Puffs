@@ -9,7 +9,7 @@ import {
   createSuccess,
   createError,
   createErrorFromException,
-} from '../types/responses.js';
+} from '@mcp/shared/Types/StandardResponse.js';
 
 // Tool definition
 export const synthesizeFactsToolDefinition = {

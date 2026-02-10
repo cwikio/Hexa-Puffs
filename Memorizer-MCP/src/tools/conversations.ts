@@ -4,11 +4,13 @@ import { getFactExtractor } from '../services/fact-extractor.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
-  type StoreConversationData,
-  type SearchConversationsData,
   createSuccess,
   createError,
   createErrorFromException,
+} from '@mcp/shared/Types/StandardResponse.js';
+import {
+  type StoreConversationData,
+  type SearchConversationsData,
 } from '../types/responses.js';
 
 // Tool definitions

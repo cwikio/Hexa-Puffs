@@ -4,21 +4,17 @@
 # MCP Stack - Comprehensive Test Suite
 # =============================================================================
 #
-# Runs all tests across all MCP servers:
-# - Filer MCP (file operations)
-# - Memorizer MCP (fact/conversation storage)
-# - Telegram MCP (messaging)
-# - Guardian MCP (security scanning)
-# - Orchestrator (coordination layer + workflow tests)
+# Runs health checks, curl integration tests, and vitest suites across the
+# Annabelle MCP stack: Orchestrator, Thinker, and all HTTP/stdio MCPs.
 #
 # Prerequisites:
-#   - All MCP servers should be running (use ./launch-all.sh)
+#   - Stack should be running (use ./start-all.sh)
 #   - Node.js 18+ installed
 #
 # Usage:
-#   ./test-all.sh           # Run all tests
-#   ./test-all.sh --quick   # Run only health checks + quick curl tests
-#   ./test-all.sh --vitest  # Run only vitest tests (skip curl tests)
+#   ./test.sh           # Run all tests
+#   ./test.sh --quick   # Run only health checks + quick curl tests
+#   ./test.sh --vitest  # Run only vitest tests (skip curl tests)
 #
 # =============================================================================
 
@@ -223,36 +219,19 @@ echo -e "MCP Directory: ${CYAN}$MCP_DIR${RESET}"
 
 print_section "Section 1: Health Checks"
 
-# New architecture: Orchestrator (8010) + Thinker (8006)
-ORCHESTRATOR_STDIO_UP=false
-THINKER_UP=false
-
-echo -e "  ${BOLD}New Architecture (stdio mode):${RESET}"
-check_health "Orchestrator (stdio mode)" "http://localhost:8010/health" "ok" && ORCHESTRATOR_STDIO_UP=true
-check_health "Thinker" "http://localhost:8006/health" "ok" && THINKER_UP=true
-
-# Legacy architecture: Individual MCPs with HTTP (backwards compatibility)
-FILER_UP=false
-MEMORIZER_UP=false
-TELEGRAM_UP=false
-GUARDIAN_UP=false
+# HTTP services
 ORCHESTRATOR_UP=false
+THINKER_UP=false
+TELEGRAM_UP=false
+SEARCHER_UP=false
+GMAIL_UP=false
 
-echo -e "\n  ${BOLD}Legacy Architecture (individual HTTP MCPs):${RESET}"
-check_health "Filer MCP" "http://localhost:8004/health" "healthy" && FILER_UP=true
-check_health "Memorizer MCP" "http://localhost:8005/health" "ok" && MEMORIZER_UP=true
-check_health "Telegram MCP" "http://localhost:8002/health" "ok" && TELEGRAM_UP=true
-check_health "Guardian MCP" "http://localhost:8003/health" "ok" && GUARDIAN_UP=true
-check_health "Orchestrator MCP (legacy)" "http://localhost:8000/health" "ok" && ORCHESTRATOR_UP=true
-
-echo ""
-if [ "$ORCHESTRATOR_STDIO_UP" = true ]; then
-  echo -e "  ${GREEN}✓ New architecture available (Orchestrator stdio mode on 8010)${RESET}"
-  if [ "$THINKER_UP" = true ]; then
-    echo -e "  ${GREEN}✓ Thinker connected${RESET}"
-  fi
-fi
-echo -e "  Legacy services: ${GREEN}$([ "$FILER_UP" = true ] && echo "Filer ")$([ "$MEMORIZER_UP" = true ] && echo "Memorizer ")$([ "$TELEGRAM_UP" = true ] && echo "Telegram ")$([ "$GUARDIAN_UP" = true ] && echo "Guardian ")$([ "$ORCHESTRATOR_UP" = true ] && echo "Orchestrator ")${RESET}"
+echo -e "  ${BOLD}HTTP Service Health Checks:${RESET}"
+check_health "Orchestrator (8010)" "http://localhost:8010/health" "ok" && ORCHESTRATOR_UP=true
+check_health "Thinker (8006)" "http://localhost:8006/health" "ok" && THINKER_UP=true
+check_health "Telegram MCP (8002)" "http://localhost:8002/health" "ok" && TELEGRAM_UP=true
+check_health "Searcher MCP (8007)" "http://localhost:8007/health" "healthy" && SEARCHER_UP=true
+check_health "Gmail MCP (8008)" "http://localhost:8008/health" "ok" && GMAIL_UP=true
 
 # =============================================================================
 # Section 2: Quick Curl Tests (if --quick or full mode)
@@ -262,10 +241,10 @@ if [ "$RUN_CURL" = true ]; then
   print_section "Section 2: Quick Integration Tests (curl)"
 
   # =====================================================
-  # New Architecture: Test via Orchestrator (stdio mode)
+  # Orchestrator: routes to all downstream MCPs
   # =====================================================
-  if [ "$ORCHESTRATOR_STDIO_UP" = true ]; then
-    echo -e "\n  ${BOLD}Orchestrator (stdio mode - routes to all MCPs):${RESET}"
+  if [ "$ORCHESTRATOR_UP" = true ]; then
+    echo -e "\n  ${BOLD}Orchestrator (routes to all MCPs):${RESET}"
     test_curl "Get status" "http://localhost:8010/tools/call" \
       '{"name": "get_status", "arguments": {}}' "ready"
     test_curl_get "List tools" "http://localhost:8010/tools/list" "name"
@@ -292,38 +271,22 @@ if [ "$RUN_CURL" = true ]; then
   fi
 
   # =====================================================
-  # Legacy Architecture: Direct MCP tests
+  # Direct HTTP MCP tests
   # =====================================================
-  # Filer tests
-  if [ "$FILER_UP" = true ]; then
-    echo -e "\n  ${BOLD}Filer MCP (legacy):${RESET}"
-    test_curl "List files" "http://localhost:8004/tools/call" \
-      '{"name": "list_files", "arguments": {}}' "success"
-    test_curl "Get workspace info" "http://localhost:8004/tools/call" \
-      '{"name": "get_workspace_info", "arguments": {}}' "workspace_path"
-  fi
-
-  # Memorizer tests
-  if [ "$MEMORIZER_UP" = true ]; then
-    echo -e "\n  ${BOLD}Memorizer MCP (legacy):${RESET}"
-    test_curl "Get memory stats" "http://localhost:8005/tools/call" \
-      '{"name": "get_memory_stats", "arguments": {}}' "fact_count"
-    test_curl "List facts" "http://localhost:8005/tools/call" \
-      '{"name": "list_facts", "arguments": {}}' "success"
-  fi
-
-  # Telegram tests
   if [ "$TELEGRAM_UP" = true ]; then
-    echo -e "\n  ${BOLD}Telegram MCP (legacy):${RESET}"
+    echo -e "\n  ${BOLD}Telegram MCP (direct):${RESET}"
     test_curl "List chats" "http://localhost:8002/tools/call" \
       '{"name": "list_chats", "arguments": {"limit": 5}}' "chats"
   fi
 
-  # Guardian tests
-  if [ "$GUARDIAN_UP" = true ]; then
-    echo -e "\n  ${BOLD}Guardian MCP (legacy):${RESET}"
-    test_curl "Scan clean content" "http://localhost:8003/tools/call" \
-      '{"name": "scan_content", "arguments": {"content": "Hello world"}}' "allowed"
+  if [ "$SEARCHER_UP" = true ]; then
+    echo -e "\n  ${BOLD}Searcher MCP (direct):${RESET}"
+    test_curl_get "List tools" "http://localhost:8007/tools/list" "name"
+  fi
+
+  if [ "$GMAIL_UP" = true ]; then
+    echo -e "\n  ${BOLD}Gmail MCP (direct):${RESET}"
+    test_curl_get "List tools" "http://localhost:8008/tools/list" "name"
   fi
 
   echo -e "\n  Curl tests: ${GREEN}$CURL_PASSED passed${RESET}, ${RED}$CURL_FAILED failed${RESET}"

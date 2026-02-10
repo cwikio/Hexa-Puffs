@@ -5,13 +5,15 @@ import { embedFact, reembedFact, deleteFactEmbedding } from '../embeddings/fact-
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
+  createSuccess,
+  createError,
+  createErrorFromException,
+} from '@mcp/shared/Types/StandardResponse.js';
+import {
   type StoreFactData,
   type ListFactsData,
   type DeleteFactData,
   type UpdateFactData,
-  createSuccess,
-  createError,
-  createErrorFromException,
 } from '../types/responses.js';
 
 // Tool definitions

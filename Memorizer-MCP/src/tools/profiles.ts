@@ -3,11 +3,13 @@ import { getDatabase, type ProfileRow } from '../db/index.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
-  type GetProfileData,
-  type UpdateProfileData,
   createSuccess,
   createError,
   createErrorFromException,
+} from '@mcp/shared/Types/StandardResponse.js';
+import {
+  type GetProfileData,
+  type UpdateProfileData,
 } from '../types/responses.js';
 
 // Tool definitions

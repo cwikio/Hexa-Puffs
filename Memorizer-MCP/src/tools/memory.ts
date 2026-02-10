@@ -5,11 +5,11 @@ import { logger } from '@mcp/shared/Utils/logger.js';
 import { getConfig } from '../config/index.js';
 import {
   type StandardResponse,
-  type RetrieveMemoriesData,
   createSuccess,
   createError,
   createErrorFromException,
-} from '../types/responses.js';
+} from '@mcp/shared/Types/StandardResponse.js';
+import { type RetrieveMemoriesData } from '../types/responses.js';
 
 // Tool definitions
 export const retrieveMemoriesToolDefinition = {
