@@ -48,19 +48,11 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 
 ## Carried Over — Unresolved (from previous review)
 
-### 1. Adopt Workspace Tooling (High Impact, Medium Effort)
+### ~~1. Adopt Workspace Tooling~~ ❌ DECLINED
 
-**Status:** Not started
+**Status:** Declined — independent packages are a deliberate design choice.
 
-**Problem:** Each package is fully independent with its own `node_modules`. No dependency graph, no shared lockfile, duplicated dependencies across 12 packages. Uses `file:../Shared` linking.
-
-**Proposal:** Adopt **pnpm workspaces** (or npm workspaces):
-
-- Single lockfile, deduped `node_modules`
-- `pnpm --filter` to build/test individual packages
-- Formal dependency graph (`@mcp/shared` as a workspace dependency)
-- Drop `rebuild.sh` in favor of `pnpm -r run build` (topologically ordered)
-- Turborepo optional on top for caching
+**Rationale:** The "drop a folder and it works" auto-discovery model is more valuable than workspace tidiness. Each MCP being fully self-contained (own `node_modules`, own lockfile) means new MCPs can be added by simply pasting a folder. pnpm workspaces would couple all packages to a shared lockfile and require root-level `pnpm install` for any new MCP — breaking plug-and-play flexibility.
 
 ### ~~4. Replace Keyword-Based Tool Selection~~ ✅ DONE
 
@@ -225,12 +217,12 @@ Unified all 12 packages to `"node": ">=22.0.0"` matching the existing `.nvmrc`. 
 | P4 | ~~Tool cache invalidation in Thinker~~ | ✅ Done |
 | P5 | ~~Session JSONL auto-compaction~~ | ✅ Already implemented |
 
-### Tier 4: Architecture — ✅ ALL DONE (except pnpm)
+### Tier 4: Architecture — ✅ ALL DONE
 
 | # | Improvement | Effort | Status |
 |---|-------------|--------|--------|
 | 4 | ~~Embedding-based tool selection~~ | Medium | ✅ Done |
-| 1 | Workspace tooling (pnpm) | Medium | Not started |
+| 1 | ~~Workspace tooling (pnpm)~~ | Medium | ❌ Declined |
 | A4 | ~~Generic `registerTool<T>()` for type safety~~ | Medium | ✅ Done |
 | A2 | ~~Channel plugin interface~~ | Medium | ✅ Done |
 | A1 | ~~StandardResponse dedup in Gmail~~ | Low | ✅ Done |
@@ -258,40 +250,50 @@ Unified all 12 packages to `"node": ">=22.0.0"` matching the existing `.nvmrc`. 
 
 ## What's Next — Remaining Improvements
 
-### N1. Tool re-embedding on MCP hot-reload (Low effort, High value)
+### ~~N1. Tool re-embedding on MCP hot-reload~~ ✅ DONE
 
-**Problem:** `EmbeddingToolSelector` embeds tool descriptions once at `initialize()`. If tools change at runtime (tool cache refresh discovers new MCPs), the embedding index is stale — new tools won't be semantically matched.
+**What was done:**
+- Added `refreshToolsIfNeeded()` method to Agent class in `loop.ts`
+- Calls `getCachedToolsOrRefresh()` (10-min TTL), compares tool name sets, rebuilds tools + re-initializes embedding selector only when changes detected
+- Called at the start of both `processMessage()` and `processProactiveTask()`
+- Re-initialization is fast thanks to N6 cache (only truly new tools need embedding)
 
-**Fix:** After `getCachedToolsOrRefresh()` detects new/removed tools, re-call `embeddingSelector.initialize(this.tools)`. ~10 lines in `loop.ts`.
+### ~~N2. Embedding selector observability~~ ✅ DONE
 
-### N2. Embedding selector observability (Low effort, Medium value)
+**What was done:**
+- Added `ToolSelectionStats` interface and `getLastSelectionStats()` getter to `EmbeddingToolSelector`
+- Enhanced info log: `"12/45 tools (top: 0.82, cutoff: 0.31, above threshold: 8)"`; debug log shows top 5 tools with scores
+- `selectToolsWithFallback()` now logs `method=embedding` or `method=regex` after every selection
+- At debug level, runs regex selector in parallel and logs overlap comparison
+- Added `getEmbeddingSelectorStatus()` to Agent class, exposed in Thinker `/health` endpoint (enabled, initialized, toolCount, lastSelection stats)
+- 5 new tests in `tool-selection.test.ts`, 3 new tests in `embedding-tool-selector.test.ts` (stats getter, re-initialization)
 
-**Problem:** No visibility into how often embedding selection disagrees with regex, which tools get filtered out, or what similarity scores look like in production.
+### ~~N3. Workspace tooling — pnpm~~ ❌ DECLINED
 
-**Fix:** Add structured log per selection: `{ method, topScore, selectedCount, regexWouldHaveSelected }`. Optionally expose via `/tool-selector-stats` endpoint.
+See Item 1 above. Independent packages preserved for plug-and-play flexibility.
 
-### N3. Workspace tooling — pnpm (Medium effort, High value)
+### ~~N6. Embedding cache persistence~~ ✅ DONE
 
-Carried forward from Item 1. Biggest structural improvement remaining:
+**What was done:**
+- Added cache I/O to `EmbeddingToolSelector` with base64-encoded Float32Array serialization (compact vs JSON arrays)
+- `initialize()` loads cache, splits tools into cached vs uncached, only calls `embedBatch()` for new tools, atomically saves updated cache (write `.tmp` + rename)
+- Cache file at `~/.annabelle/data/embedding-cache.json` with provider/model validation (auto-discards on mismatch)
+- Added `embeddingCacheDir` config field (default `~/.annabelle/data`, env `EMBEDDING_CACHE_DIR`)
+- `loop.ts` passes `cachePath`, `providerName`, `modelName` to selector config
+- 5 integration tests in `embedding-cache.test.ts` (full lifecycle, incremental embedding, cache invalidation, hot-reload + cache, no-cache fallback)
 
-- Single lockfile, deduped `node_modules` (currently ~2GB duplicated across 12 packages)
-- `pnpm -r run build` replaces `rebuild.sh` with topological ordering
-- Foundation for Turborepo caching later
-
-### N6. Embedding cache persistence (Low effort, Low value)
-
-**Problem:** Every Thinker restart re-embeds all tool descriptions via Ollama (~13s cold start). For remote deploys using HuggingFace API, this burns API credits.
-
-**Fix:** Cache embeddings to a JSON file keyed by `hash(toolName + description)`. Invalidate on description change. Saves startup time.
-
-### Suggested priority
-
-1. **N1** — Tool re-embedding on hot-reload (quick win, prevents stale index)
-2. **N2** — Observability (helps tune thresholds with real traffic data)
-3. **N3** — pnpm workspaces (structural, enables many downstream improvements)
-4. **N6** — Embedding cache (optimization, low urgency with local Ollama)
+**Key files:**
+- `Thinker/src/agent/embedding-tool-selector.ts` (cache persistence, stats, enhanced logging)
+- `Thinker/src/agent/tool-selection.ts` (method logging, debug regex comparison)
+- `Thinker/src/agent/loop.ts` (refreshToolsIfNeeded, cache config passthrough, health API)
+- `Thinker/src/config.ts` (embeddingCacheDir)
+- `Thinker/src/index.ts` (embeddingSelector in /health response)
+- `Thinker/tests/integration/embedding-cache.test.ts` (new)
 
 ### Completed
 
+- ~~**N1** — Tool re-embedding on hot-reload~~ ✅ Done
+- ~~**N2** — Embedding selector observability~~ ✅ Done
 - ~~**N4** — Phase 3-5 MCP migration~~ ✅ All three MCPs (Gmail, Memorizer, Telegram) use `McpServer` + `registerTool()` with annotations and `StandardResponse` from `@mcp/shared`. 47 redundant `safeParse()` calls remain in Gmail/Memorizer handlers (defense-in-depth, optional cleanup).
 - ~~**N5** — Generic `registerTool<T>()`~~ ✅ Done as A4. Handler receives `z.infer<T>`, 47 casts removed across 6 MCPs.
+- ~~**N6** — Embedding cache persistence~~ ✅ Done
