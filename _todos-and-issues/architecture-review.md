@@ -181,11 +181,11 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 
 **Fix:** Migrate to `McpServer` class per `new-mcp-plan.md`.
 
-### H. TESTING.md references legacy ports (Low Impact, Low Effort)
+### ~~H. TESTING.md references legacy ports~~ ✅ DONE
 
-**Problem:** TESTING.md (lines 34-38) still references ports 8003, 8004, 8005 for Guardian, Filer, and Memorizer. Stale docs.
+**Problem:** TESTING.md (lines 34-38) still referenced ports 8003, 8004, 8005 for Guardian, Filer, and Memorizer.
 
-**Fix:** Update TESTING.md to reflect current architecture.
+**Resolved:** Replaced "Port" column with "Transport" column (stdio/HTTP). Added missing packages (Shared, 1Password, CodeExec, Searcher, Gmail). Updated "Required Services" section.
 
 ---
 
@@ -214,12 +214,12 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 
 ### Tier 4: Consistency
 
-| #   | Improvement                              | Effort | Impact |
-| --- | ---------------------------------------- | ------ | ------ |
-| 9   | Thinker logging (console → Logger)       | Low    | Low-Med |
-| F   | Guardian shared error types              | Low    | Low    |
-| H   | Fix stale TESTING.md                     | Low    | Low    |
-| G   | Server → McpServer migration (3 MCPs)   | Medium | Low    |
+| # | Improvement | Effort | Impact | Status |
+| --- | --- | --- | --- | --- |
+| ~~9~~ | ~~Thinker logging (console → Logger)~~ | Low | Low-Med | ✅ |
+| ~~F~~ | ~~Guardian shared error types~~ | Low | Low | ✅ |
+| ~~H~~ | ~~Fix stale TESTING.md~~ | Low | Low | ✅ |
+| G | Server → McpServer migration (3 MCPs) | Medium | Low | |
 
 ### Tier 5: Structural (park until pain is felt)
 
