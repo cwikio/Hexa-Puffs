@@ -7,6 +7,33 @@ import type { TraceContext } from '../tracing/types.js';
 import { getTraceLogger } from '../tracing/logger.js';
 
 /**
+ * Relax numeric types in JSON Schema to accept both numbers and strings.
+ * Smaller LLMs (e.g. Llama on Groq) often stringify numbers in tool calls
+ * (e.g. `"count": "5"` instead of `"count": 5`). The downstream MCP tools
+ * handle coercion via `z.coerce.number()`, so this is safe.
+ */
+function relaxNumericTypes(schema: Record<string, unknown>): Record<string, unknown> {
+  const relaxed = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
+
+  function walk(obj: Record<string, unknown>) {
+    if (obj.type === 'number' || obj.type === 'integer') {
+      obj.type = [obj.type as string, 'string'];
+    }
+    if (obj.properties && typeof obj.properties === 'object') {
+      for (const prop of Object.values(obj.properties as Record<string, Record<string, unknown>>)) {
+        if (prop && typeof prop === 'object') walk(prop);
+      }
+    }
+    if (obj.items && typeof obj.items === 'object') {
+      walk(obj.items as Record<string, unknown>);
+    }
+  }
+
+  walk(relaxed);
+  return relaxed;
+}
+
+/**
  * Create Vercel AI SDK tools from Orchestrator tools.
  *
  * Uses `jsonSchema()` to pass the MCP's original JSON Schema directly to the
@@ -30,7 +57,8 @@ export function createToolsFromOrchestrator(
     }
 
     // Pass the MCP's original JSON Schema directly — no lossy Zod conversion
-    const schema = jsonSchema(orchTool.inputSchema);
+    // Relax numeric types so smaller LLMs can pass "5" instead of 5
+    const schema = jsonSchema(relaxNumericTypes(orchTool.inputSchema));
 
     const wrappedTool = tool({
       description: orchTool.description,
