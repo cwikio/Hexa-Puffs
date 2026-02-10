@@ -22,6 +22,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createServer } from './server.js';
 import { getConfig } from './config.js';
 import { mkdir } from 'node:fs/promises';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('codexec');
 
 async function main() {
   const config = getConfig();
@@ -31,10 +34,10 @@ async function main() {
   await mkdir(config.logDir, { recursive: true });
   await mkdir(config.scriptsDir, { recursive: true });
 
-  console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] Starting CodeExec MCP {"transport":"stdio"}`);
-  console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] Sandbox: ${config.sandboxDir}`);
-  console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] Logs: ${config.logDir}`);
-  console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] Scripts: ${config.scriptsDir}`);
+  logger.info('Starting CodeExec MCP', { transport: 'stdio' });
+  logger.info(`Sandbox: ${config.sandboxDir}`);
+  logger.info(`Logs: ${config.logDir}`);
+  logger.info(`Scripts: ${config.scriptsDir}`);
 
   const { server, sessionManager } = createServer();
   const transport = new StdioServerTransport();
@@ -48,10 +51,10 @@ async function main() {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
-  console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] CodeExec MCP running on stdio`);
+  logger.info('CodeExec MCP running on stdio');
 }
 
 main().catch((error) => {
-  console.error('Fatal error:', error);
+  logger.error('Fatal error', error);
   process.exit(1);
 });

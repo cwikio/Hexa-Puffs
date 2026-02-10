@@ -5,6 +5,9 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
+import { Logger } from "@mcp/shared/Utils/logger.js";
+
+const logger = new Logger('filer:config');
 
 export interface GrantConfig {
   path: string;
@@ -94,7 +97,7 @@ export function loadConfig(): Config {
         fileConfig.grants = grants;
       }
     } catch (error) {
-      console.error("Warning: Could not parse config file:", error);
+      logger.warn("Could not parse config file", error);
     }
   }
 

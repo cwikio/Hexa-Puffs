@@ -15,6 +15,7 @@ import { loadConfigGrants } from "./db/grants.js";
 import { initializeWorkspace } from "./utils/workspace.js";
 import { getConfig } from "./utils/config.js";
 import { cleanupTempFiles } from "./services/cleanup.js";
+import { Logger } from "@mcp/shared/Utils/logger.js";
 import {
   createFileSchema,
   handleCreateFile,
@@ -44,6 +45,7 @@ import {
   handleGetAuditLog,
 } from "./tools/index.js";
 
+const logger = new Logger('filer');
 const TRANSPORT = process.env.TRANSPORT || "stdio";
 const PORT = parseInt(process.env.PORT || "8004", 10);
 
@@ -53,9 +55,9 @@ async function main() {
   // Initialize grants storage
   try {
     await initDatabase();
-    console.error("Grants storage initialized");
+    logger.info("Grants storage initialized");
   } catch (error) {
-    console.error("Grants storage initialization error:", error);
+    logger.error("Grants storage initialization error:", error);
     process.exit(1);
   }
 
@@ -63,18 +65,18 @@ async function main() {
   try {
     const loadedGrants = await loadConfigGrants();
     if (loadedGrants > 0) {
-      console.error(`Loaded ${loadedGrants} grants from config`);
+      logger.info(`Loaded ${loadedGrants} grants from config`);
     }
   } catch (error) {
-    console.error("Warning: Could not load config grants:", error);
+    logger.warn("Could not load config grants", error);
   }
 
   // Initialize workspace
   try {
     await initializeWorkspace();
-    console.error("Workspace initialized at:", config.workspace.path);
+    logger.info(`Workspace initialized at: ${config.workspace.path}`);
   } catch (error) {
-    console.error("Workspace initialization error:", error);
+    logger.error("Workspace initialization error", error);
     process.exit(1);
   }
 
@@ -82,15 +84,13 @@ async function main() {
   try {
     const cleanupResult = await cleanupTempFiles();
     if (cleanupResult.deleted > 0) {
-      console.error(
-        `Temp cleanup: ${cleanupResult.deleted} files deleted (older than ${config.cleanup.tempDays} days)`
-      );
+      logger.info(`Temp cleanup: ${cleanupResult.deleted} files deleted (older than ${config.cleanup.tempDays} days)`);
     }
     if (cleanupResult.errors > 0) {
-      console.error(`Temp cleanup: ${cleanupResult.errors} errors`);
+      logger.warn(`Temp cleanup: ${cleanupResult.errors} errors`);
     }
   } catch (error) {
-    console.error("Warning: Temp cleanup failed:", error);
+    logger.warn("Temp cleanup failed", error);
   }
 
   const server = createServer();
@@ -229,36 +229,33 @@ async function main() {
     });
 
     httpServer.listen(PORT, () => {
-      console.error(`[${new Date().toISOString()}] [INFO] [filer-mcp] Starting Filer MCP {"transport":"${TRANSPORT}","port":${PORT}}`);
-      console.error(`[${new Date().toISOString()}] [INFO] [filer-mcp] Workspace: ${config.workspace.path}`);
-      console.error(`[${new Date().toISOString()}] [INFO] [filer-mcp] Filer MCP running on http://localhost:${PORT}`);
-      console.error(`[${new Date().toISOString()}] [INFO] [filer-mcp] Endpoints:`);
-      console.error(`[${new Date().toISOString()}] [INFO] [filer-mcp]   GET  /health - Health check`);
-      console.error(`[${new Date().toISOString()}] [INFO] [filer-mcp]   GET  /sse    - SSE connection`);
-      console.error(`[${new Date().toISOString()}] [INFO] [filer-mcp]   POST /message - SSE messages`);
+      logger.info(`Starting Filer MCP`, { transport: TRANSPORT, port: PORT });
+      logger.info(`Workspace: ${config.workspace.path}`);
+      logger.info(`Filer MCP running on http://localhost:${PORT}`);
+      logger.info(`Endpoints: GET /health, GET /sse, POST /message`);
     });
   } else {
     // Default: stdio transport for Claude Desktop
-    console.error(`[${new Date().toISOString()}] [INFO] [filer-mcp] Starting Filer MCP {"transport":"stdio"}`);
-    console.error(`[${new Date().toISOString()}] [INFO] [filer-mcp] Workspace: ${config.workspace.path}`);
+    logger.info(`Starting Filer MCP`, { transport: "stdio" });
+    logger.info(`Workspace: ${config.workspace.path}`);
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error(`[${new Date().toISOString()}] [INFO] [filer-mcp] Filer MCP running on stdio`);
+    logger.info(`Filer MCP running on stdio`);
   }
 
   // Graceful shutdown
   process.on("SIGINT", () => {
-    console.error("Shutting down...");
+    logger.info("Shutting down...");
     process.exit(0);
   });
 
   process.on("SIGTERM", () => {
-    console.error("Shutting down...");
+    logger.info("Shutting down...");
     process.exit(0);
   });
 }
 
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  logger.error("Fatal error", error);
   process.exit(1);
 });

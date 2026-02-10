@@ -8,6 +8,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getConfig } from "../utils/config.js";
 import { writeAuditEntry, createAuditEntry } from "../logging/audit.js";
+import { Logger } from "@mcp/shared/Utils/logger.js";
+
+const logger = new Logger('filer:cleanup');
 
 export interface CleanupResult {
   deleted: number;
@@ -40,7 +43,7 @@ export async function cleanupTempFiles(): Promise<CleanupResult> {
   try {
     entries = await readdir(tempDir);
   } catch (error) {
-    console.error("Failed to read temp directory:", error);
+    logger.error("Failed to read temp directory", error);
     return result;
   }
 
@@ -74,7 +77,7 @@ export async function cleanupTempFiles(): Promise<CleanupResult> {
     } catch (error) {
       result.errors++;
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      console.error(`Failed to process ${filePath}:`, errorMessage);
+      logger.error(`Failed to process ${filePath}: ${errorMessage}`);
 
       // Log the failure
       await writeAuditEntry(
