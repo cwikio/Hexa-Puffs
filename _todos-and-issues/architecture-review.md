@@ -50,19 +50,20 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 **Now:** `rebuild.sh` manually builds Shared first, then parallelizes everything. No way to express "Orchestrator depends on Shared."
 
 **Proposal:** Adopt **pnpm workspaces** (or npm workspaces):
+
 - Single lockfile, deduped `node_modules`
 - `pnpm --filter` to build/test individual packages
 - Formal dependency graph (`@mcp/shared` as a workspace dependency)
 - Drop `rebuild.sh` in favor of `pnpm -r run build` (topologically ordered)
 - Turborepo optional on top for caching
 
-### 2. Eliminate Duplicate Discovery Logic (Medium Impact, Medium Effort)
+### 2. Eliminate Duplicate Discovery Logic (Medium Impact, Medium Effort) - DONE
 
 **Problem:** MCP discovery implemented **twice**: `start-all.sh` (bash + inline Node.js) and `Orchestrator/src/config/scanner.ts` (TypeScript). They can drift.
 
 **Proposal:** Extract discovery into a small CLI in Shared (e.g. `npx @mcp/shared discover`). Both `start-all.sh` and Orchestrator invoke the same logic.
 
-### 3. Clean Up Legacy References in `test.sh` (Medium Impact, Low Effort)
+### 3. Clean Up Legacy References in `test.sh` (Medium Impact, Low Effort) - DONE
 
 **Problem:** `test.sh` still checks legacy HTTP ports (8000, 8003, 8004, 8005) for MCPs that no longer expose those ports.
 
@@ -73,6 +74,7 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 **Problem:** Thinker's `tool-selector.ts` uses hardcoded regex (`/search|weather|news/`) to decide which tool groups to expose. Brittle — new MCPs' tools won't be selected unless someone updates the regex map.
 
 **Options:**
+
 - **Short-term:** Auto-include new MCPs' tools in a "default" group
 - **Long-term:** Embedding-based classifier (nomic-embed already available via Ollama)
 
@@ -82,7 +84,7 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 
 **Proposal:** Either use them or delete them. If keeping, `registerTool` wrapper should detect error subtypes and include `code` in StandardResponse.
 
-### 6. Add Tests for Shared Package (High Impact, Low Effort)
+### 6. Add Tests for Shared Package (High Impact, Low Effort) - DONE
 
 **Problem:** `@mcp/shared` has zero tests. It contains `registerTool()`, `dual-transport`, `StandardResponse`, and logger — all critical infrastructure.
 
@@ -99,6 +101,7 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 **Problem:** `dual-transport.ts` sets `Access-Control-Allow-Origin: *` and has no auth on any endpoint.
 
 **Proposal:**
+
 - Bind to `127.0.0.1` explicitly
 - Add shared secret token (`X-Annabelle-Token` header), generated per-session
 - Restrict CORS to `localhost` origins
@@ -120,6 +123,7 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 **Problem:** Orchestrator (~55 source files) handles discovery, routing, agent lifecycle, slash commands, halt management, Inngest jobs, Telegram polling, cost monitoring, and tool policy. Single point of failure.
 
 **Proposal:** Split into clearer internal modules:
+
 - `core/` — Express server, health, HTTP handlers
 - `discovery/` — scanner + config schema
 - `routing/` — ToolRouter + policy enforcement
@@ -138,17 +142,17 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 
 ## Priority Ranking
 
-| # | Improvement | Effort | Impact |
-|---|---|---|---|
-| 1 | Workspace tooling (pnpm) | Medium | High |
-| 3 | Clean up legacy test refs | Low | Medium |
-| 7 | Consolidate StandardResponse dupes | Low | Medium |
-| 6 | Shared package tests | Low | High |
-| 2 | Deduplicate discovery logic | Medium | Medium |
-| 10 | Recover CodeExec source | Medium | High |
-| 4 | Better tool selection | Medium | Medium |
-| 8 | HTTP transport security | Low | High |
-| 11 | Split Orchestrator modules | Medium | Medium |
-| 9 | Standardize logging | Low | Low-Medium |
-| 5 | Use shared error types | Low | Low |
-| 12 | Health dashboard endpoint | Low | Low |
+| #   | Improvement                        | Effort | Impact     |
+| --- | ---------------------------------- | ------ | ---------- |
+| 1   | Workspace tooling (pnpm)           | Medium | High       |
+| 3   | Clean up legacy test refs          | Low    | Medium     |
+| 7   | Consolidate StandardResponse dupes | Low    | Medium     |
+| 6   | Shared package tests               | Low    | High       |
+| 2   | Deduplicate discovery logic        | Medium | Medium     |
+| 10  | Recover CodeExec source            | Medium | High       |
+| 4   | Better tool selection              | Medium | Medium     |
+| 8   | HTTP transport security            | Low    | High       |
+| 11  | Split Orchestrator modules         | Medium | Medium     |
+| 9   | Standardize logging                | Low    | Low-Medium |
+| 5   | Use shared error types             | Low    | Low        |
+| 12  | Health dashboard endpoint          | Low    | Low        |
