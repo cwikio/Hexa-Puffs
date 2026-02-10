@@ -7,7 +7,10 @@ import { resolve } from 'node:path';
 import { getConfig, isForbiddenPath, expandHome } from '../config.js';
 import { executeInSubprocess } from '../executor/subprocess.js';
 import { logExecution } from '../logging/writer.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
 import type { ExecutionResult } from '../executor/types.js';
+
+const logger = new Logger('codexec:exec');
 
 export const executeCodeSchema = z.object({
   language: z.enum(['python', 'node', 'bash'])
@@ -67,7 +70,7 @@ export async function handleExecuteCode(
     working_dir: workingDir || `${config.sandboxDir}/${result.execution_id}`,
     artifacts: result.artifacts,
     executed_at: new Date().toISOString(),
-  }).catch((err) => console.error(`[codexec] Log write failed: ${err}`));
+  }).catch((err) => logger.error(`Log write failed: ${err}`));
 
   return result;
 }
