@@ -1243,6 +1243,32 @@ Complete the task step by step, using your available tools. When done, provide a
   }
 
   /**
+   * Get embedding selector status (for /health endpoint).
+   */
+  getEmbeddingSelectorStatus(): {
+    enabled: boolean;
+    initialized: boolean;
+    toolCount: number;
+    lastSelection: { method: string; selectedCount: number; totalTools: number; topScore: number } | null;
+  } {
+    if (!this.embeddingSelector) {
+      return { enabled: false, initialized: false, toolCount: 0, lastSelection: null };
+    }
+    const stats = this.embeddingSelector.getLastSelectionStats();
+    return {
+      enabled: true,
+      initialized: this.embeddingSelector.isInitialized(),
+      toolCount: Object.keys(this.tools).length,
+      lastSelection: stats ? {
+        method: stats.method,
+        selectedCount: stats.selectedCount,
+        totalTools: stats.totalTools,
+        topScore: stats.topScore,
+      } : null,
+    };
+  }
+
+  /**
    * Check if Orchestrator is reachable (for deep health checks).
    */
   async checkOrchestratorHealth(): Promise<boolean> {

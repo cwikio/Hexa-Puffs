@@ -23,6 +23,12 @@ interface HealthResponse {
     model: string;
     orchestratorUrl: string;
   };
+  embeddingSelector?: {
+    enabled: boolean;
+    initialized: boolean;
+    toolCount: number;
+    lastSelection: { method: string; selectedCount: number; totalTools: number; topScore: number } | null;
+  };
 }
 
 /**
@@ -73,6 +79,7 @@ function createServer(config: Config, startTime: number) {
                config.ollamaModel,
         orchestratorUrl: config.orchestratorUrl,
       },
+      embeddingSelector: agentRef.getEmbeddingSelectorStatus(),
     };
     res.json(response);
   });

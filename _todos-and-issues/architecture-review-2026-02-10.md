@@ -256,7 +256,7 @@ Unified all 12 packages to `"node": ">=22.0.0"` matching the existing `.nvmrc`. 
 
 ---
 
-## What's Next — Proposed Improvements
+## What's Next — Remaining Improvements
 
 ### N1. Tool re-embedding on MCP hot-reload (Low effort, High value)
 
@@ -273,25 +273,10 @@ Unified all 12 packages to `"node": ">=22.0.0"` matching the existing `.nvmrc`. 
 ### N3. Workspace tooling — pnpm (Medium effort, High value)
 
 Carried forward from Item 1. Biggest structural improvement remaining:
+
 - Single lockfile, deduped `node_modules` (currently ~2GB duplicated across 12 packages)
 - `pnpm -r run build` replaces `rebuild.sh` with topological ordering
 - Foundation for Turborepo caching later
-
-### ~~N4. Phase 3-5 MCP migration~~ ✅ DONE
-
-All three MCPs now use `McpServer` + `registerTool()`:
-
-- **Gmail** (30 tools): `McpServer` + `registerTool()` + `StandardResponse` from `@mcp/shared`
-- **Memorizer** (27 tools): `McpServer` + `registerTool()` + dual-transport via Shared
-- **Telegram** (16 tools): `McpServer` + `registerTool()` (migrated earlier)
-
-All have tool annotations (`readOnlyHint`, `destructiveHint`), consistent error handling via the Shared wrapper, and `StandardResponse` from `@mcp/shared`.
-
-**Note:** Gmail and Memorizer handlers still contain redundant `safeParse()` calls (47 total). The `registerTool()` wrapper validates inputs via Zod before calling the handler, so these are no-ops. Cleanup is optional — they add a negligible cost and serve as defense-in-depth.
-
-### ~~N5. Generic `registerTool<T>()`~~ ✅ DONE (as A4)
-
-Implemented as part of A4 above. `registerTool<T extends z.AnyZodObject>()` with `z.infer<T>` handler type. 47 casts removed across 6 MCPs.
 
 ### N6. Embedding cache persistence (Low effort, Low value)
 
@@ -304,6 +289,9 @@ Implemented as part of A4 above. `registerTool<T extends z.AnyZodObject>()` with
 1. **N1** — Tool re-embedding on hot-reload (quick win, prevents stale index)
 2. **N2** — Observability (helps tune thresholds with real traffic data)
 3. **N3** — pnpm workspaces (structural, enables many downstream improvements)
-4. ~~**N4** — Phase 3-5 migration~~ ✅ Done
-5. ~~**N5** — Generic registerTool~~ ✅ Done (A4)
-6. **N6** — Embedding cache (optimization, low urgency with local Ollama)
+4. **N6** — Embedding cache (optimization, low urgency with local Ollama)
+
+### Completed
+
+- ~~**N4** — Phase 3-5 MCP migration~~ ✅ All three MCPs (Gmail, Memorizer, Telegram) use `McpServer` + `registerTool()` with annotations and `StandardResponse` from `@mcp/shared`. 47 redundant `safeParse()` calls remain in Gmail/Memorizer handlers (defense-in-depth, optional cleanup).
+- ~~**N5** — Generic `registerTool<T>()`~~ ✅ Done as A4. Handler receives `z.infer<T>`, 47 casts removed across 6 MCPs.
