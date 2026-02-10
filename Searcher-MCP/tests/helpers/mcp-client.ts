@@ -1,86 +1,43 @@
 /**
- * MCP Client Test Helper
- * HTTP wrapper with rich logging for testing Searcher MCP server
+ * MCP Client Test Helper for Searcher MCP.
+ * Uses shared base client, adds Searcher-specific convenience methods.
  */
 
-const SEARCHER_URL = process.env.SEARCHER_URL || "http://localhost:8007";
+import { MCPTestClient, type MCPToolCallResult } from '@mcp/shared/Testing/mcp-test-client.js';
+export { log, logSection } from '@mcp/shared/Testing/test-utils.js';
+export { type MCPToolCallResult } from '@mcp/shared/Testing/mcp-test-client.js';
 
-interface ToolCallResult<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  duration: number;
-}
+export const SEARCHER_URL = process.env.SEARCHER_URL || "http://localhost:8007";
 
-interface McpResponse {
-  content: Array<{
-    type: string;
-    text: string;
-  }>;
-}
-
-function timestamp(): string {
-  return new Date().toISOString().split("T")[1].slice(0, 12);
-}
-
-function log(icon: string, message: string, detail?: string): void {
-  const time = timestamp();
-  if (detail) {
-    console.log(`[${time}] ${icon} ${message} ${detail}`);
-  } else {
-    console.log(`[${time}] ${icon} ${message}`);
-  }
-}
+const client = new MCPTestClient('Searcher', SEARCHER_URL);
 
 export function logInfo(message: string): void {
-  log("i", message);
+  const ts = new Date().toISOString().split("T")[1].slice(0, 12);
+  console.log(`[${ts}] i ${message}`);
 }
 
 export function logSuccess(message: string, duration?: number): void {
-  const durationStr = duration !== undefined ? `(${duration}ms)` : "";
-  log("✓", message, durationStr);
+  const ts = new Date().toISOString().split("T")[1].slice(0, 12);
+  const d = duration !== undefined ? ` (${duration}ms)` : "";
+  console.log(`[${ts}] ✓ ${message}${d}`);
 }
 
 export function logError(message: string, error?: string): void {
-  log("✗", message, error ? `- ${error}` : undefined);
+  const ts = new Date().toISOString().split("T")[1].slice(0, 12);
+  console.log(`[${ts}] ✗ ${message}${error ? ` - ${error}` : ""}`);
 }
 
-export function logSection(title: string): void {
-  console.log();
-  console.log(`━━━ ${title} ━━━`);
-  console.log();
-}
-
-/**
- * Check if the Searcher MCP server is healthy
- */
 export async function checkHealth(): Promise<boolean> {
   logInfo(`Checking health at ${SEARCHER_URL}/health`);
-  const start = Date.now();
-
-  try {
-    const response = await fetch(`${SEARCHER_URL}/health`);
-    const duration = Date.now() - start;
-
-    if (response.ok) {
-      logSuccess("Health check passed", duration);
-      return true;
-    } else {
-      logError("Health check failed", `Status ${response.status}`);
-      return false;
-    }
-  } catch (error) {
-    logError(
-      "Health check failed",
-      error instanceof Error ? error.message : "Unknown error"
-    );
-    return false;
+  const result = await client.healthCheck();
+  if (result.healthy) {
+    logSuccess("Health check passed", result.duration);
+  } else {
+    logError("Health check failed", result.error || `Status ${result.status}`);
   }
+  return result.healthy;
 }
 
-/**
- * Get health check response data
- */
 export async function getHealthData(): Promise<{
   status: string;
   transport: string;
@@ -97,9 +54,6 @@ export async function getHealthData(): Promise<{
   }
 }
 
-/**
- * List available tools
- */
 export async function listTools(): Promise<{
   tools: Array<{
     name: string;
@@ -118,101 +72,18 @@ export async function listTools(): Promise<{
   }
 }
 
-/**
- * Call a tool on the Searcher MCP server
- */
 export async function callTool<T = unknown>(
   name: string,
   args: Record<string, unknown> = {}
-): Promise<ToolCallResult<T>> {
+): Promise<MCPToolCallResult<T>> {
   logInfo(`Calling ${name} tool`);
-  const start = Date.now();
-
-  try {
-    const response = await fetch(`${SEARCHER_URL}/tools/call`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name,
-        arguments: args,
-      }),
-    });
-
-    const duration = Date.now() - start;
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logError(`${name} failed`, `Status ${response.status}: ${errorText}`);
-
-      // For 400 errors (validation), try to parse the error response
-      if (response.status === 400) {
-        try {
-          const errorJson = JSON.parse(errorText) as McpResponse;
-          if (errorJson.content?.[0]?.text) {
-            const toolResult = JSON.parse(errorJson.content[0].text);
-            return {
-              success: false,
-              error: toolResult.error,
-              data: toolResult as T,
-              duration,
-            };
-          }
-        } catch {
-          // Fall through to default error handling
-        }
-      }
-
-      return {
-        success: false,
-        error: `HTTP ${response.status}: ${errorText}`,
-        duration,
-      };
-    }
-
-    const mcpResponse = (await response.json()) as McpResponse;
-
-    // Parse the tool result from MCP response format
-    if (mcpResponse.content && mcpResponse.content[0]?.text) {
-      const toolResult = JSON.parse(mcpResponse.content[0].text) as T;
-
-      // Check if the tool result indicates success
-      const resultObj = toolResult as { success?: boolean; error?: string };
-      if (resultObj.success === false) {
-        logError(`${name} returned error`, resultObj.error);
-        return {
-          success: false,
-          error: resultObj.error,
-          data: toolResult,
-          duration,
-        };
-      }
-
-      logSuccess(`${name} succeeded`, duration);
-      return {
-        success: true,
-        data: toolResult,
-        duration,
-      };
-    }
-
-    logError(`${name} returned unexpected format`);
-    return {
-      success: false,
-      error: "Unexpected response format",
-      duration,
-    };
-  } catch (error) {
-    const duration = Date.now() - start;
-    const errorMsg = error instanceof Error ? error.message : "Unknown error";
-    logError(`${name} failed`, errorMsg);
-    return {
-      success: false,
-      error: errorMsg,
-      duration,
-    };
+  const result = await client.callTool<T>(name, args);
+  if (result.success) {
+    logSuccess(`${name} succeeded`, result.duration);
+  } else {
+    logError(`${name} failed`, result.error);
   }
+  return result;
 }
 
 // Type definitions matching the actual API responses
@@ -255,11 +126,6 @@ export interface StandardResponse<T> {
 // Convenience methods for each tool
 
 export const tools = {
-  /**
-   * Search the web using Brave Search
-   * @param query - Search query (required)
-   * @param options - Optional parameters: count (1-20), freshness (24h/week/month/year), safesearch (off/moderate/strict)
-   */
   webSearch: (
     query: string,
     options?: {
@@ -273,11 +139,6 @@ export const tools = {
       ...options,
     }),
 
-  /**
-   * Search news articles using Brave Search
-   * @param query - News search query (required)
-   * @param options - Optional parameters: count (1-20), freshness (24h/week/month)
-   */
   newsSearch: (
     query: string,
     options?: {
@@ -290,17 +151,9 @@ export const tools = {
       ...options,
     }),
 
-  /**
-   * Call web_search with raw arguments (for testing invalid inputs)
-   */
   webSearchRaw: (args: Record<string, unknown>) =>
     callTool<StandardResponse<WebSearchData>>("web_search", args),
 
-  /**
-   * Call news_search with raw arguments (for testing invalid inputs)
-   */
   newsSearchRaw: (args: Record<string, unknown>) =>
     callTool<StandardResponse<NewsSearchData>>("news_search", args),
 };
-
-export { SEARCHER_URL };

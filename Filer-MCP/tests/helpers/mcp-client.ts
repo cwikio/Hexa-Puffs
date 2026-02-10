@@ -1,156 +1,55 @@
 /**
- * MCP Client Test Helper
- * HTTP wrapper with rich logging for testing Filer MCP server
+ * MCP Client Test Helper for Filer MCP.
+ * Uses shared base client, adds Filer-specific convenience methods.
  */
 
-const FILER_URL = process.env.FILER_URL || "http://localhost:8004";
+import { MCPTestClient, type MCPToolCallResult } from '@mcp/shared/Testing/mcp-test-client.js';
+export { log, logSection } from '@mcp/shared/Testing/test-utils.js';
+export { type MCPToolCallResult } from '@mcp/shared/Testing/mcp-test-client.js';
 
-interface ToolCallResult<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  duration: number;
-}
+export const FILER_URL = process.env.FILER_URL || "http://localhost:8004";
 
-interface McpResponse {
-  content: Array<{
-    type: string;
-    text: string;
-  }>;
-}
-
-function timestamp(): string {
-  return new Date().toISOString().split("T")[1].slice(0, 12);
-}
-
-function log(icon: string, message: string, detail?: string): void {
-  const time = timestamp();
-  if (detail) {
-    console.log(`[${time}] ${icon} ${message} ${detail}`);
-  } else {
-    console.log(`[${time}] ${icon} ${message}`);
-  }
-}
+const client = new MCPTestClient('Filer', FILER_URL);
 
 export function logInfo(message: string): void {
-  log("ℹ", message);
+  const ts = new Date().toISOString().split("T")[1].slice(0, 12);
+  console.log(`[${ts}] ℹ ${message}`);
 }
 
 export function logSuccess(message: string, duration?: number): void {
-  const durationStr = duration !== undefined ? `(${duration}ms)` : "";
-  log("✓", message, durationStr);
+  const ts = new Date().toISOString().split("T")[1].slice(0, 12);
+  const d = duration !== undefined ? ` (${duration}ms)` : "";
+  console.log(`[${ts}] ✓ ${message}${d}`);
 }
 
 export function logError(message: string, error?: string): void {
-  log("✗", message, error ? `- ${error}` : undefined);
+  const ts = new Date().toISOString().split("T")[1].slice(0, 12);
+  console.log(`[${ts}] ✗ ${message}${error ? ` - ${error}` : ""}`);
 }
 
-export function logSection(title: string): void {
-  console.log();
-  console.log(`━━━ ${title} ━━━`);
-  console.log();
-}
-
-/**
- * Check if the Filer MCP server is healthy
- */
 export async function checkHealth(): Promise<boolean> {
   logInfo(`Checking health at ${FILER_URL}/health`);
-  const start = Date.now();
-
-  try {
-    const response = await fetch(`${FILER_URL}/health`);
-    const duration = Date.now() - start;
-
-    if (response.ok) {
-      logSuccess("Health check passed", duration);
-      return true;
-    } else {
-      logError("Health check failed", `Status ${response.status}`);
-      return false;
-    }
-  } catch (error) {
-    logError("Health check failed", error instanceof Error ? error.message : "Unknown error");
-    return false;
+  const result = await client.healthCheck();
+  if (result.healthy) {
+    logSuccess("Health check passed", result.duration);
+  } else {
+    logError("Health check failed", result.error || `Status ${result.status}`);
   }
+  return result.healthy;
 }
 
-/**
- * Call a tool on the Filer MCP server
- */
 export async function callTool<T = unknown>(
   name: string,
   args: Record<string, unknown> = {}
-): Promise<ToolCallResult<T>> {
+): Promise<MCPToolCallResult<T>> {
   logInfo(`Calling ${name} tool`);
-  const start = Date.now();
-
-  try {
-    const response = await fetch(`${FILER_URL}/tools/call`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name,
-        arguments: args,
-      }),
-    });
-
-    const duration = Date.now() - start;
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logError(`${name} failed`, `Status ${response.status}: ${errorText}`);
-      return {
-        success: false,
-        error: `HTTP ${response.status}: ${errorText}`,
-        duration,
-      };
-    }
-
-    const mcpResponse = (await response.json()) as McpResponse;
-
-    // Parse the tool result from MCP response format
-    if (mcpResponse.content && mcpResponse.content[0]?.text) {
-      const toolResult = JSON.parse(mcpResponse.content[0].text) as T;
-
-      // Check if the tool result indicates success
-      const resultObj = toolResult as { success?: boolean; error?: string };
-      if (resultObj.success === false) {
-        logError(`${name} returned error`, resultObj.error);
-        return {
-          success: false,
-          error: resultObj.error,
-          data: toolResult,
-          duration,
-        };
-      }
-
-      logSuccess(`${name} succeeded`, duration);
-      return {
-        success: true,
-        data: toolResult,
-        duration,
-      };
-    }
-
-    logError(`${name} returned unexpected format`);
-    return {
-      success: false,
-      error: "Unexpected response format",
-      duration,
-    };
-  } catch (error) {
-    const duration = Date.now() - start;
-    const errorMsg = error instanceof Error ? error.message : "Unknown error";
-    logError(`${name} failed`, errorMsg);
-    return {
-      success: false,
-      error: errorMsg,
-      duration,
-    };
+  const result = await client.callTool<T>(name, args);
+  if (result.success) {
+    logSuccess(`${name} succeeded`, result.duration);
+  } else {
+    logError(`${name} failed`, result.error);
   }
+  return result;
 }
 
 // Convenience methods for each tool - types match actual API responses
@@ -244,5 +143,3 @@ export const tools = {
       }>;
     }>("get_audit_log", options || {}),
 };
-
-export { FILER_URL };

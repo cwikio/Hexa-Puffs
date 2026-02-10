@@ -1,7 +1,9 @@
 /**
- * MCP Client Helper for Integration Tests
- * Provides HTTP helpers with rich logging for testing Memorizer MCP
+ * MCP Client Helper for Memorizer MCP Integration Tests.
+ * Uses shared base client, adds Memorizer-specific convenience methods.
  */
+
+import { MCPTestClient } from '@mcp/shared/Testing/mcp-test-client.js';
 
 export interface ToolCallResult<T = unknown> {
   success: boolean;
@@ -17,11 +19,12 @@ export interface LogEntry {
 }
 
 export class McpClient {
-  private baseUrl: string;
+  private client: MCPTestClient;
   private logs: LogEntry[] = [];
 
   constructor(baseUrl?: string) {
-    this.baseUrl = baseUrl ?? process.env.MEMORIZER_URL ?? 'http://localhost:8005';
+    const url = baseUrl ?? process.env.MEMORIZER_URL ?? 'http://localhost:8005';
+    this.client = new MCPTestClient('Memorizer', url);
   }
 
   private log(level: LogEntry['level'], message: string, duration?: number): void {
@@ -46,65 +49,35 @@ export class McpClient {
   }
 
   async healthCheck(): Promise<boolean> {
-    const url = `${this.baseUrl}/health`;
-    this.log('info', `Checking health at ${url}`);
+    const url = this.client.getBaseUrl();
+    this.log('info', `Checking health at ${url}/health`);
 
-    const start = Date.now();
-    const response = await fetch(url);
-    const duration = Date.now() - start;
-
-    if (response.ok) {
-      this.log('success', 'Health check passed', duration);
+    const result = await this.client.healthCheck();
+    if (result.healthy) {
+      this.log('success', 'Health check passed', result.duration);
       return true;
     } else {
-      this.log('error', `Health check failed: ${response.status}`, duration);
-      throw new Error(`Health check failed: ${response.status}`);
+      this.log('error', `Health check failed: ${result.error || result.status}`, result.duration);
+      throw new Error(`Health check failed: ${result.error || result.status}`);
     }
   }
 
   async callTool<T = unknown>(toolName: string, args: Record<string, unknown> = {}): Promise<ToolCallResult<T>> {
     this.log('info', `Calling ${toolName} tool`);
 
-    const start = Date.now();
+    const result = await this.client.callTool<ToolCallResult<T>>(toolName, args);
 
-    try {
-      const response = await fetch(`${this.baseUrl}/tools/call`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: toolName,
-          arguments: args,
-        }),
-      });
+    // The shared client parses the MCP wrapper and returns the inner object.
+    // For Memorizer, the inner object IS a ToolCallResult { success, data?, error? }.
+    const mapped: ToolCallResult<T> = result.data ?? { success: false, error: result.error ?? 'Invalid response format' };
 
-      const duration = Date.now() - start;
-
-      // The response is wrapped in MCP format: { content: [{ type: "text", text: "..." }] }
-      const mcpResponse = (await response.json()) as {
-        content?: Array<{ type: string; text: string }>;
-      };
-
-      // Extract the actual result from the MCP content wrapper
-      let result: ToolCallResult<T>;
-      if (mcpResponse.content && mcpResponse.content.length > 0 && mcpResponse.content[0].text) {
-        result = JSON.parse(mcpResponse.content[0].text) as ToolCallResult<T>;
-      } else {
-        result = { success: false, error: 'Invalid response format' };
-      }
-
-      if (result.success) {
-        this.log('success', `${toolName} succeeded`, duration);
-      } else {
-        this.log('error', `${toolName} failed: ${result.error}`, duration);
-      }
-
-      return result;
-    } catch (error) {
-      const duration = Date.now() - start;
-      const message = error instanceof Error ? error.message : String(error);
-      this.log('error', `${toolName} threw: ${message}`, duration);
-      return { success: false, error: message };
+    if (mapped.success) {
+      this.log('success', `${toolName} succeeded`, result.duration);
+    } else {
+      this.log('error', `${toolName} failed: ${mapped.error}`, result.duration);
     }
+
+    return mapped;
   }
 
   // Convenience methods for each tool

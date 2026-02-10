@@ -36,10 +36,11 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 - **Guardian-as-gatekeeper** with content hashing (privacy-preserving)
 - **Cost controls** — sliding window anomaly detection + hard cap
 - **Thinker graceful degradation** — retry → rephrase → text-only fallback
+- **Embedding-based tool selection** — semantic matching via nomic-embed, regex fallback
 - **Session compaction** — summarize old turns, keep last 10
 - **Subagent spawning** — single-level depth, cascade-kill, auto-kill timers
 - **TypeScript strict mode** enabled globally via `tsconfig.base.json`
-- **Test coverage** across 12/12 packages (133+ test files)
+- **Test coverage** across 12/12 packages (170+ test files)
 - **Localhost binding** — Orchestrator, Searcher, Inngest, dual-transport all bind `127.0.0.1`
 - **Per-session auth token** — `ANNABELLE_TOKEN` generated per session, enforced on Orchestrator HTTP
 
@@ -184,36 +185,17 @@ The `registerTool()` handler receives `Record<string, unknown>` (by design in `S
 
 **Fix:** Consider a generic `registerTool<T>()` that passes `T` to the handler. Moderate effort, affects all MCPs.
 
-#### A5. Test helper duplication across packages (Low)
+#### ~~A5. Test helper duplication across packages~~ ✅ DONE
 
-MCP testing harnesses (`tests/helpers/mcp-client.ts`) are duplicated in Guardian, Searcher, and others. Each implements `Client` + `StdioClientTransport` setup independently.
+Extracted shared `MCPTestClient` base class and test utilities into `Shared/Testing/`. Migrated Orchestrator, Filer, Searcher, Memorizer, and Telegram test helpers to import from `@mcp/shared/Testing/`. Guardian stays local (stdio transport).
 
-**Fix:** Extract into `@mcp/shared/testing` when workspace tooling is adopted.
+#### ~~A6. Zod version drift across packages~~ ✅ DONE
 
-#### A6. Zod version drift across packages (Low)
+Unified Memorizer (`^3.22.0`), Orchestrator (`^3.22.0`), and Thinker (`^3.23.0`) to `^3.24.0`. All packages now consistent.
 
-| Package | Zod Version |
-|---------|-------------|
-| Shared | `^3.24.0` |
-| Thinker | `^3.23.0` |
-| Memorizer | `^3.22.0` |
-| Others | `^3.24.0` |
+#### ~~A7. Node engine constraints are inconsistent~~ ✅ DONE
 
-All within 3.x semver range. Unlikely to cause issues but creates maintenance noise.
-
-**Fix:** Unify to `^3.24.0` across all packages. Trivial fix, can be done anytime.
-
-#### A7. Node engine constraints are inconsistent (Low)
-
-| Package | Node Engines |
-|---------|-------------|
-| Orchestrator, Shared | `>=18.0.0` |
-| Most MCPs | `>=20.0.0` |
-| Gmail, Telegram | `>=22.0.0` |
-
-No enforcement at build time. Deploying on Node 20 silently breaks Gmail/Telegram.
-
-**Fix:** Unify to `>=20.0.0` or add an `.nvmrc` at the repo root. Low priority.
+Unified all 12 packages to `"node": ">=22.0.0"` matching the existing `.nvmrc`. Added missing `engines` field to Shared and Thinker.
 
 ---
 
@@ -254,7 +236,7 @@ No enforcement at build time. Deploying on Node 20 silently breaks Gmail/Telegra
 | A2 | Channel plugin interface | Medium | Medium |
 | A1 | StandardResponse dedup in Gmail | Low | Low |
 
-### Tier 5: Housekeeping — ✅ PARTIAL
+### Tier 5: Housekeeping — ✅ ALL DONE
 
 | # | Improvement | Status |
 |---|-------------|--------|
@@ -262,9 +244,9 @@ No enforcement at build time. Deploying on Node 20 silently breaks Gmail/Telegra
 | S5 | ~~Add rate limiting~~ | ✅ Done |
 | R4 | ~~Exponential backoff for agent restart~~ | ✅ Done |
 | R2 | ~~Deep health checks~~ | ✅ Done |
-| A6 | Unify Zod versions | Not started |
-| A7 | Unify Node engine constraints | Not started |
-| A5 | Extract shared test helpers | Not started |
+| A6 | ~~Unify Zod versions~~ | ✅ Done |
+| A7 | ~~Unify Node engine constraints~~ | ✅ Done |
+| A5 | ~~Extract shared test helpers~~ | ✅ Done |
 
 ### Design decisions (no action needed now)
 
