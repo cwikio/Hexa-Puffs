@@ -1,14 +1,4 @@
 // ============================================================================
-// Standard Response Type (copied from Shared)
-// ============================================================================
-
-export interface StandardResponse<T = unknown> {
-  success: boolean;
-  error?: string;
-  data?: T;
-}
-
-// ============================================================================
 // Facts Tool Response Types
 // ============================================================================
 
@@ -184,33 +174,3 @@ export interface DeleteSkillData {
   deleted_skill: string;
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Create a successful StandardResponse
- */
-export function createSuccess<T>(data: T): StandardResponse<T> {
-  return {
-    success: true,
-    data,
-  };
-}
-
-/**
- * Create an error StandardResponse
- */
-export function createError(error: string): StandardResponse<never> {
-  return {
-    success: false,
-    error,
-  };
-}
-
-/**
- * Create error from caught exception
- */
-export function createErrorFromException(error: unknown): StandardResponse<never> {
-  return createError(error instanceof Error ? error.message : 'Unknown error');
-}

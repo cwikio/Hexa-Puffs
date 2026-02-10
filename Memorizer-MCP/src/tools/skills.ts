@@ -3,14 +3,16 @@ import { getDatabase, type SkillRow, TRIGGER_TYPES } from '../db/index.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
+  createSuccess,
+  createError,
+  createErrorFromException,
+} from '@mcp/shared/Types/StandardResponse.js';
+import {
   type StoreSkillData,
   type ListSkillsData,
   type GetSkillData,
   type UpdateSkillData,
   type DeleteSkillData,
-  createSuccess,
-  createError,
-  createErrorFromException,
 } from '../types/responses.js';
 
 // ============================================================================

@@ -20,3 +20,10 @@ export function createSuccess<T>(data: T): StandardResponse<T> {
 export function createError(error: string): StandardResponse<never> {
   return { success: false, error };
 }
+
+/**
+ * Create error from caught exception
+ */
+export function createErrorFromException(error: unknown): StandardResponse<never> {
+  return createError(error instanceof Error ? error.message : 'Unknown error');
+}

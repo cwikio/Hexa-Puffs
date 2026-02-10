@@ -7,11 +7,13 @@ import { ExportError } from '../utils/errors.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
-  type ExportMemoryData,
-  type ImportMemoryData,
   createSuccess,
   createError,
   createErrorFromException,
+} from '@mcp/shared/Types/StandardResponse.js';
+import {
+  type ExportMemoryData,
+  type ImportMemoryData,
 } from '../types/responses.js';
 
 // Tool definitions
