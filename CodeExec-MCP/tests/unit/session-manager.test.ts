@@ -300,4 +300,23 @@ describe('SessionManager - auto-create session', () => {
     expect(result.stdout.trim()).toBe('hello');
     expect(result.created_session).toBeUndefined();
   });
+
+  it('should auto-create when session_id is a placeholder string and language is provided', async () => {
+    // LLMs sometimes pass hallucinated session IDs like "generated_session_id"
+    const result = await manager.sendToSession({
+      sessionId: 'generated_session_id',
+      language: 'python',
+      code: 'print(99)',
+    });
+
+    expect(result.session_id).toMatch(/^sess_/);
+    expect(result.stdout.trim()).toBe('99');
+    expect(result.created_session).toBeDefined();
+  });
+
+  it('should throw not found when session_id is invalid and no language provided', async () => {
+    await expect(
+      manager.sendToSession('fake_session_id', 'print("hi")'),
+    ).rejects.toThrow('not found');
+  });
 });

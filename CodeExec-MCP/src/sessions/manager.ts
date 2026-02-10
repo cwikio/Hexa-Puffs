@@ -165,10 +165,19 @@ export class SessionManager {
       timeoutMs = optsOrId.timeoutMs;
     }
 
-    // Auto-create session if no session_id provided
+    // Auto-create session if no session_id provided, or if session_id
+    // doesn't match any existing session and language IS provided
+    // (handles LLMs that pass placeholder strings like "generated_session_id")
     let createdSession: SessionExecResult['created_session'];
-    if (!sessionId) {
+    const needsAutoCreate =
+      !sessionId || (language && !this.sessions.has(sessionId));
+
+    if (needsAutoCreate) {
       if (!language) {
+        // No language and invalid/missing session_id → normal "not found" error
+        if (sessionId) {
+          this.getSession(sessionId); // throws "not found"
+        }
         throw new Error('language is required when session_id is not provided');
       }
       const startResult = await this.startSession({ language });
@@ -181,7 +190,8 @@ export class SessionManager {
       };
     }
 
-    const session = this.getSession(sessionId);
+    // sessionId is guaranteed to be set here: either from input, or from auto-create
+    const session = this.getSession(sessionId!);
 
     // Chain on the previous execution to serialize sends
     const execPromise = session.pendingExec.then(() =>
