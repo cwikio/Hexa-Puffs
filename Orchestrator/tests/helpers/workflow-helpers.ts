@@ -65,33 +65,36 @@ export interface GuardianScanResult {
  *   { success: true, data: { safe, confidence, threats, explanation, scan_id } }
  */
 export function parseGuardianResult(result: MCPToolCallResult): GuardianScanResult | null {
-  if (!result.success || !result.data) {
-    return null
-  }
+  if (!result.data) return null
 
   try {
+    let scan: Record<string, unknown>
+
+    // Check for raw MCP envelope
     const data = result.data as { content?: Array<{ type: string; text?: string }> }
     const content = data.content?.[0]
     if (content?.type === 'text' && content.text) {
       const parsed = JSON.parse(content.text)
-      // Unwrap StandardResponse: { success, data: { safe, confidence, threats, explanation } }
-      const scan = parsed.data ?? parsed
-      const safe = scan.safe ?? true
-      const confidence: number = scan.confidence ?? 1
-
-      let risk: GuardianScanResult['risk'] = 'none'
-      if (!safe) {
-        risk = confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low'
-      }
-
-      return {
-        allowed: safe,
-        risk,
-        reason: scan.explanation,
-        threats: scan.threats,
-      }
+      scan = (parsed.data ?? parsed) as Record<string, unknown>
+    } else {
+      // Already unwrapped by callTool
+      scan = result.data as Record<string, unknown>
     }
-    return null
+
+    const safe = (scan.safe as boolean) ?? true
+    const confidence = (scan.confidence as number) ?? 1
+
+    let risk: GuardianScanResult['risk'] = 'none'
+    if (!safe) {
+      risk = confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low'
+    }
+
+    return {
+      allowed: safe,
+      risk,
+      reason: scan.explanation as string | undefined,
+      threats: scan.threats as string[] | undefined,
+    }
   } catch {
     return null
   }
@@ -99,19 +102,20 @@ export function parseGuardianResult(result: MCPToolCallResult): GuardianScanResu
 
 /**
  * Parse text content from MCP tool response.
+ * Handles both raw MCP envelope and already-unwrapped data from callTool().
  */
 export function parseTextContent(result: MCPToolCallResult): string | null {
-  if (!result.success || !result.data) {
-    return null
-  }
+  if (!result.data) return null
 
   try {
+    // Check for raw MCP envelope (content[0].text)
     const data = result.data as { content?: Array<{ type: string; text?: string }> }
     const content = data.content?.[0]
     if (content?.type === 'text' && content.text) {
       return content.text
     }
-    return null
+    // Already unwrapped by callTool — stringify for compatibility
+    return typeof result.data === 'string' ? result.data : JSON.stringify(result.data)
   } catch {
     return null
   }
@@ -119,13 +123,24 @@ export function parseTextContent(result: MCPToolCallResult): string | null {
 
 /**
  * Parse JSON from MCP tool response text content.
+ * Handles both raw MCP envelope and already-unwrapped data from callTool().
+ *
+ * When callTool() has already unwrapped the MCP envelope, it strips the
+ * StandardResponse wrapper (extracting .data). This function reconstructs
+ * the { success, data, error } shape that tests expect.
  */
 export function parseJsonContent<T = unknown>(result: MCPToolCallResult): T | null {
-  const text = parseTextContent(result)
-  if (!text) return null
+  if (!result.data) return null
 
   try {
-    return JSON.parse(text) as T
+    // Check for raw MCP envelope first
+    const data = result.data as { content?: Array<{ type: string; text?: string }> }
+    const content = data.content?.[0]
+    if (content?.type === 'text' && content.text) {
+      return JSON.parse(content.text) as T
+    }
+    // Already unwrapped by callTool — reconstruct StandardResponse shape
+    return { success: result.success, data: result.data, error: result.error } as T
   } catch {
     return null
   }
