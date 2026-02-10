@@ -62,16 +62,24 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 - Drop `rebuild.sh` in favor of `pnpm -r run build` (topologically ordered)
 - Turborepo optional on top for caching
 
-### 4. Replace Keyword-Based Tool Selection (Medium Impact, Medium Effort)
+### ~~4. Replace Keyword-Based Tool Selection~~ ✅ DONE
 
-**Status:** Not started
+**Status:** Implemented — embedding-based tool selection with regex fallback.
 
-**Problem:** Thinker's `tool-selector.ts` uses hardcoded regex (`/search|weather|news/`) to decide which tool groups to expose. Brittle — new MCPs' tools won't be selected unless someone updates the regex map.
+**What was done:**
+- Extracted embedding infrastructure from Memorizer-MCP to `@mcp/shared/Embeddings/` (provider interface, Ollama provider, new HuggingFace provider, cosine similarity, factory with `extraProviders` extension point)
+- Built `EmbeddingToolSelector` in Thinker — embeds all tool descriptions at startup via `embedBatch()`, selects per-message via cosine similarity (configurable threshold/topK/minTools)
+- `selectToolsWithFallback()` orchestration: tries embeddings first, falls back to regex on error or when disabled
+- Integrated into `loop.ts` at both call sites (`processMessage` + `processProactiveTask`)
+- **Zero changes** to existing `tool-selector.ts` — remains as automatic fallback
+- Configured: `EMBEDDING_PROVIDER=ollama` in Thinker `.env`
+- Verified with live Ollama integration tests: correct semantic routing across 7 domains (search, email, calendar, files, code, memory, passwords)
+- 32 new tests (21 Shared + 11 Thinker)
 
-**Options:**
-
-- **Short-term:** Auto-include new MCPs' tools in a "default" group
-- **Long-term:** Embedding-based classifier (nomic-embed already available via Ollama)
+**Key files:**
+- `Shared/Embeddings/{provider,config,math,ollama-provider,huggingface-provider,index}.ts`
+- `Thinker/src/agent/{embedding-tool-selector,embedding-config,tool-selection}.ts`
+- `Memorizer-MCP/src/embeddings/index.ts` (refactored to import from Shared)
 
 ---
 
@@ -226,15 +234,15 @@ Unified all 12 packages to `"node": ">=22.0.0"` matching the existing `.nvmrc`. 
 | P4 | ~~Tool cache invalidation in Thinker~~ | ✅ Done |
 | P5 | ~~Session JSONL auto-compaction~~ | ✅ Already implemented |
 
-### Tier 4: Architecture (Higher effort, long-term benefit)
+### Tier 4: Architecture — PARTIAL
 
-| # | Improvement | Effort | Impact |
+| # | Improvement | Effort | Status |
 |---|-------------|--------|--------|
-| 1 | Workspace tooling (pnpm) | Medium | High |
-| 4 | Better tool selection in Thinker | Medium | Medium |
-| A4 | Generic `registerTool<T>()` for type safety | Medium | Medium |
-| A2 | Channel plugin interface | Medium | Medium |
-| A1 | StandardResponse dedup in Gmail | Low | Low |
+| 4 | ~~Embedding-based tool selection~~ | Medium | ✅ Done |
+| 1 | Workspace tooling (pnpm) | Medium | Not started |
+| A4 | Generic `registerTool<T>()` for type safety | Medium | Not started |
+| A2 | Channel plugin interface | Medium | Not started |
+| A1 | StandardResponse dedup in Gmail | Low | Not started (Phase 3-5) |
 
 ### Tier 5: Housekeeping — ✅ ALL DONE
 
@@ -254,3 +262,54 @@ Unified all 12 packages to `"node": ">=22.0.0"` matching the existing `.nvmrc`. 
 |---|-------|-------|
 | S6 | Indirect prompt injection | Architectural tradeoff — scanning outputs adds latency. Revisit if attack surface grows. |
 | A3 | Versioning strategy | Adopt with workspace tooling (Item 1). No benefit before that. |
+
+---
+
+## What's Next — Proposed Improvements
+
+### N1. Tool re-embedding on MCP hot-reload (Low effort, High value)
+
+**Problem:** `EmbeddingToolSelector` embeds tool descriptions once at `initialize()`. If tools change at runtime (tool cache refresh discovers new MCPs), the embedding index is stale — new tools won't be semantically matched.
+
+**Fix:** After `getCachedToolsOrRefresh()` detects new/removed tools, re-call `embeddingSelector.initialize(this.tools)`. ~10 lines in `loop.ts`.
+
+### N2. Embedding selector observability (Low effort, Medium value)
+
+**Problem:** No visibility into how often embedding selection disagrees with regex, which tools get filtered out, or what similarity scores look like in production.
+
+**Fix:** Add structured log per selection: `{ method, topScore, selectedCount, regexWouldHaveSelected }`. Optionally expose via `/tool-selector-stats` endpoint.
+
+### N3. Workspace tooling — pnpm (Medium effort, High value)
+
+Carried forward from Item 1. Biggest structural improvement remaining:
+- Single lockfile, deduped `node_modules` (currently ~2GB duplicated across 12 packages)
+- `pnpm -r run build` replaces `rebuild.sh` with topological ordering
+- Foundation for Turborepo caching later
+
+### N4. Phase 3-5 MCP migration (Medium effort, Medium value)
+
+Gmail, Telegram, and Memorizer still use the old `Server` class. Migration to `McpServer` + `registerTool()` brings:
+- Consistent error handling via Shared wrapper
+- Tool annotations (`readOnlyHint`, `destructiveHint`)
+- StandardResponse from `@mcp/shared` (fixes A1)
+
+Tracked in `new-mcp-plan.md`.
+
+### N5. Generic `registerTool<T>()` (Medium effort, Medium value)
+
+Item A4. Add a type parameter so the handler receives a properly typed input instead of `Record<string, unknown>`. Eliminates `as FooInput` casts across all MCPs. Requires updating the Shared wrapper + all call sites.
+
+### N6. Embedding cache persistence (Low effort, Low value)
+
+**Problem:** Every Thinker restart re-embeds all tool descriptions via Ollama (~13s cold start). For remote deploys using HuggingFace API, this burns API credits.
+
+**Fix:** Cache embeddings to a JSON file keyed by `hash(toolName + description)`. Invalidate on description change. Saves startup time.
+
+### Suggested priority
+
+1. **N1** — Tool re-embedding on hot-reload (quick win, prevents stale index)
+2. **N2** — Observability (helps tune thresholds with real traffic data)
+3. **N3** — pnpm workspaces (structural, enables many downstream improvements)
+4. **N4** — Phase 3-5 migration (consistency across all MCPs)
+5. **N5** — Generic registerTool (developer experience)
+6. **N6** — Embedding cache (optimization, low urgency with local Ollama)
