@@ -584,7 +584,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
             console.log(`[tool-recovery] Recovery successful, response: "${responseText.substring(0, 80)}"`);
           } else {
             console.warn(`[tool-recovery] Recovery failed: ${recovery.error}`);
-            responseText = sanitizeResponseText(result.text || '');
+            responseText = leak.preamble || 'I tried to do that but ran into an issue. Could you try again?';
           }
         } else {
           responseText = sanitizeResponseText(result.text || '');
@@ -900,7 +900,7 @@ Complete the task step by step, using your available tools. When done, provide a
             recoveredTools = [leak.toolName];
           } else {
             console.warn(`[tool-recovery] Proactive recovery failed: ${recovery.error}`);
-            responseText = sanitizeResponseText(result.text || 'Task completed without summary.');
+            responseText = leak.preamble || 'Task encountered an issue. Please check and try again.';
           }
         } else {
           responseText = sanitizeResponseText(result.text || 'Task completed without summary.');
