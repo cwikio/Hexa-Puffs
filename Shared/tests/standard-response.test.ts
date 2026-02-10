@@ -46,6 +46,54 @@ describe('StandardResponse', () => {
       const result = createError('fail');
       expect(result.data).toBeUndefined();
     });
+
+    it('should include errorCode when provided', () => {
+      const result = createError('bad input', 'VALIDATION_ERROR');
+      expect(result.errorCode).toBe('VALIDATION_ERROR');
+      expect(result.errorDetails).toBeUndefined();
+    });
+
+    it('should include errorCode and errorDetails when provided', () => {
+      const result = createError('bad input', 'VALIDATION_ERROR', { field: 'email' });
+      expect(result.errorCode).toBe('VALIDATION_ERROR');
+      expect(result.errorDetails).toEqual({ field: 'email' });
+    });
+
+    it('should omit errorCode and errorDetails when not provided', () => {
+      const result = createError('plain error');
+      expect(result).not.toHaveProperty('errorCode');
+      expect(result).not.toHaveProperty('errorDetails');
+    });
+  });
+
+  describe('createErrorFromException', () => {
+    it('should extract message from plain Error', () => {
+      const result = createErrorFromException(new Error('plain'));
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('plain');
+      expect(result).not.toHaveProperty('errorCode');
+    });
+
+    it('should extract code and details from BaseError subclasses', () => {
+      const result = createErrorFromException(
+        new ValidationError('bad email', { field: 'email' })
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('bad email');
+      expect(result.errorCode).toBe('VALIDATION_ERROR');
+      expect(result.errorDetails).toEqual({ field: 'email' });
+    });
+
+    it('should handle BaseError without details', () => {
+      const result = createErrorFromException(new DatabaseError('connection lost'));
+      expect(result.errorCode).toBe('DATABASE_ERROR');
+      expect(result).not.toHaveProperty('errorDetails');
+    });
+
+    it('should handle non-Error values', () => {
+      const result = createErrorFromException('string error');
+      expect(result.error).toBe('Unknown error');
+    });
   });
 
   describe('type compatibility', () => {

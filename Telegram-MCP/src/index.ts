@@ -8,6 +8,9 @@ console.log = () => {};
 
 import { createServer } from "./server.js";
 import { startTransport } from "@mcp/shared/Transport/dual-transport.js";
+import { Logger } from "@mcp/shared/Utils/logger.js";
+
+const logger = new Logger('telegram');
 import {
   allTools,
   handleSendMessage,
@@ -76,6 +79,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  logger.error("Fatal error", error);
   process.exit(1);
 });

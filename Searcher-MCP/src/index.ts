@@ -12,6 +12,9 @@ import { createServer } from "./server.js";
 import { createServer as createHttpServer } from "node:http";
 import { getConfig } from "./utils/config.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import { Logger } from "@mcp/shared/Utils/logger.js";
+
+const logger = new Logger('searcher');
 import {
   webSearchSchema,
   handleWebSearch,
@@ -190,53 +193,31 @@ async function main() {
     });
 
     httpServer.listen(PORT, () => {
-      console.error(
-        `[${new Date().toISOString()}] [INFO] [searcher-mcp] Starting Searcher MCP {"transport":"${TRANSPORT}","port":${PORT}}`
-      );
-      console.error(
-        `[${new Date().toISOString()}] [INFO] [searcher-mcp] Searcher MCP running on http://localhost:${PORT}`
-      );
-      console.error(
-        `[${new Date().toISOString()}] [INFO] [searcher-mcp] Endpoints:`
-      );
-      console.error(
-        `[${new Date().toISOString()}] [INFO] [searcher-mcp]   GET  /health      - Health check`
-      );
-      console.error(
-        `[${new Date().toISOString()}] [INFO] [searcher-mcp]   GET  /tools/list  - List available tools`
-      );
-      console.error(
-        `[${new Date().toISOString()}] [INFO] [searcher-mcp]   POST /tools/call  - Call a tool`
-      );
-      console.error(
-        `[${new Date().toISOString()}] [INFO] [searcher-mcp]   GET  /sse         - SSE connection`
-      );
+      logger.info(`Starting Searcher MCP`, { transport: TRANSPORT, port: PORT });
+      logger.info(`Searcher MCP running on http://localhost:${PORT}`);
+      logger.info(`Endpoints: GET /health, GET /tools/list, POST /tools/call, GET /sse`);
     });
   } else {
     // Default: stdio transport for Claude Desktop
-    console.error(
-      `[${new Date().toISOString()}] [INFO] [searcher-mcp] Starting Searcher MCP {"transport":"stdio"}`
-    );
+    logger.info(`Starting Searcher MCP`, { transport: "stdio" });
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error(
-      `[${new Date().toISOString()}] [INFO] [searcher-mcp] Searcher MCP running on stdio`
-    );
+    logger.info(`Searcher MCP running on stdio`);
   }
 
   // Graceful shutdown
   process.on("SIGINT", () => {
-    console.error("Shutting down...");
+    logger.info("Shutting down...");
     process.exit(0);
   });
 
   process.on("SIGTERM", () => {
-    console.error("Shutting down...");
+    logger.info("Shutting down...");
     process.exit(0);
   });
 }
 
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  logger.error("Fatal error", error);
   process.exit(1);
 });
