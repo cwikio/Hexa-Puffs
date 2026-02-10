@@ -21,6 +21,7 @@ import {
   log,
   logSection,
   MCPTestClient,
+  authFetch,
 } from '../helpers/mcp-client.js'
 import { parseJsonContent, testId } from '../helpers/workflow-helpers.js'
 
@@ -218,13 +219,13 @@ describe('Guardian Pass-Through: Automatic Security Scanning', () => {
 
       // Simulate what Thinker does: call Orchestrator REST API
       // 1. List available tools
-      const toolsResponse = await fetch('http://localhost:8010/tools/list')
+      const toolsResponse = await authFetch('http://localhost:8010/tools/list')
       expect(toolsResponse.ok).toBe(true)
       const toolsData = await toolsResponse.json() as { tools: Array<{ name: string }> }
       log(`Thinker sees ${toolsData.tools.length} tools via Orchestrator`, 'info')
 
       // 2. Call a tool through Orchestrator (same path Thinker takes)
-      const statusResponse = await fetch('http://localhost:8010/tools/call', {
+      const statusResponse = await authFetch('http://localhost:8010/tools/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -8,4 +8,9 @@ import baseConfig from '../vitest.base.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenvConfig({ path: resolve(__dirname, '../Guardian/.env') });
 
-export default mergeConfig(baseConfig, defineConfig({}));
+export default mergeConfig(baseConfig, defineConfig({
+  test: {
+    // Integration tests all hit the same live Orchestrator — run sequentially to avoid connection saturation
+    fileParallelism: false,
+  },
+}));

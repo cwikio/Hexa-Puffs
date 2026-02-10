@@ -18,6 +18,7 @@ import {
   log,
   logSection,
   MCPTestClient,
+  authFetch,
 } from '../helpers/mcp-client.js'
 
 describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
@@ -51,7 +52,7 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
     it('should expose tools from all downstream MCPs', async () => {
       log('Fetching tool list from Orchestrator...', 'info')
 
-      const response = await fetch('http://localhost:8010/tools/list')
+      const response = await authFetch('http://localhost:8010/tools/list')
       expect(response.ok).toBe(true)
 
       const data = await response.json() as { tools: Array<{ name: string; description: string }> }
@@ -82,7 +83,7 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
     it('should include the built-in get_status tool', async () => {
       log('Checking for get_status tool...', 'info')
 
-      const response = await fetch('http://localhost:8010/tools/list')
+      const response = await authFetch('http://localhost:8010/tools/list')
       const data = await response.json() as { tools: Array<{ name: string }> }
 
       const hasStatus = data.tools.some(t => t.name === 'get_status')
@@ -101,7 +102,7 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
     it('should execute get_status tool', async () => {
       log('Calling get_status tool...', 'info')
 
-      const response = await fetch('http://localhost:8010/tools/call', {
+      const response = await authFetch('http://localhost:8010/tools/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -120,7 +121,7 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
     it('should execute telegram_list_chats tool (routed to Telegram MCP)', async () => {
       log('Calling telegram_list_chats tool...', 'info')
 
-      const response = await fetch('http://localhost:8010/tools/call', {
+      const response = await authFetch('http://localhost:8010/tools/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -138,7 +139,7 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
     it('should execute memory_get_memory_stats tool (routed to Memory MCP)', async () => {
       log('Calling memory_get_memory_stats tool...', 'info')
 
-      const response = await fetch('http://localhost:8010/tools/call', {
+      const response = await authFetch('http://localhost:8010/tools/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -156,7 +157,7 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
     it('should execute filer_get_workspace_info tool (routed to Filer MCP)', async () => {
       log('Calling filer_get_workspace_info tool...', 'info')
 
-      const response = await fetch('http://localhost:8010/tools/call', {
+      const response = await authFetch('http://localhost:8010/tools/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -193,8 +194,8 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
 
       // This simulates what Thinker does - call the Orchestrator's REST API
       const [healthRes, toolsRes] = await Promise.all([
-        fetch('http://localhost:8010/health'),
-        fetch('http://localhost:8010/tools/list'),
+        authFetch('http://localhost:8010/health'),
+        authFetch('http://localhost:8010/tools/list'),
       ])
 
       expect(healthRes.ok).toBe(true)
@@ -211,7 +212,7 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
     it('should return structured status from /status endpoint', async () => {
       log('Checking /status endpoint...', 'info')
 
-      const res = await fetch('http://localhost:8010/status')
+      const res = await authFetch('http://localhost:8010/status')
       expect(res.ok).toBe(true)
 
       const data = await res.json() as Record<string, unknown>
@@ -232,7 +233,7 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
     it('should return error for unknown tool', async () => {
       log('Testing error handling for unknown tool...', 'info')
 
-      const response = await fetch('http://localhost:8010/tools/call', {
+      const response = await authFetch('http://localhost:8010/tools/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -250,7 +251,7 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
     it('should handle malformed request gracefully', async () => {
       log('Testing error handling for malformed request...', 'info')
 
-      const response = await fetch('http://localhost:8010/tools/call', {
+      const response = await authFetch('http://localhost:8010/tools/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: '{ invalid json }',
@@ -268,12 +269,12 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
       const checks = [
         { name: 'Orchestrator healthy', check: async () => (await orchestrator.healthCheck()).healthy },
         { name: 'Tools discoverable', check: async () => {
-          const res = await fetch('http://localhost:8010/tools/list')
+          const res = await authFetch('http://localhost:8010/tools/list')
           const data = await res.json() as { tools: unknown[] }
           return res.ok && data.tools?.length > 20
         }},
         { name: 'Tool execution works', check: async () => {
-          const res = await fetch('http://localhost:8010/tools/call', {
+          const res = await authFetch('http://localhost:8010/tools/call', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: 'get_status', arguments: {} }),

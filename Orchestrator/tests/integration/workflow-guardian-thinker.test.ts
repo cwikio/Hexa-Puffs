@@ -25,6 +25,7 @@ import {
   log,
   logSection,
   MCPTestClient,
+  authFetch,
 } from '../helpers/mcp-client.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -165,7 +166,7 @@ describe('Workflow: Guardian + Thinker (Full E2E Security Flow)', () => {
     it('should NOT expose guardian-prefixed tools in Orchestrator tool list', async () => {
       if (skipIfUnavailable({ orchestrator: true })) return
 
-      const response = await fetch(`${ORCHESTRATOR_URL}/tools/list`, {
+      const response = await authFetch(`${ORCHESTRATOR_URL}/tools/list`, {
         signal: AbortSignal.timeout(10000),
       })
       expect(response.ok).toBe(true)
@@ -183,7 +184,7 @@ describe('Workflow: Guardian + Thinker (Full E2E Security Flow)', () => {
     it('should list expected MCP tools that Thinker can use', async () => {
       if (skipIfUnavailable({ orchestrator: true })) return
 
-      const response = await fetch(`${ORCHESTRATOR_URL}/tools/list`, {
+      const response = await authFetch(`${ORCHESTRATOR_URL}/tools/list`, {
         signal: AbortSignal.timeout(10000),
       })
       const data = await response.json() as { tools: Array<{ name: string }> }

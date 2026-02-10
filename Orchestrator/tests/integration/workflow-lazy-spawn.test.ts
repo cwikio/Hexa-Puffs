@@ -16,6 +16,7 @@ import {
   log,
   logSection,
   MCPTestClient,
+  authFetch,
 } from '../helpers/mcp-client.js';
 import { parseJsonContent } from '../helpers/workflow-helpers.js';
 
@@ -171,7 +172,7 @@ describe('Workflow: Lazy-Spawn / Idle-Kill E2E', () => {
         return;
       }
 
-      const response = await fetch(`${ORCHESTRATOR_URL}/tools/list`, {
+      const response = await authFetch(`${ORCHESTRATOR_URL}/tools/list`, {
         signal: AbortSignal.timeout(10000),
       });
       expect(response.ok).toBe(true);
