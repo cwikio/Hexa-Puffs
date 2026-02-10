@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod";
-import type { StandardResponse } from "../types/shared.js";
+import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { webSearch } from "../services/brave.js";
 
 // Normalize common freshness values to Brave API format

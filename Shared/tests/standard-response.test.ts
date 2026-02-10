@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { createSuccess, createError } from '../Types/StandardResponse.js';
+import { createSuccess, createError, createErrorFromException } from '../Types/StandardResponse.js';
 import type { StandardResponse } from '../Types/StandardResponse.js';
+import { ValidationError, DatabaseError, BaseError } from '../Types/errors.js';
 
 describe('StandardResponse', () => {
   describe('createSuccess', () => {

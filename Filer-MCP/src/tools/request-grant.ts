@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import type { StandardResponse } from "../types/shared.js";
+import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { expandHome } from "../utils/config.js";
 import { isForbiddenPath } from "../utils/paths.js";
 import { findGrantForPath } from "../db/grants.js";

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { rename, mkdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import type { StandardResponse } from "../types/shared.js";
+import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { resolvePath } from "../utils/paths.js";
 import { writeAuditEntry, createAuditEntry } from "../logging/audit.js";
 

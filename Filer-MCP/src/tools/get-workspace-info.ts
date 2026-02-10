@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod";
-import type { StandardResponse } from "../types/shared.js";
+import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { getWorkspaceStats } from "../utils/workspace.js";
 
 export const getWorkspaceInfoSchema = z.object({});

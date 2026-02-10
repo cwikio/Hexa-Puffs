@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod";
-import type { StandardResponse } from "../types/shared.js";
+import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { readAuditLog, type AuditEntry } from "../logging/audit.js";
 
 export const getAuditLogSchema = z.object({
