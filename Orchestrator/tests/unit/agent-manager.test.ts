@@ -27,7 +27,7 @@ const mockHealthCheck = vi.fn<() => Promise<boolean>>();
 const mockProcessMessage = vi.fn();
 const mockResumeCostPause = vi.fn();
 
-vi.mock('../../src/core/thinker-client.js', () => {
+vi.mock('../../src/agents/thinker-client.js', () => {
   return {
     ThinkerClient: class MockThinkerClient {
       healthCheck = mockHealthCheck;
@@ -77,7 +77,7 @@ vi.mock('child_process', () => ({
   }),
 }));
 
-import { AgentManager } from '../../src/core/agent-manager.js';
+import { AgentManager } from '../../src/agents/agent-manager.js';
 import type { AgentDefinition } from '../../src/config/agents.js';
 
 // ─── Helpers ────────────────────────────────────────────────────

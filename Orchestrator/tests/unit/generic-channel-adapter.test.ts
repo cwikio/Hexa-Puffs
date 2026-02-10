@@ -12,8 +12,8 @@ vi.mock('@mcp/shared/Utils/logger.js', () => ({
   },
 }));
 
-import { GenericChannelAdapter } from '../../src/core/adapters/generic-channel-adapter.js';
-import type { ToolRouter } from '../../src/core/tool-router.js';
+import { GenericChannelAdapter } from '../../src/channels/adapters/generic-channel-adapter.js';
+import type { ToolRouter } from '../../src/routing/tool-router.js';
 
 // --- Helpers ---
 

@@ -17,7 +17,7 @@ vi.mock('@mcp/shared/Utils/logger.js', () => ({
   },
 }));
 
-import { ToolRouter } from '../../src/core/tool-router.js';
+import { ToolRouter } from '../../src/routing/tool-router.js';
 import type { IMCPClient, MCPToolDefinition } from '../../src/mcp-clients/types.js';
 
 function createMockMCP(name: string, tools: MCPToolDefinition[]): IMCPClient {

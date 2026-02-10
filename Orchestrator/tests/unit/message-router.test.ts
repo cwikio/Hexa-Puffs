@@ -17,7 +17,7 @@ vi.mock('@mcp/shared/Utils/logger.js', () => ({
   },
 }));
 
-import { MessageRouter } from '../../src/core/message-router.js';
+import { MessageRouter } from '../../src/agents/message-router.js';
 import type { ChannelBinding } from '../../src/config/agents.js';
 
 describe('MessageRouter', () => {

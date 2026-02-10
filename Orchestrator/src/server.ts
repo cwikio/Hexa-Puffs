@@ -5,7 +5,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { getOrchestrator } from './core/orchestrator.js';
-import { ToolRouter } from './core/tool-router.js';
+import { ToolRouter } from './routing/tool-router.js';
 import { SecurityError } from './utils/errors.js';
 import {
   statusToolDefinition,

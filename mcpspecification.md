@@ -259,7 +259,7 @@ Every tool should declare annotations that describe its behavior:
 | `readOnlyHint: true` | This tool does not modify any state |
 | `destructiveHint: true` | This tool may delete or overwrite data |
 | `idempotentHint: true` | Calling this tool multiple times has the same effect as calling it once |
-| `openWorldHint: true` | This tool accepts open-ended, freeform input |
+| `openWorldHint: true` | This tool may interact with external services or the open internet |
 
 ---
 

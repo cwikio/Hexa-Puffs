@@ -22,10 +22,10 @@ vi.mock('node:fs/promises', () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
 }));
 
-import { SlashCommandHandler } from '../../src/core/slash-commands.js';
-import type { ToolRouter } from '../../src/core/tool-router.js';
+import { SlashCommandHandler } from '../../src/commands/slash-commands.js';
+import type { ToolRouter } from '../../src/routing/tool-router.js';
 import type { Orchestrator, OrchestratorStatus } from '../../src/core/orchestrator.js';
-import type { IncomingAgentMessage } from '../../src/core/agent-types.js';
+import type { IncomingAgentMessage } from '../../src/agents/agent-types.js';
 
 // --- Helpers ---
 

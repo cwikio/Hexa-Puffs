@@ -6,10 +6,10 @@
 import { readdir, stat, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
-import type { ToolRouter } from './tool-router.js';
-import type { Orchestrator, OrchestratorStatus, MCPServerStatus } from './orchestrator.js';
-import type { AgentStatus } from './agent-manager.js';
-import type { IncomingAgentMessage } from './agent-types.js';
+import type { ToolRouter } from '../routing/tool-router.js';
+import type { Orchestrator, OrchestratorStatus, MCPServerStatus } from '../core/orchestrator.js';
+import type { AgentStatus } from '../agents/agent-manager.js';
+import type { IncomingAgentMessage } from '../agents/agent-types.js';
 import { guardianConfig } from '../config/guardian.js';
 import { JobStorage } from '../jobs/storage.js';
 import type { JobDefinition, TaskDefinition } from '../jobs/types.js';
