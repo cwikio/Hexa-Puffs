@@ -23,11 +23,8 @@ SUCCEEDED=()
 discover_buildable() {
   for dir in "$SCRIPT_DIR"/*/; do
     [ ! -f "$dir/package.json" ] && continue
-    # Check if package.json has a "build" script
-    if node -e "
-      const p = require('$dir/package.json');
-      process.exit(p.scripts && p.scripts.build ? 0 : 1);
-    " 2>/dev/null; then
+    # Check if package.json has a "build" script (grep avoids ESM require() issues)
+    if grep -q '"build"\s*:' "$dir/package.json" 2>/dev/null; then
       basename "$dir"
     fi
   done

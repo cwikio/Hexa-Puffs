@@ -78,14 +78,12 @@ lsof -ti:8289 | xargs kill -9 2>/dev/null  # Orchestrator standalone Inngest
 for port in $ALL_HTTP_PORTS; do
   lsof -ti:$port | xargs kill -9 2>/dev/null
 done
-# Legacy ports
-lsof -ti:8000 | xargs kill -9 2>/dev/null
-lsof -ti:8004 | xargs kill -9 2>/dev/null
-lsof -ti:8005 | xargs kill -9 2>/dev/null
 sleep 2
 
-# Create log directory
+# Create log directory and initialize PID tracking
 mkdir -p ~/.annabelle/logs
+PID_FILE="$HOME/.annabelle/annabelle.pids"
+: > "$PID_FILE"
 
 # ─── Persona & Skills Initialization ──────────────────────────────────────────
 echo -e "${BOLD}${CYAN}=== Initializing Persona & Skills ===${RESET}"
@@ -126,9 +124,14 @@ echo -e "${BOLD}Starting Inngest Dev Server (port 8288)...${RESET}"
 cd "$SCRIPT_DIR/Orchestrator"
 npx inngest-cli@latest dev --no-discovery > ~/.annabelle/logs/inngest.log 2>&1 &
 INNGEST_PID=$!
+echo "$INNGEST_PID" >> "$PID_FILE"
 echo -e "${GREEN}✓ Inngest Dev Server started (PID: $INNGEST_PID)${RESET}"
 
 sleep 3
+
+if ! kill -0 "$INNGEST_PID" 2>/dev/null; then
+  echo -e "${YELLOW}⚠ Inngest Dev Server process died — check ~/.annabelle/logs/inngest.log${RESET}"
+fi
 
 INNGEST_HEALTH=$(curl -s http://localhost:8288 2>/dev/null)
 if [ $? -eq 0 ]; then
@@ -154,11 +157,16 @@ while IFS='|' read -r name port dir; do
   pid=$!
   echo -e "${GREEN}✓ ${name} MCP started (PID: $pid)${RESET}"
 
+  echo "$pid" >> "$PID_FILE"
   HTTP_MCP_NAMES+=("$name")
   HTTP_MCP_PORTS+=("$port")
   HTTP_MCP_PIDS+=("$pid")
 
   sleep 3
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    echo -e "${RED}✗ ${name} MCP process died immediately — check ~/.annabelle/logs/${log_name}.log${RESET}"
+  fi
 done < <(echo -e "$HTTP_MCPS")
 
 # Health check all HTTP MCPs
@@ -229,10 +237,16 @@ TRANSPORT=http PORT=8010 MCP_CONNECTION_MODE=stdio \
   TELEGRAM_DIRECT_URL=http://localhost:8002 \
   npm start > ~/.annabelle/logs/orchestrator.log 2>&1 &
 ORCHESTRATOR_PID=$!
+echo "$ORCHESTRATOR_PID" >> "$PID_FILE"
 echo -e "${GREEN}✓ Orchestrator started (PID: $ORCHESTRATOR_PID)${RESET}"
 
 echo -e "\n${YELLOW}Waiting for Orchestrator, downstream MCPs, and Thinker agent(s) to initialize...${RESET}"
 sleep 10
+
+if ! kill -0 "$ORCHESTRATOR_PID" 2>/dev/null; then
+  echo -e "${RED}${BOLD}✗ Orchestrator process died — aborting. Check ~/.annabelle/logs/orchestrator.log${RESET}"
+  exit 1
+fi
 
 ORCHESTRATOR_HEALTH=$(curl -s http://localhost:8010/health 2>/dev/null)
 if echo "$ORCHESTRATOR_HEALTH" | grep -q "ok"; then
@@ -328,4 +342,4 @@ echo -e "  $(printf '%-14s' "Orchestrator:") $ORCHESTRATOR_PID (Thinker agent(s)
 echo -e "  $(printf '%-14s' "Inngest:") $INNGEST_PID"
 
 echo -e "\n${YELLOW}Tip: Use 'tail -f ~/.annabelle/logs/*.log' to monitor all services${RESET}"
-echo -e "${YELLOW}Tip: Use 'pkill -f \"node dist\"' to stop all services${RESET}\n"
+echo -e "${YELLOW}Tip: Use './restart.sh' to stop, rebuild, and restart all services${RESET}\n"
