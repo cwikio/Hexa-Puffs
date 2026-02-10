@@ -34,10 +34,10 @@
 - ~~Only CodeExec and Guardian check `existsSync()` before loading dotenv. All others load unconditionally — dotenv v17 writes debug messages to stdout, corrupting stdio transport.~~
 - ~~**Fix:** Apply CodeExec pattern (`existsSync` + `quiet: true`) to all MCPs.~~ *(Applied `existsSync` + `quiet: true` pattern to Guardian, Filer, Memorizer, Searcher, Gmail, Orchestrator, and Thinker.)*
 
-### 6. Gmail token validation — warn instead of fail
-- **File:** `Gmail-MCP/src/index.ts:30-33`
-- Missing/expired OAuth token only logs a warning. MCP continues accepting tool calls that will fail.
-- **Fix:** Fail fast or report unhealthy on missing token.
+### ~~6. Gmail token validation — warn instead of fail~~ ✅
+- ~~**File:** `Gmail-MCP/src/index.ts:30-33`~~
+- ~~Missing/expired OAuth token only logs a warning. MCP continues accepting tool calls that will fail.~~
+- ~~**Fix:** Fail fast or report unhealthy on missing token.~~ *(Health endpoint now returns `status: 'degraded'` when token missing. Tool calls fail early with clear auth error. Startup logs at error level.)*
 
 ### 7. Searcher — no Brave API rate limiting
 - No client-side rate limiting. Under heavy Thinker multi-step loops, API keys could get rate-limited with no backoff.

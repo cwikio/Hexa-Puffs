@@ -28,8 +28,8 @@ async function main(): Promise<void> {
 
   // Check for valid token
   if (!hasValidToken()) {
-    logger.warn(
-      "No Gmail token found. Please run 'npm run setup-oauth' to authenticate."
+    logger.error(
+      "No Gmail OAuth token found. MCP will start in degraded mode — all tool calls will fail. Run 'npm run setup-oauth' to authenticate."
     );
   }
 
@@ -44,14 +44,24 @@ async function main(): Promise<void> {
       description: tool.description,
       inputSchema: tool.inputSchema,
     })),
-    onHealth: () => ({
-      hasToken: hasValidToken(),
-      toolCount: allTools.length,
-    }),
+    onHealth: () => {
+      const tokenValid = hasValidToken();
+      return {
+        status: tokenValid ? "ok" : "degraded",
+        hasToken: tokenValid,
+        ...(tokenValid ? {} : { message: "No Gmail OAuth token. Run 'npm run setup-oauth' to authenticate." }),
+        toolCount: allTools.length,
+      };
+    },
     onToolCall: async (name: string, args: unknown) => {
       const handler = toolHandlers[name];
       if (!handler) {
         throw new Error(`Unknown tool: ${name}`);
+      }
+      if (!hasValidToken()) {
+        throw new Error(
+          "Gmail OAuth token missing or invalid. Run 'npm run setup-oauth' in the Gmail-MCP directory to authenticate."
+        );
       }
       return handler(args);
     },
