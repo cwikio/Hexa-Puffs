@@ -7,9 +7,8 @@ export const getMessagesSchema = z.object({
   offset_id: z.number().optional().describe("Get messages before this message ID"),
 });
 
-export type GetMessagesInput = z.infer<typeof getMessagesSchema>;
 
-export async function handleGetMessages(input: GetMessagesInput) {
+export async function handleGetMessages(input: unknown) {
   const result = getMessagesSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

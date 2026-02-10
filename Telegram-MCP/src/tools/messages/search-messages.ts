@@ -7,9 +7,8 @@ export const searchMessagesSchema = z.object({
   limit: z.number().min(1).max(100).default(20).describe("Maximum number of results"),
 });
 
-export type SearchMessagesInput = z.infer<typeof searchMessagesSchema>;
 
-export async function handleSearchMessages(input: SearchMessagesInput) {
+export async function handleSearchMessages(input: unknown) {
   const result = searchMessagesSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

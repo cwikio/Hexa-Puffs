@@ -7,9 +7,8 @@ export const addContactSchema = z.object({
   last_name: z.string().optional().describe("Contact's last name"),
 });
 
-export type AddContactInput = z.infer<typeof addContactSchema>;
 
-export async function handleAddContact(input: AddContactInput) {
+export async function handleAddContact(input: unknown) {
   const result = addContactSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

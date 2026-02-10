@@ -6,9 +6,8 @@ export const markReadSchema = z.object({
   message_id: z.number().optional().describe("Mark messages up to this ID as read"),
 });
 
-export type MarkReadInput = z.infer<typeof markReadSchema>;
 
-export async function handleMarkRead(input: MarkReadInput) {
+export async function handleMarkRead(input: unknown) {
   const result = markReadSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

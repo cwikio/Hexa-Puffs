@@ -7,9 +7,8 @@ export const sendMediaSchema = z.object({
   caption: z.string().optional().describe("Caption for the media"),
 });
 
-export type SendMediaInput = z.infer<typeof sendMediaSchema>;
 
-export async function handleSendMedia(input: SendMediaInput) {
+export async function handleSendMedia(input: unknown) {
   const result = sendMediaSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

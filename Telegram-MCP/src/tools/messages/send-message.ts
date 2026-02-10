@@ -7,9 +7,8 @@ export const sendMessageSchema = z.object({
   reply_to: z.number().optional().describe("Message ID to reply to"),
 });
 
-export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 
-export async function handleSendMessage(input: SendMessageInput) {
+export async function handleSendMessage(input: unknown) {
   const result = sendMessageSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

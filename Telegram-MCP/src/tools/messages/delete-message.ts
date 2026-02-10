@@ -6,9 +6,8 @@ export const deleteMessagesSchema = z.object({
   message_ids: z.array(z.number()).min(1).describe("Array of message IDs to delete"),
 });
 
-export type DeleteMessagesInput = z.infer<typeof deleteMessagesSchema>;
 
-export async function handleDeleteMessages(input: DeleteMessagesInput) {
+export async function handleDeleteMessages(input: unknown) {
   const result = deleteMessagesSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

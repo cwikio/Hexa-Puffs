@@ -6,9 +6,8 @@ export const createGroupSchema = z.object({
   user_ids: z.array(z.string()).min(1).describe("Array of user IDs to add to the group"),
 });
 
-export type CreateGroupInput = z.infer<typeof createGroupSchema>;
 
-export async function handleCreateGroup(input: CreateGroupInput) {
+export async function handleCreateGroup(input: unknown) {
   const result = createGroupSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

@@ -7,9 +7,8 @@ export const downloadMediaSchema = z.object({
   output_path: z.string().describe("Path where to save the downloaded file"),
 });
 
-export type DownloadMediaInput = z.infer<typeof downloadMediaSchema>;
 
-export async function handleDownloadMedia(input: DownloadMediaInput) {
+export async function handleDownloadMedia(input: unknown) {
   const result = downloadMediaSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

@@ -5,9 +5,8 @@ export const listChatsSchema = z.object({
   limit: z.number().min(1).max(200).default(50).describe("Maximum number of chats to retrieve"),
 });
 
-export type ListChatsInput = z.infer<typeof listChatsSchema>;
 
-export async function handleListChats(input: ListChatsInput) {
+export async function handleListChats(input: unknown) {
   const result = listChatsSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

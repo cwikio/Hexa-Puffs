@@ -6,9 +6,8 @@ export const searchUsersSchema = z.object({
   limit: z.number().min(1).max(50).default(10).describe("Maximum number of results"),
 });
 
-export type SearchUsersInput = z.infer<typeof searchUsersSchema>;
 
-export async function handleSearchUsers(input: SearchUsersInput) {
+export async function handleSearchUsers(input: unknown) {
   const result = searchUsersSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);

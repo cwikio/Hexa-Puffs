@@ -101,9 +101,9 @@
 
 ## LOW / TECH DEBT
 
-### 19. `any` types across MCPs
-- Searcher, Filer, and Telegram toolHandler maps use `any` with eslint-disable.
-- **Fix:** Replace with proper generics or `unknown` + type guards.
+### ~~19. `any` types across MCPs~~ ✅
+- ~~Searcher, Filer, and Telegram toolHandler maps use `any` with eslint-disable.~~
+- ~~**Fix:** Replace with proper generics or `unknown` + type guards.~~ *(Added `ToolMapEntry` + `toolEntry<T>()` helper to `@mcp/shared`. Searcher/Filer use `toolEntry(schema, handler)` for compile-time type safety. Telegram uses `createToolEntry()` + derives `toolHandlers` from `allTools`. Zero `any` remaining, zero eslint-disable comments.)*
 
 ### ~~20. No unified logging strategy~~ ✅
 - ~~Some MCPs use shared logger, others use raw `console.error`, Telegram kills `console.log`. No consistent approach.~~
@@ -151,7 +151,7 @@
 - ~~3~~ **1 critical** issue remaining (Telegram logging) — ✅ 2 fixed (Filer path traversal, Filer grants race condition)
 - ~~5~~ **0 high** issues remaining — ✅ 5 fixed (1Password tests, dotenv, token validation, rate limiting, StandardResponse dupes)
 - ~~10~~ **3 medium** issues remaining (#10 signal handlers, #16 cost monitor) — ✅ 7 fixed (+tool selector, fork bomb, 1Password health)
-- ~~8~~ **3 low** issues remaining (#19 any types, #22 compaction metadata, #24 log rotation) — ✅ 5 fixed (+health consistency)
+- ~~8~~ **2 low** issues remaining (#22 compaction metadata, #24 log rotation) — ✅ 6 fixed (+health consistency, any types)
 
 ---
 
@@ -177,7 +177,7 @@
 | 16 | MEDIUM | Cost monitor tokens not dollars | Open |
 | 17 | MEDIUM | CodeExec fork bomb protection | ✅ Fixed |
 | 18 | MEDIUM | 1Password health check | ✅ Fixed |
-| 19 | LOW | `any` types across MCPs | Open |
+| 19 | LOW | `any` types across MCPs | ✅ Fixed |
 | 20 | LOW | Unified logging strategy | ✅ Fixed |
 | 21 | LOW | Health check inconsistency | ✅ Fixed |
 | 22 | LOW | Session compaction metadata loss | Open (accepted) |
@@ -186,4 +186,4 @@
 | 25 | LOW | Gmail monolithic server.ts | ✅ Fixed |
 | 26 | LOW | 1Password incomplete SSE | ✅ Fixed |
 
-**Score: 19/26 fixed (73%) — 7 remaining (1 critical, 2 medium, 1 accepted, 3 low)**
+**Score: 20/26 fixed (77%) — 6 remaining (1 critical, 2 medium, 1 accepted, 2 low)**

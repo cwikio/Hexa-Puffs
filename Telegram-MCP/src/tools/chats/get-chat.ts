@@ -5,9 +5,8 @@ export const getChatSchema = z.object({
   chat_id: z.string().describe("Chat ID or username to get info for"),
 });
 
-export type GetChatInput = z.infer<typeof getChatSchema>;
 
-export async function handleGetChat(input: GetChatInput) {
+export async function handleGetChat(input: unknown) {
   const result = getChatSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Invalid input: ${result.error.message}`);
