@@ -6,6 +6,19 @@ import { getConfig } from "../utils/config.js";
 
 const BRAVE_API_BASE = "https://api.search.brave.com/res/v1";
 
+/** Rate limiter: Brave Free plan allows 1 req/sec */
+const RATE_LIMIT_MS = 1100; // slightly over 1s to be safe
+let lastRequestTime = 0;
+
+async function waitForRateLimit(): Promise<void> {
+  const now = Date.now();
+  const elapsed = now - lastRequestTime;
+  if (elapsed < RATE_LIMIT_MS) {
+    await new Promise(r => setTimeout(r, RATE_LIMIT_MS - elapsed));
+  }
+  lastRequestTime = Date.now();
+}
+
 export interface BraveWebResult {
   title: string;
   url: string;
@@ -98,6 +111,8 @@ async function braveRequest<T>(
   }
 
   const url = `${BRAVE_API_BASE}${endpoint}?${queryParams.toString()}`;
+
+  await waitForRateLimit();
 
   const response = await fetch(url, {
     method: "GET",
