@@ -6,6 +6,13 @@ import { z } from "zod";
 import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { webSearch } from "../services/brave.js";
 
+const VALID_FRESHNESS = new Set([
+  "24h", "day", "today", "1d",
+  "week", "7d",
+  "month", "30d",
+  "year", "1y", "365d",
+]);
+
 // Normalize common freshness values to Brave API format
 const normalizeFreshness = (
   value: string | undefined
@@ -32,12 +39,16 @@ export const webSearchSchema = z.object({
   query: z.string().describe("Search query"),
   count: z
     .coerce.number()
+    .min(1)
+    .max(20)
     .default(10)
-    .transform((v) => Math.max(1, Math.min(20, v)))
     .describe("Number of results (1-20)"),
   freshness: z
     .string()
     .optional()
+    .refine((v) => !v || VALID_FRESHNESS.has(v.toLowerCase().trim()), {
+      message: "Invalid freshness value. Valid values: 24h, day, week, month, year",
+    })
     .transform(normalizeFreshness)
     .describe("Filter results by recency (24h, day, week, month, year)"),
   safesearch: z

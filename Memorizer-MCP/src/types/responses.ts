@@ -91,6 +91,14 @@ export interface RetrieveMemoriesData {
 // Stats Tool Response Types
 // ============================================================================
 
+export interface SearchCapabilities {
+  sqlite_vec_loaded: boolean;
+  embedding_provider: string | null;
+  vector_search_enabled: boolean;
+  fts5_available: boolean;
+  search_mode: 'hybrid' | 'fts5_only' | 'like_fallback';
+}
+
 export interface MemoryStatsData {
   fact_count: number;
   conversation_count: number;
@@ -98,6 +106,7 @@ export interface MemoryStatsData {
   newest_conversation: string | null;
   facts_by_category: Record<string, number>;
   database_size_mb: number;
+  search_capabilities: SearchCapabilities;
 }
 
 // ============================================================================

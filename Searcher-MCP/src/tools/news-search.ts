@@ -6,6 +6,12 @@ import { z } from "zod";
 import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { newsSearch } from "../services/brave.js";
 
+const VALID_NEWS_FRESHNESS = new Set([
+  "24h", "day", "today", "1d",
+  "week", "7d",
+  "month", "30d",
+]);
+
 // Normalize common freshness values to Brave API format (news only supports 24h, week, month)
 const normalizeFreshness = (
   value: string | undefined
@@ -21,9 +27,6 @@ const normalizeFreshness = (
     "7d": "week",
     month: "month",
     "30d": "month",
-    year: "month", // news doesn't support year, fallback to month
-    "1y": "month",
-    "365d": "month",
   };
   return mapping[normalized];
 };
@@ -39,6 +42,9 @@ export const newsSearchSchema = z.object({
   freshness: z
     .string()
     .optional()
+    .refine((v) => !v || VALID_NEWS_FRESHNESS.has(v.toLowerCase().trim()), {
+      message: "Invalid freshness value. Valid values: 24h, day, week, month (year not supported for news)",
+    })
     .transform(normalizeFreshness)
     .describe("Filter results by recency (24h, day, week, month)"),
 });

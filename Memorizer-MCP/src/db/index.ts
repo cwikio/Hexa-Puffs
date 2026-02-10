@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { mkdirSync, existsSync } from 'fs';
 import { dirname } from 'path';
+import { randomUUID } from 'node:crypto';
 import { getConfig } from '../config/index.js';
 import { DatabaseError } from '../utils/errors.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
@@ -8,6 +9,12 @@ import { SCHEMA_SQL, MIGRATIONS_SQL, setupVectorSchema } from './schema.js';
 import * as sqliteVec from 'sqlite-vec';
 
 let db: Database.Database | null = null;
+let vecLoaded = false;
+
+/** Whether the sqlite-vec extension loaded successfully at startup. */
+export function isSqliteVecLoaded(): boolean {
+  return vecLoaded;
+}
 
 export function getDatabase(): Database.Database {
   if (!db) {
@@ -28,10 +35,9 @@ export function getDatabase(): Database.Database {
       db.pragma('foreign_keys = ON');
 
       // Load sqlite-vec extension for vector search
-      let sqliteVecLoaded = false;
       try {
         sqliteVec.load(db);
-        sqliteVecLoaded = true;
+        vecLoaded = true;
         logger.info('sqlite-vec extension loaded');
       } catch (error) {
         logger.warn('Failed to load sqlite-vec extension — vector search disabled', {
@@ -46,13 +52,18 @@ export function getDatabase(): Database.Database {
       for (const stmt of MIGRATIONS_SQL.split(';').map(s => s.trim()).filter(Boolean)) {
         try {
           db.exec(stmt);
-        } catch {
-          // Column likely already exists — safe to ignore
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          if (msg.includes('duplicate column name') || msg.includes('already exists')) {
+            // Expected — column/table already exists from a previous migration
+            continue;
+          }
+          throw new DatabaseError(`Migration failed: ${msg}`, { statement: stmt, error });
         }
       }
 
       // Set up FTS5 + vector search schema (idempotent)
-      setupVectorSchema(db, config.embedding.dimensions, sqliteVecLoaded);
+      setupVectorSchema(db, config.embedding.dimensions, vecLoaded);
 
       logger.info('Database initialized', { path: dbPath });
     } catch (error) {
@@ -76,7 +87,7 @@ export function closeDatabase(): void {
 
 // Utility function to generate UUIDs for conversation IDs
 export function generateId(): string {
-  return `conv_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  return `conv_${randomUUID()}`;
 }
 
 export {

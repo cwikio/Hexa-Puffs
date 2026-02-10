@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { statSync } from 'fs';
-import { getDatabase } from '../db/index.js';
+import { getDatabase, isSqliteVecLoaded } from '../db/index.js';
+import { isVectorSearchEnabled } from '../embeddings/index.js';
 import { getConfig } from '../config/index.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
@@ -9,7 +10,7 @@ import {
   createError,
   createErrorFromException,
 } from '@mcp/shared/Types/StandardResponse.js';
-import { type MemoryStatsData } from '../types/responses.js';
+import { type MemoryStatsData, type SearchCapabilities } from '../types/responses.js';
 
 // Tool definition
 export const getMemoryStatsToolDefinition = {
@@ -95,6 +96,28 @@ export async function handleGetMemoryStats(args: unknown): Promise<StandardRespo
       // File might not exist yet
     }
 
+    // Check search capabilities
+    const sqliteVecOk = isSqliteVecLoaded();
+    const vectorOk = isVectorSearchEnabled();
+    let fts5Available = false;
+    try {
+      db.prepare('SELECT COUNT(*) FROM facts_fts LIMIT 1').get();
+      fts5Available = true;
+    } catch {
+      // FTS5 table not available
+    }
+
+    const embeddingProvider = config.embedding.provider === 'none' ? null : config.embedding.provider;
+
+    let searchMode: SearchCapabilities['search_mode'];
+    if (vectorOk && sqliteVecOk) {
+      searchMode = 'hybrid';
+    } else if (fts5Available) {
+      searchMode = 'fts5_only';
+    } else {
+      searchMode = 'like_fallback';
+    }
+
     return createSuccess({
       fact_count: factCount.count,
       conversation_count: conversationCount.count,
@@ -104,6 +127,13 @@ export async function handleGetMemoryStats(args: unknown): Promise<StandardRespo
         categoryBreakdown.map(c => [c.category, c.count])
       ),
       database_size_mb: databaseSizeMb,
+      search_capabilities: {
+        sqlite_vec_loaded: sqliteVecOk,
+        embedding_provider: embeddingProvider,
+        vector_search_enabled: vectorOk,
+        fts5_available: fts5Available,
+        search_mode: searchMode,
+      },
     });
   } catch (error) {
     logger.error('Failed to get memory stats', { error });

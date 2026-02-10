@@ -184,7 +184,8 @@ async function main() {
             let toolName = "unknown";
             try { toolName = JSON.parse(body).name ?? "unknown"; } catch { /* body was not valid JSON */ }
             logger.error(`Tool call failed`, { tool: toolName, error: errorMessage });
-            res.writeHead(200, { "Content-Type": "application/json" });
+            const statusCode = error instanceof SyntaxError ? 400 : 200;
+            res.writeHead(statusCode, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({
                 content: [

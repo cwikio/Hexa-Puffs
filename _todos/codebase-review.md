@@ -61,19 +61,19 @@
 - SIGINT/SIGTERM handlers are added each time `startTransport()` is called. Multiple invocations stack handlers, causing duplicate cleanup.
 - **Fix:** Guard against duplicate registration or use `process.once()`.
 
-### 11. Silent migration error swallowing
-- **Files:** `Filer-MCP/src/db/index.ts`, `Memorizer-MCP/src/db/index.ts`
-- Both catch all errors during SQLite migrations and ignore them ("column likely exists"). Can hide real schema corruption.
-- **Fix:** Check for specific "column already exists" error instead of catch-all.
+### ~~11. Silent migration error swallowing~~ ✅
+- ~~**Files:** `Filer-MCP/src/db/index.ts`, `Memorizer-MCP/src/db/index.ts`~~
+- ~~Both catch all errors during SQLite migrations and ignore them ("column likely exists"). Can hide real schema corruption.~~
+- ~~**Fix:** Check for specific "column already exists" error instead of catch-all.~~ *(Migration catch now checks for "duplicate column name" / "already exists"; unexpected errors re-throw as DatabaseError. Filer uses JSON storage, not affected.)*
 
-### 12. Memorizer — weak ID generation
-- **File:** `Memorizer-MCP/src/db/index.ts`
-- Uses `Date.now() + Math.random()` for IDs. Not collision-proof under rapid concurrent inserts (e.g., batch fact extraction).
-- **Fix:** Use `nanoid` or `crypto.randomUUID()`.
+### ~~12. Memorizer — weak ID generation~~ ✅
+- ~~**File:** `Memorizer-MCP/src/db/index.ts`~~
+- ~~Uses `Date.now() + Math.random()` for IDs. Not collision-proof under rapid concurrent inserts (e.g., batch fact extraction).~~
+- ~~**Fix:** Use `nanoid` or `crypto.randomUUID()`.~~ *(Now uses `crypto.randomUUID()`, same pattern as Filer-MCP's `generateGrantId()`.)*
 
-### 13. Memorizer — silent vector search degradation
-- If `sqlite-vec` fails to load, vector search is silently disabled. Only a warning log. Users may not realize they're getting LIKE fallback.
-- **Fix:** Expose vector search status in health endpoint.
+### ~~13. Memorizer — silent vector search degradation~~ ✅
+- ~~If `sqlite-vec` fails to load, vector search is silently disabled. Only a warning log. Users may not realize they're getting LIKE fallback.~~
+- ~~**Fix:** Expose vector search status in health endpoint.~~ *(`get_memory_stats` now returns `search_capabilities` with sqlite-vec status, embedding provider, FTS5 availability, and active search mode.)*
 
 ### ~~14. Dependency version inconsistency~~ ✅
 - ~~`dotenv` v16 in Memorizer vs v17 elsewhere. `zod` 3.22 vs 3.24.~~
@@ -150,5 +150,5 @@
 
 - ~~3~~ **1 critical** issue remaining (Telegram logging) — ✅ 2 fixed (Filer path traversal, Filer grants race condition)
 - ~~5~~ **3 high** issues remaining (dotenv, token validation, rate limiting) — ✅ 2 fixed (1Password tests, StandardResponse dupes)
-- ~~10~~ **9 medium** issues remaining — ✅ 1 fixed (register-tool generics)
+- ~~10~~ **6 medium** issues remaining — ✅ 4 fixed (register-tool generics, migration error swallowing, weak ID generation, vector search degradation)
 - ~~8~~ **5 low** issues remaining — ✅ 3 fixed (unified logging, fact dedup, Gmail split, 1Password SSE)
