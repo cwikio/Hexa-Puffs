@@ -110,3 +110,17 @@ export async function getItem(
 export async function readSecret(reference: string): Promise<string> {
   return runOpRaw(["read", reference]);
 }
+
+export async function checkAuth(): Promise<{ authenticated: boolean; account?: string; error?: string }> {
+  try {
+    const output = await runOpRaw(["whoami"]);
+    return { authenticated: true, account: output };
+  } catch (error) {
+    if (error instanceof OpClientError) {
+      // op CLI exists but not signed in
+      return { authenticated: false, error: error.stderr };
+    }
+    // op CLI not found or other system error
+    return { authenticated: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}

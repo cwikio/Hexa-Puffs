@@ -69,18 +69,21 @@ export class SessionManager {
       opts.language === 'python' ? 'python-repl.py' : 'node-repl.mjs';
     const wrapperPath = join(WRAPPER_DIR, wrapperFile);
 
-    // Spawn the REPL process
-    const cmd = opts.language === 'python' ? 'python3' : 'node';
-    const args = opts.language === 'python' ? ['-u', wrapperPath] : [wrapperPath];
+    // Spawn the REPL process with ulimit resource constraints
+    const maxFileBlocks = Math.floor(config.maxFileSizeBytes / 512);
+    const limits = `ulimit -u ${config.maxProcesses} -f ${maxFileBlocks}`;
+    const innerCmd = opts.language === 'python'
+      ? `exec python3 -u ${wrapperPath}`
+      : `exec node ${wrapperPath}`;
 
-    const child = spawn(cmd, args, {
+    const child = spawn('bash', ['-c', `${limits} && ${innerCmd}`], {
       cwd: workingDir,
       env: getStrippedEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     if (!child.pid) {
-      throw new Error(`Failed to spawn ${cmd} process`);
+      throw new Error(`Failed to spawn ${opts.language} REPL process`);
     }
 
     const now = new Date().toISOString();

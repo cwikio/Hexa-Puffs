@@ -3,6 +3,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { createServer } from "./server.js";
 import { createServer as createHttpServer } from "node:http";
 import { Logger } from "@mcp/shared/Utils/logger.js";
+import { checkAuth } from "./op/client.js";
 
 const logger = new Logger('1password');
 
@@ -49,8 +50,17 @@ async function main() {
       }
 
       if (req.url === "/health") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "healthy", transport: "http" }));
+        const auth = await checkAuth();
+        const status = auth.authenticated ? "healthy" : "degraded";
+        const httpStatus = auth.authenticated ? 200 : 503;
+        res.writeHead(httpStatus, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          status,
+          transport: "http",
+          opCli: auth.authenticated ? "authenticated" : "unauthenticated",
+          ...(auth.account ? { account: auth.account } : {}),
+          ...(auth.error ? { error: auth.error } : {}),
+        }));
         return;
       }
 

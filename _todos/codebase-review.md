@@ -79,23 +79,23 @@
 - ~~`dotenv` v16 in Memorizer vs v17 elsewhere. `zod` 3.22 vs 3.24.~~
 - ~~**Fix:** Align versions across all packages.~~ *(dotenv unified to ^17.2.4 across all 9 packages. Zod previously unified to ^3.24.0 in architecture review A6.)*
 
-### 15. Tool selector — keyword-only routing (Thinker)
-- **File:** `Thinker/src/agent/tool-selector.ts`
-- Regex patterns only. No fuzzy/semantic matching — synonyms or indirect references miss (e.g., "look up my passwords" won't match unless "password" is in the regex).
-- **Fix:** Consider embedding-based classification or expanded keyword sets.
+### ~~15. Tool selector — keyword-only routing (Thinker)~~ ✅
+- ~~**File:** `Thinker/src/agent/tool-selector.ts`~~
+- ~~Regex patterns only. No fuzzy/semantic matching — synonyms or indirect references miss (e.g., "look up my passwords" won't match unless "password" is in the regex).~~
+- ~~**Fix:** Consider embedding-based classification or expanded keyword sets.~~ *(Embedding-based semantic selector implemented in `embedding-tool-selector.ts` using Ollama + cosine similarity. Regex selector kept as fallback. Tests in `embedding-tool-selector.test.ts`.)*
 
 ### 16. Cost monitor tracks tokens, not dollars (Thinker)
 - **File:** `Thinker/src/cost/monitor.ts`
 - Spike detection is token-based, but actual cost varies dramatically by model. A model switch could blow through budgets while staying under token caps.
 - **Fix:** Add model pricing table and track estimated cost.
 
-### 17. CodeExec — no fork bomb protection
-- No process limits or cgroup constraints. Executed code could spawn unlimited processes.
-- **Fix:** Add `ulimit` or cgroup constraints to subprocess spawning.
+### ~~17. CodeExec — no fork bomb protection~~ ✅
+- ~~No process limits or cgroup constraints. Executed code could spawn unlimited processes.~~
+- ~~**Fix:** Add `ulimit` or cgroup constraints to subprocess spawning.~~ *(Commands now wrapped with `ulimit -u` (max processes) and `-f` (max file size) via bash. Applied to both one-shot execution and REPL sessions. Configurable via `CODEXEC_MAX_PROCESSES` and `CODEXEC_MAX_FILE_SIZE_BYTES`.)*
 
-### 18. 1Password — health check doesn't validate
-- `/health` returns OK without verifying `op` CLI is accessible or authenticated.
-- **Fix:** Run `op whoami` or similar in health check.
+### ~~18. 1Password — health check doesn't validate~~ ✅
+- ~~`/health` returns OK without verifying `op` CLI is accessible or authenticated.~~
+- ~~**Fix:** Run `op whoami` or similar in health check.~~ *(Health endpoint now calls `op whoami` via `checkAuth()`. Returns `opCli: "authenticated"` with account info, or `"unauthenticated"` with 503 status.)*
 
 ---
 
@@ -109,9 +109,9 @@
 - ~~Some MCPs use shared logger, others use raw `console.error`, Telegram kills `console.log`. No consistent approach.~~
 - ~~**Fix:** Migrate all MCPs to shared logger.~~
 
-### 21. Health check inconsistency
-- Guardian validates provider connection; most others return static `{ status: "healthy" }`.
-- **Fix:** Standardize health checks to validate actual functionality.
+### ~~21. Health check inconsistency~~ ✅
+- ~~Guardian validates provider connection; most others return static `{ status: "healthy" }`.~~
+- ~~**Fix:** Standardize health checks to validate actual functionality.~~ *(All MCPs now validate: 1Password checks `op whoami`, Searcher checks Brave API key, Filer checks workspace dir, Telegram reports GramJS connection status, Memorizer checks SQLite + sqlite-vec. All return `healthy`/`degraded` with 200/503.)*
 
 ### 22. Thinker session compaction loses metadata
 - After compaction, `toolsUsed` and exact token counts from older turns are lost.
@@ -142,13 +142,48 @@
 | dotenv safety | CodeExec, Guardian | Searcher, Filer, Telegram, Gmail |
 | StandardResponse | Guardian, Memorizer, Searcher, Filer | ~~Searcher (local dupe), Filer (local dupe)~~ |
 | Test coverage | Memorizer, CodeExec, Gmail, 1Password | ~~1Password (none)~~, Telegram (minimal) |
-| Health validation | Guardian | 1Password, Searcher, Filer |
+| Health validation | Guardian, ~~1Password~~, ~~Searcher~~, ~~Filer~~, Gmail, Telegram, Memorizer | ~~1Password, Searcher, Filer~~ |
 
 ---
 
 ## Summary
 
 - ~~3~~ **1 critical** issue remaining (Telegram logging) — ✅ 2 fixed (Filer path traversal, Filer grants race condition)
-- ~~5~~ **3 high** issues remaining (dotenv, token validation, rate limiting) — ✅ 2 fixed (1Password tests, StandardResponse dupes)
-- ~~10~~ **6 medium** issues remaining — ✅ 4 fixed (register-tool generics, migration error swallowing, weak ID generation, vector search degradation)
-- ~~8~~ **5 low** issues remaining — ✅ 3 fixed (unified logging, fact dedup, Gmail split, 1Password SSE)
+- ~~5~~ **0 high** issues remaining — ✅ 5 fixed (1Password tests, dotenv, token validation, rate limiting, StandardResponse dupes)
+- ~~10~~ **3 medium** issues remaining (#10 signal handlers, #16 cost monitor) — ✅ 7 fixed (+tool selector, fork bomb, 1Password health)
+- ~~8~~ **3 low** issues remaining (#19 any types, #22 compaction metadata, #24 log rotation) — ✅ 5 fixed (+health consistency)
+
+---
+
+## Status Snapshot (2026-02-10)
+
+| # | Severity | Item | Status |
+|---|---|---|---|
+| 1 | CRITICAL | Telegram `console.log` suppression | Open |
+| 2 | CRITICAL | Filer path traversal | ✅ Fixed |
+| 3 | CRITICAL | Filer grants race condition | ✅ Fixed |
+| 4 | HIGH | 1Password tests | ✅ Fixed |
+| 5 | HIGH | dotenv handling | ✅ Fixed |
+| 6 | HIGH | Gmail token validation | ✅ Fixed |
+| 7 | HIGH | Searcher rate limiting | ✅ Fixed |
+| 8 | HIGH | StandardResponse dupes | ✅ Fixed |
+| 9 | MEDIUM | register-tool type safety | ✅ Fixed |
+| 10 | MEDIUM | Signal handler stacking | Open |
+| 11 | MEDIUM | Migration error swallowing | ✅ Fixed |
+| 12 | MEDIUM | Memorizer weak ID generation | ✅ Fixed |
+| 13 | MEDIUM | Memorizer vector search degradation | ✅ Fixed |
+| 14 | MEDIUM | Dependency version inconsistency | ✅ Fixed |
+| 15 | MEDIUM | Tool selector keyword-only routing | ✅ Fixed |
+| 16 | MEDIUM | Cost monitor tokens not dollars | Open |
+| 17 | MEDIUM | CodeExec fork bomb protection | ✅ Fixed |
+| 18 | MEDIUM | 1Password health check | ✅ Fixed |
+| 19 | LOW | `any` types across MCPs | Open |
+| 20 | LOW | Unified logging strategy | ✅ Fixed |
+| 21 | LOW | Health check inconsistency | ✅ Fixed |
+| 22 | LOW | Session compaction metadata loss | Open (accepted) |
+| 23 | LOW | Fact extraction semantic dedup | ✅ Fixed |
+| 24 | LOW | Trace logs grow unbounded | Open |
+| 25 | LOW | Gmail monolithic server.ts | ✅ Fixed |
+| 26 | LOW | 1Password incomplete SSE | ✅ Fixed |
+
+**Score: 19/26 fixed (73%) — 7 remaining (1 critical, 2 medium, 1 accepted, 3 low)**

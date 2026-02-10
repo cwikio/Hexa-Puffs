@@ -6,6 +6,8 @@
 import { loadEnvSafely } from "@mcp/shared/Utils/env.js";
 loadEnvSafely(import.meta.url);
 
+import { existsSync } from "node:fs";
+
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { createServer } from "./server.js";
@@ -131,13 +133,15 @@ async function main() {
       }
 
       if (req.url === "/health") {
-        res.writeHead(200, { "Content-Type": "application/json" });
+        const workspaceExists = existsSync(config.workspace.path);
+        const status = workspaceExists ? "healthy" : "degraded";
+        res.writeHead(workspaceExists ? 200 : 503, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
-            status: "healthy",
+            status,
             transport: "http",
-            port: PORT,
             workspace: config.workspace.path,
+            ...(workspaceExists ? {} : { error: "workspace directory not found" }),
           })
         );
         return;

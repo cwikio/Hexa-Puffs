@@ -53,12 +53,15 @@ async function main() {
 
       // Health check (always open — no token required)
       if (req.url === "/health") {
-        res.writeHead(200, { "Content-Type": "application/json" });
+        const hasKey = !!process.env.BRAVE_API_KEY;
+        const status = hasKey ? "healthy" : "degraded";
+        res.writeHead(hasKey ? 200 : 503, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
-            status: "healthy",
+            status,
             transport: "http",
-            port: PORT,
+            searchProvider: "brave",
+            ...(hasKey ? {} : { error: "BRAVE_API_KEY not set" }),
           })
         );
         return;

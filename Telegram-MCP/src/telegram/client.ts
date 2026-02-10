@@ -19,6 +19,10 @@ import bigInt from "big-integer";
 
 let clientInstance: TelegramClient | null = null;
 
+export function isClientConnected(): boolean {
+  return clientInstance?.connected ?? false;
+}
+
 function isValidEntity(entity: unknown): entity is Api.User | Api.Chat | Api.Channel {
   if (!entity || typeof entity !== "object") return false;
   const e = entity as { className?: string };

@@ -22,6 +22,8 @@ const configSchema = z.object({
   sessionIdleTimeoutMs: z.coerce.number().int().positive().default(900_000), // 15 min
   maxSessions: z.coerce.number().int().positive().default(5),
   scriptsDir: z.string().default('~/.annabelle/scripts'),
+  maxProcesses: z.coerce.number().int().positive().default(64),
+  maxFileSizeBytes: z.coerce.number().int().positive().default(52_428_800), // 50MB
 });
 
 export type CodeExecConfig = z.infer<typeof configSchema>;
@@ -53,6 +55,8 @@ export function getConfig(): CodeExecConfig {
     sessionIdleTimeoutMs: process.env.CODEXEC_SESSION_IDLE_TIMEOUT_MS,
     maxSessions: process.env.CODEXEC_MAX_SESSIONS,
     scriptsDir: process.env.CODEXEC_SCRIPTS_DIR,
+    maxProcesses: process.env.CODEXEC_MAX_PROCESSES,
+    maxFileSizeBytes: process.env.CODEXEC_MAX_FILE_SIZE_BYTES,
   };
 
   // Strip undefined keys so Zod defaults kick in

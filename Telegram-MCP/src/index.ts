@@ -9,6 +9,7 @@ console.log = () => {};
 import { createServer } from "./server.js";
 import { startTransport } from "@mcp/shared/Transport/dual-transport.js";
 import { Logger } from "@mcp/shared/Utils/logger.js";
+import { isClientConnected } from "./telegram/client.js";
 
 const logger = new Logger('telegram');
 import {
@@ -62,6 +63,14 @@ async function main() {
     transport: transport as "stdio" | "sse" | "http",
     port,
     serverName: "telegram-mcp",
+    onHealth: () => {
+      const connected = isClientConnected();
+      return {
+        status: connected ? "ok" : "degraded",
+        telegramClient: connected ? "connected" : "disconnected",
+        ...(connected ? {} : { message: "Telegram client not yet connected. Will connect on first tool call." }),
+      };
+    },
     tools: allTools.map(({ tool }) => ({
       name: tool.name,
       description: tool.description,

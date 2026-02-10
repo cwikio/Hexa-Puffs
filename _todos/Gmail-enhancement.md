@@ -72,7 +72,137 @@
 
 ---
 
+## Multi-Account Architecture
+
+**Decision:** Option A — run multiple Gmail MCP instances (one per Google account).
+- e.g., `gmail-personal` on port 8008, `gmail-work` on port 8009
+- Annabelle reaches the right instance based on context (contact → company → which account)
+- Fits the existing auto-discovery architecture — each instance is a separate MCP
+
+---
+
+## Notification Architecture
+
+**Decision:** Not hardcoded to Telegram — abstract notification layer.
+- Skills say "notify user" not "send Telegram message"
+- Current implementation: Telegram
+- Future: could be email, Slack, push notification, etc.
+- Needs a generic `notify_user` tool or abstraction in Orchestrator/Thinker
+
+---
+
+## Memory & Context Architecture
+
+### Approach: Structured Tables + Facts (Hybrid)
+
+**Why not just vector search?**
+Vector search is great for fuzzy recall ("what do I know about John?") but unreliable for:
+- Enumeration: "list ALL my active projects" — may miss some
+- Filtering: "all projects for John specifically" — semantic similarity is fuzzy
+- State tracking: "is Mobile App active or paused?" — can't resolve conflicting facts
+- Aggregation: "how many emails from Alice this week?"
+
+**Solution:** Lightweight structured tables for the registry, facts for rich context.
+
+### Consultant Work Structure
+
+```
+Tomasz (Consultant)
+└── Company: BigCorp
+    ├── Client: John
+    │   ├── Project: API Redesign (active, high priority)
+    │   ├── Project: Mobile App (paused)
+    │   └── ... more projects
+    ├── Client: Alice
+    │   ├── Project: Brand Refresh
+    │   └── Project: API Redesign (also involved)
+    └── Client: Bob
+        └── Project: Infrastructure Audit
+```
+
+Key characteristics:
+- One main company, multiple clients (people) within it
+- Each client has multiple projects
+- Projects can involve multiple people (many-to-many)
+- Personal projects/contacts also exist outside work
+
+### Database Schema: Two New Tables in Memorizer
+
+**`contacts`** — people Tomasz works with
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | Auto-increment |
+| agent_id | TEXT | Scoped to agent (e.g., "annabelle") |
+| name | TEXT | "John Smith" |
+| email | TEXT | "john@bigcorp.com" |
+| company | TEXT (nullable) | "BigCorp" (null for personal contacts) |
+| role | TEXT (nullable) | "Product Manager" |
+| type | TEXT | "work" / "personal" |
+| notes | TEXT (nullable) | Free-form: "Prefers morning meetings" |
+| created_at | TEXT | Auto |
+| updated_at | TEXT | Auto |
+
+**`projects`** — things Tomasz works on
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | Auto-increment |
+| agent_id | TEXT | Scoped to agent |
+| name | TEXT | "API Redesign" |
+| status | TEXT | "active" / "paused" / "completed" |
+| type | TEXT | "work" / "personal" |
+| description | TEXT (nullable) | Brief summary |
+| primary_contact_id | INTEGER (nullable) | FK → contacts. Null for personal projects |
+| participants | TEXT (nullable) | JSON array of contact IDs for multi-person projects |
+| company | TEXT (nullable) | "BigCorp" (null for personal) |
+| priority | TEXT (nullable) | "high" / "medium" / "low" |
+| created_at | TEXT | Auto |
+| updated_at | TEXT | Auto |
+
+### New Memorizer Tools (6)
+
+- `create_contact` / `list_contacts` / `update_contact`
+- `create_project` / `list_projects` / `update_project`
+
+Query examples:
+- `list_projects({ contact_id: 1, status: "active" })` → John's active projects
+- `list_contacts({ company: "BigCorp" })` → all BigCorp people
+- `list_projects({ type: "personal" })` → personal projects only
+
+### How It Works Together
+
+1. **Email arrives** from john@bigcorp.com about "API timeline"
+2. Annabelle looks up **contact** by email → finds John
+3. Annabelle searches **projects** for John → sees 20 projects
+4. Annabelle searches **facts** (vector) for "John API timeline" → narrows to API Redesign
+5. If ambiguous → **asks Tomasz**: "Is this about API Redesign or a new project?"
+6. Stores insights as **facts**, updates project status if needed
+7. Summaries grouped by **company → client → project**
+
+### What Goes Where
+
+| Data Type | Storage | Example |
+|-----------|---------|---------|
+| Who someone is | `contacts` table | John Smith, john@bigcorp.com, PM at BigCorp |
+| What you're working on | `projects` table | API Redesign, active, high priority |
+| Insights & preferences | Memorizer facts | "John is detail-oriented about API specs" |
+| Relationship patterns | Memorizer facts | "Alice always responds within 1 hour" |
+| Email/calendar context | Memorizer facts | "API Redesign deliverable 3 is behind schedule" |
+| User-level settings | Memorizer profile | Timezone, working hours, communication prefs |
+
+### Annabelle's Behavior on Ambiguity
+
+- **New sender?** → Ask: "I got an email from sarah@bigcorp.com — is this a new contact? Should I create one?"
+- **Unclear project?** → Ask: "John mentioned 'the timeline' — is this about API Redesign or another project?"
+- **Personal vs work?** → Ask: "John invited you to a birthday party — should I file this as personal?"
+- **New project?** → Ask: "Alice mentioned 'Phase 2 migration' — is this a new project or part of Website Migration?"
+
+---
+
 ## Open Questions
 - What should the every-2-hour summary contain?
 - How to handle multiple account priority/merging?
 - Should calendar events include video call links auto-detection?
+- How many Gmail instances needed at launch? (which accounts?)
+- Should contacts/projects be seeded manually or discovered from email history?

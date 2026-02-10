@@ -2,7 +2,7 @@
 
 import { initializeServer } from './server.js';
 import { getConfig } from './config/index.js';
-import { closeDatabase } from './db/index.js';
+import { closeDatabase, getDatabase, isSqliteVecLoaded } from './db/index.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { startTransport } from '@mcp/shared/Transport/dual-transport.js';
 import { type StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
@@ -66,6 +66,23 @@ async function main(): Promise<void> {
       transport: config.transport as 'stdio' | 'sse' | 'http',
       port: config.port,
       serverName: 'memory-mcp',
+      onHealth: () => {
+        try {
+          const db = getDatabase();
+          const row = db.prepare('SELECT COUNT(*) as count FROM facts').get() as { count: number };
+          return {
+            database: 'connected',
+            factCount: row.count,
+            sqliteVec: isSqliteVecLoaded() ? 'loaded' : 'unavailable',
+          };
+        } catch {
+          return {
+            status: 'degraded',
+            database: 'error',
+            sqliteVec: isSqliteVecLoaded() ? 'loaded' : 'unavailable',
+          };
+        }
+      },
       onShutdown: () => {
         closeDatabase();
       },

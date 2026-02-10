@@ -24,12 +24,20 @@ const SCRIPT_FILES: Record<ExecutionRequest['language'], string> = {
   bash: '_codexec_script.sh',
 };
 
-/** Map language to command + args */
+/** Build ulimit prefix for resource constraints */
+function getUlimitPrefix(): string {
+  const config = getConfig();
+  const maxFileBlocks = Math.floor(config.maxFileSizeBytes / 512);
+  return `ulimit -u ${config.maxProcesses} -f ${maxFileBlocks}`;
+}
+
+/** Map language to command + args, wrapped with ulimit for resource protection */
 function getCommand(language: ExecutionRequest['language'], scriptFile: string): [string, string[]] {
+  const limits = getUlimitPrefix();
   switch (language) {
-    case 'python': return ['python3', [scriptFile]];
-    case 'node': return ['node', [scriptFile]];
-    case 'bash': return ['bash', [scriptFile]];
+    case 'python': return ['bash', ['-c', `${limits} && exec python3 ${scriptFile}`]];
+    case 'node': return ['bash', ['-c', `${limits} && exec node ${scriptFile}`]];
+    case 'bash': return ['bash', ['-c', `${limits} && exec bash ${scriptFile}`]];
   }
 }
 
