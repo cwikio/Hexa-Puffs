@@ -15,6 +15,7 @@ export abstract class BaseMCPClient implements IMCPClient {
   protected config: MCPServerConfig;
   protected logger: Logger;
   protected available: boolean = false;
+  private readonly token: string | undefined = process.env.ANNABELLE_TOKEN;
 
   constructor(
     public readonly name: string,
@@ -54,6 +55,15 @@ export abstract class BaseMCPClient implements IMCPClient {
     }
   }
 
+  /** Build common headers including auth token when available */
+  protected getHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.token) {
+      headers['X-Annabelle-Token'] = this.token;
+    }
+    return headers;
+  }
+
   async healthCheck(): Promise<boolean> {
     try {
       const response = await fetch(`${this.config.url}/health`, {
@@ -81,9 +91,7 @@ export abstract class BaseMCPClient implements IMCPClient {
     try {
       const response = await fetch(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getHeaders(),
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(this.config.timeout),
       });

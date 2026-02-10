@@ -26,6 +26,7 @@ import {
 
 const TRANSPORT = process.env.TRANSPORT || "stdio";
 const PORT = parseInt(process.env.PORT || "8007", 10);
+const ANNABELLE_TOKEN = process.env.ANNABELLE_TOKEN;
 
 async function main() {
   // Validate config (will throw if BRAVE_API_KEY is missing)
@@ -36,14 +37,37 @@ async function main() {
   if (TRANSPORT === "http" || TRANSPORT === "sse") {
     // HTTP/SSE transport
     const httpServer = createHttpServer(async (req, res) => {
-      // CORS headers
-      res.setHeader("Access-Control-Allow-Origin", "*");
+      // CORS: restrict to localhost origins
+      const origin = req.headers.origin;
+      if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+      }
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Annabelle-Token");
 
       if (req.method === "OPTIONS") {
         res.writeHead(204);
         res.end();
+        return;
+      }
+
+      // Health check (always open — no token required)
+      if (req.url === "/health") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            status: "healthy",
+            transport: "http",
+            port: PORT,
+          })
+        );
+        return;
+      }
+
+      // Token auth: reject non-/health requests without valid token
+      if (ANNABELLE_TOKEN && req.headers["x-annabelle-token"] !== ANNABELLE_TOKEN) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unauthorized" }));
         return;
       }
 
@@ -62,18 +86,6 @@ async function main() {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ status: "ok" }));
         });
-        return;
-      }
-
-      if (req.url === "/health") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            status: "healthy",
-            transport: "http",
-            port: PORT,
-          })
-        );
         return;
       }
 
@@ -192,7 +204,7 @@ async function main() {
       res.end("Not found");
     });
 
-    httpServer.listen(PORT, () => {
+    httpServer.listen(PORT, "127.0.0.1", () => {
       logger.info(`Starting Searcher MCP`, { transport: TRANSPORT, port: PORT });
       logger.info(`Searcher MCP running on http://localhost:${PORT}`);
       logger.info(`Endpoints: GET /health, GET /tools/list, POST /tools/call, GET /sse`);

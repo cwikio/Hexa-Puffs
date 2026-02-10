@@ -40,7 +40,7 @@ export function startInngestServer(port: number = 3000): void {
     }
   });
 
-  httpServer.listen(port, () => {
+  httpServer.listen(port, '127.0.0.1', () => {
     const devServerUrl = process.env.INNGEST_DEV_SERVER_URL || 'http://localhost:8288';
     logger.info(`Inngest HTTP endpoint listening on port ${port}`);
     logger.info(`Inngest dev server dashboard: ${devServerUrl}`);

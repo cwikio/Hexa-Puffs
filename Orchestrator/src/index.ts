@@ -10,6 +10,8 @@ import { startInngestServer } from './jobs/inngest-server.js';
 import { getOrchestrator } from './core/orchestrator.js';
 import { handleListTools, handleCallTool } from './core/http-handlers.js';
 
+const ANNABELLE_TOKEN = process.env.ANNABELLE_TOKEN;
+
 async function main(): Promise<void> {
   const config = getConfig();
 
@@ -41,10 +43,13 @@ async function main(): Promise<void> {
       const toolRouter = orchestrator.getToolRouter();
 
       const httpServer = createHttpServer(async (req, res) => {
-        // CORS headers
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        // CORS: restrict to localhost origins
+        const origin = req.headers.origin;
+        if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+          res.setHeader('Access-Control-Allow-Origin', origin);
+        }
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Annabelle-Token');
 
         if (req.method === 'OPTIONS') {
           res.writeHead(200);
@@ -52,10 +57,17 @@ async function main(): Promise<void> {
           return;
         }
 
-        // Health check endpoint
+        // Health check endpoint (always open — no token required)
         if (req.url === '/health' && req.method === 'GET') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok' }));
+          return;
+        }
+
+        // Token auth: reject non-/health requests without valid token
+        if (ANNABELLE_TOKEN && req.headers['x-annabelle-token'] !== ANNABELLE_TOKEN) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Unauthorized' }));
           return;
         }
 
@@ -225,7 +237,7 @@ async function main(): Promise<void> {
       });
 
       await new Promise<void>((resolve) => {
-        httpServer.listen(config.port, () => {
+        httpServer.listen(config.port, '127.0.0.1', () => {
           logger.info(`Orchestrator running on http://localhost:${config.port}`);
           logger.info('Endpoints:');
           logger.info(`  GET  /health      - Health check`);

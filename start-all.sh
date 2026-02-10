@@ -85,6 +85,13 @@ mkdir -p ~/.annabelle/logs
 PID_FILE="$HOME/.annabelle/annabelle.pids"
 : > "$PID_FILE"
 
+# ─── Auth Token ──────────────────────────────────────────────────────────────
+ANNABELLE_TOKEN=$(openssl rand -hex 32)
+echo "$ANNABELLE_TOKEN" > "$HOME/.annabelle/annabelle.token"
+chmod 600 "$HOME/.annabelle/annabelle.token"
+export ANNABELLE_TOKEN
+echo -e "${GREEN}✓ Auth token generated and saved to ~/.annabelle/annabelle.token${RESET}"
+
 # ─── Persona & Skills Initialization ──────────────────────────────────────────
 echo -e "${BOLD}${CYAN}=== Initializing Persona & Skills ===${RESET}"
 
@@ -153,7 +160,7 @@ while IFS='|' read -r name port dir; do
   log_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
   echo -e "\n${BOLD}Starting ${name} MCP (HTTP on port ${port})...${RESET}"
   cd "$dir"
-  TRANSPORT=http PORT=$port npm start > ~/.annabelle/logs/${log_name}.log 2>&1 &
+  TRANSPORT=http PORT=$port ANNABELLE_TOKEN="$ANNABELLE_TOKEN" npm start > ~/.annabelle/logs/${log_name}.log 2>&1 &
   pid=$!
   echo -e "${GREEN}✓ ${name} MCP started (PID: $pid)${RESET}"
 
@@ -235,6 +242,7 @@ TRANSPORT=http PORT=8010 MCP_CONNECTION_MODE=stdio \
   AGENTS_CONFIG_PATH="$AGENTS_JSON" \
   ORCHESTRATOR_URL=http://localhost:8010 \
   TELEGRAM_DIRECT_URL=http://localhost:8002 \
+  ANNABELLE_TOKEN="$ANNABELLE_TOKEN" \
   npm start > ~/.annabelle/logs/orchestrator.log 2>&1 &
 ORCHESTRATOR_PID=$!
 echo "$ORCHESTRATOR_PID" >> "$PID_FILE"
@@ -251,7 +259,7 @@ fi
 ORCHESTRATOR_HEALTH=$(curl -s http://localhost:8010/health 2>/dev/null)
 if echo "$ORCHESTRATOR_HEALTH" | grep -q "ok"; then
   echo -e "${GREEN}✓ Orchestrator is healthy${RESET}"
-  TOOLS_RESPONSE=$(curl -s http://localhost:8010/tools/list 2>/dev/null)
+  TOOLS_RESPONSE=$(curl -s -H "X-Annabelle-Token: $ANNABELLE_TOKEN" http://localhost:8010/tools/list 2>/dev/null)
   TOOL_COUNT=$(echo "$TOOLS_RESPONSE" | grep -o '"name"' | wc -l | tr -d ' ')
   echo -e "  ${BLUE}Discovered $TOOL_COUNT tools from downstream MCPs${RESET}"
 else

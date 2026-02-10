@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { TransportResult } from '../Transport/dual-transport.js';
 
+const TEST_TOKEN = 'test-secret-token-abc123';
+
 // Track servers to clean up
 const servers: TransportResult[] = [];
 
@@ -52,6 +54,7 @@ describe('startTransport', () => {
         transport: 'http',
         port: 0, // OS-assigned
         serverName: 'test-http',
+        token: TEST_TOKEN,
         log: () => {},
         ...overrides,
       });
@@ -67,9 +70,9 @@ describe('startTransport', () => {
       expect(result.httpServer).not.toBeNull();
     });
 
-    it('should respond to GET /health with status ok', async () => {
+    it('should respond to GET /health with status ok (no token needed)', async () => {
       const { port } = await startHttpServer();
-      const res = await fetch(`http://localhost:${port}/health`);
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
       const body = await res.json() as Record<string, unknown>;
 
       expect(res.status).toBe(200);
@@ -81,34 +84,67 @@ describe('startTransport', () => {
         onHealth: () => ({ dbConnected: true, version: '1.0' }),
       });
 
-      const res = await fetch(`http://localhost:${port}/health`);
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
       const body = await res.json() as Record<string, unknown>;
 
       expect(body.dbConnected).toBe(true);
       expect(body.version).toBe('1.0');
     });
 
-    it('should respond to GET /tools/list with tool array', async () => {
+    it('should return 401 for /tools/list without token', async () => {
+      const tools = [
+        { name: 'search', description: 'Search things', inputSchema: {} },
+      ];
+
+      const { port } = await startHttpServer({ tools });
+      const res = await fetch(`http://127.0.0.1:${port}/tools/list`);
+
+      expect(res.status).toBe(401);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.error).toBe('Unauthorized');
+    });
+
+    it('should return 401 for /tools/call without token', async () => {
+      const onToolCall = vi.fn().mockResolvedValue({ success: true });
+
+      const { port } = await startHttpServer({ onToolCall });
+      const res = await fetch(`http://127.0.0.1:${port}/tools/call`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'test', arguments: {} }),
+      });
+
+      expect(res.status).toBe(401);
+      expect(onToolCall).not.toHaveBeenCalled();
+    });
+
+    it('should respond to GET /tools/list with valid token', async () => {
       const tools = [
         { name: 'search', description: 'Search things', inputSchema: {} },
         { name: 'create', description: 'Create things', inputSchema: {} },
       ];
 
       const { port } = await startHttpServer({ tools });
-      const res = await fetch(`http://localhost:${port}/tools/list`);
+      const res = await fetch(`http://127.0.0.1:${port}/tools/list`, {
+        headers: { 'X-Annabelle-Token': TEST_TOKEN },
+      });
       const body = await res.json() as { tools: Array<{ name: string }> };
 
+      expect(res.status).toBe(200);
       expect(body.tools).toHaveLength(2);
       expect(body.tools[0].name).toBe('search');
     });
 
-    it('should invoke onToolCall for POST /tools/call', async () => {
+    it('should invoke onToolCall for POST /tools/call with valid token', async () => {
       const onToolCall = vi.fn().mockResolvedValue({ success: true, data: 'result' });
 
       const { port } = await startHttpServer({ onToolCall });
-      const res = await fetch(`http://localhost:${port}/tools/call`, {
+      const res = await fetch(`http://127.0.0.1:${port}/tools/call`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Annabelle-Token': TEST_TOKEN,
+        },
         body: JSON.stringify({ name: 'search', arguments: { q: 'test' } }),
       });
 
@@ -121,17 +157,47 @@ describe('startTransport', () => {
       expect(parsed.success).toBe(true);
     });
 
-    it('should return 404 for unknown routes', async () => {
+    it('should skip token check when no token is configured', async () => {
+      const tools = [
+        { name: 'search', description: 'Search things', inputSchema: {} },
+      ];
+
+      // Explicitly pass token: undefined to disable auth
+      const { port } = await startHttpServer({ tools, token: undefined });
+      const res = await fetch(`http://127.0.0.1:${port}/tools/list`);
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as { tools: Array<{ name: string }> };
+      expect(body.tools).toHaveLength(1);
+    });
+
+    it('should return 404 for unknown routes (with token)', async () => {
       const { port } = await startHttpServer();
-      const res = await fetch(`http://localhost:${port}/nonexistent`);
+      const res = await fetch(`http://127.0.0.1:${port}/nonexistent`, {
+        headers: { 'X-Annabelle-Token': TEST_TOKEN },
+      });
       expect(res.status).toBe(404);
     });
 
-    it('should handle OPTIONS for CORS preflight', async () => {
+    it('should handle OPTIONS for CORS preflight with localhost origin', async () => {
       const { port } = await startHttpServer();
-      const res = await fetch(`http://localhost:${port}/health`, { method: 'OPTIONS' });
+      const res = await fetch(`http://127.0.0.1:${port}/health`, {
+        method: 'OPTIONS',
+        headers: { 'Origin': 'http://localhost:3000' },
+      });
       expect(res.status).toBe(200);
-      expect(res.headers.get('access-control-allow-origin')).toBe('*');
+      expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
+      expect(res.headers.get('access-control-allow-headers')).toContain('X-Annabelle-Token');
+    });
+
+    it('should not set CORS origin for non-localhost origins', async () => {
+      const { port } = await startHttpServer();
+      const res = await fetch(`http://127.0.0.1:${port}/health`, {
+        method: 'OPTIONS',
+        headers: { 'Origin': 'http://evil.com' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBeNull();
     });
 
     it('should shut down cleanly', async () => {
@@ -143,7 +209,7 @@ describe('startTransport', () => {
       if (idx >= 0) servers.splice(idx, 1);
 
       // Server should no longer respond
-      await expect(fetch(`http://localhost:${port}/health`)).rejects.toThrow();
+      await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
     });
   });
 });

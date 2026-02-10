@@ -28,6 +28,8 @@ export interface TransportConfig {
   port: number;
   /** Server name for logging */
   serverName: string;
+  /** Optional: Shared auth token — requests to non-/health endpoints are rejected without it */
+  token?: string;
   /** Optional: Additional health check data */
   onHealth?: () => Record<string, unknown>;
   /** Optional: Tool call handler for /tools/call endpoint (for testing) */
@@ -91,10 +93,13 @@ export async function startTransport(
 
   // HTTP/SSE transport
   const httpServer = createHttpServer(async (req: IncomingMessage, res: ServerResponse) => {
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    // CORS: restrict to localhost origins
+    const origin = req.headers.origin;
+    if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Annabelle-Token');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(200);
@@ -102,11 +107,18 @@ export async function startTransport(
       return;
     }
 
-    // Health check endpoint
+    // Health check endpoint (always open — no token required)
     if (req.url === '/health' && req.method === 'GET') {
       const healthData = config.onHealth ? config.onHealth() : {};
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', ...healthData }));
+      return;
+    }
+
+    // Token auth: reject non-/health requests without valid token
+    if (config.token && req.headers['x-annabelle-token'] !== config.token) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
       return;
     }
 
@@ -170,7 +182,7 @@ export async function startTransport(
   });
 
   return new Promise((resolve) => {
-    httpServer.listen(config.port, () => {
+    httpServer.listen(config.port, '127.0.0.1', () => {
       log(`Running on http://localhost:${config.port}`);
       log('Endpoints:');
       log('  GET  /health - Health check');
