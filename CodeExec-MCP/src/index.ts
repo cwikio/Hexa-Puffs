@@ -34,9 +34,17 @@ async function main() {
   console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] Sandbox: ${config.sandboxDir}`);
   console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] Logs: ${config.logDir}`);
 
-  const server = createServer();
+  const { server, sessionManager } = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Graceful shutdown: close all sessions on exit
+  const shutdown = async () => {
+    await sessionManager.shutdownAll();
+    process.exit(0);
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 
   console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] CodeExec MCP running on stdio`);
 }

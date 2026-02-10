@@ -19,6 +19,8 @@ const configSchema = z.object({
   truncationHead: z.coerce.number().int().positive().default(4_000),
   truncationTail: z.coerce.number().int().positive().default(4_000),
   logDir: z.string().default('~/.annabelle/codexec/logs'),
+  sessionIdleTimeoutMs: z.coerce.number().int().positive().default(900_000), // 15 min
+  maxSessions: z.coerce.number().int().positive().default(5),
 });
 
 export type CodeExecConfig = z.infer<typeof configSchema>;
@@ -47,6 +49,8 @@ export function getConfig(): CodeExecConfig {
     truncationHead: process.env.CODEXEC_TRUNCATION_HEAD,
     truncationTail: process.env.CODEXEC_TRUNCATION_TAIL,
     logDir: process.env.CODEXEC_LOG_DIR,
+    sessionIdleTimeoutMs: process.env.CODEXEC_SESSION_IDLE_TIMEOUT_MS,
+    maxSessions: process.env.CODEXEC_MAX_SESSIONS,
   };
 
   // Strip undefined keys so Zod defaults kick in

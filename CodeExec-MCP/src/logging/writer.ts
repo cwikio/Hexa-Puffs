@@ -1,13 +1,14 @@
 /**
- * JSONL log writer for execution entries.
+ * JSONL log writers.
  *
- * Daily rotation: one file per day (executions-YYYY-MM-DD.jsonl).
+ * - logExecution(): daily rotation for one-shot executions
+ * - logSessionEvent(): per-session JSONL files for session lifecycle
  */
 
 import { appendFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getConfig } from '../config.js';
-import type { ExecutionLogEntry } from './types.js';
+import type { ExecutionLogEntry, SessionLogEntry } from './types.js';
 
 /**
  * Append an execution log entry to the daily JSONL file.
@@ -27,5 +28,26 @@ export async function logExecution(entry: ExecutionLogEntry): Promise<void> {
     await appendFile(filepath, line, 'utf-8');
   } catch (err) {
     console.error(`[codexec] Failed to write log: ${err}`);
+  }
+}
+
+/**
+ * Append a session lifecycle event to the per-session JSONL file.
+ */
+export async function logSessionEvent(entry: SessionLogEntry): Promise<void> {
+  const config = getConfig();
+
+  await mkdir(config.logDir, { recursive: true });
+
+  const sessionId = entry.session_id;
+  const filename = `session-${sessionId}.jsonl`;
+  const filepath = join(config.logDir, filename);
+
+  const line = JSON.stringify(entry) + '\n';
+
+  try {
+    await appendFile(filepath, line, 'utf-8');
+  } catch (err) {
+    console.error(`[codexec] Failed to write session log: ${err}`);
   }
 }
