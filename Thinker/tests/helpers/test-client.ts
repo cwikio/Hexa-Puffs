@@ -20,7 +20,6 @@ export interface ThinkerHealthResponse {
     llmProvider: string
     model: string
     orchestratorUrl: string
-    pollIntervalMs: number
   }
 }
 

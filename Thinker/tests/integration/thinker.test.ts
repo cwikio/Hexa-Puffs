@@ -88,7 +88,6 @@ describe('Thinker MCP', () => {
       expect(result.data?.config?.llmProvider).toBeDefined()
       expect(result.data?.config?.model).toBeDefined()
       expect(result.data?.config?.orchestratorUrl).toBeDefined()
-      expect(typeof result.data?.config?.pollIntervalMs).toBe('number')
 
       log('Health response structure verified', 'success')
       log(
@@ -217,18 +216,17 @@ describe('Thinker MCP', () => {
       log(`Model: ${model}`, 'success')
     })
 
-    it('should have reasonable poll interval', async () => {
-      log('Checking poll interval configuration', 'info')
+    it('should have model name with non-zero length', async () => {
+      log('Checking model name is non-empty', 'info')
 
       const result = await client.healthCheck()
-      const pollInterval = result.data?.config?.pollIntervalMs
+      const model = result.data?.config?.model
 
-      expect(pollInterval).toBeDefined()
-      expect(typeof pollInterval).toBe('number')
-      expect(pollInterval).toBeGreaterThanOrEqual(1000) // At least 1 second
-      expect(pollInterval).toBeLessThanOrEqual(60000) // At most 60 seconds
+      expect(model).toBeDefined()
+      expect(typeof model).toBe('string')
+      expect(model!.length).toBeGreaterThan(0)
 
-      log(`Poll interval: ${pollInterval}ms`, 'success')
+      log(`Model: ${model}`, 'success')
     })
   })
 
