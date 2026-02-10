@@ -466,15 +466,16 @@ export class Agent {
           console.warn(`Tool call failed, retrying once with tools: ${toolErrorMsg}`);
 
           try {
-            // First retry: try again with tools (sometimes it's just a flaky response)
+            // First retry: reduce complexity and nudge temperature for a different response path
+            const retryTemp = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
             result = await generateText({
               model: this.modelFactory.getModel(),
               system: context.systemPrompt,
               messages: [...context.conversationHistory, { role: 'user', content: message.text }],
               tools: selectedTools,
               toolChoice: 'auto',
-              maxSteps: 8,
-              temperature: this.config.temperature,
+              maxSteps: 4,
+              temperature: retryTemp,
               abortSignal: agentAbort,
             });
           } catch (retryError) {
@@ -489,14 +490,15 @@ export class Agent {
               const rephrasedText = `Context from the previous response: "${lastAssistantMsg.content.substring(0, 300)}"\n\nThe user is now asking: ${message.text}`;
               try {
                 console.warn('Trying rephrased message with tools...');
+                const retryTemp2 = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
                 result = await generateText({
                   model: this.modelFactory.getModel(),
                   system: context.systemPrompt,
                   messages: [...context.conversationHistory, { role: 'user', content: rephrasedText }],
                   tools: selectedTools,
                   toolChoice: 'auto',
-                  maxSteps: 8,
-                  temperature: this.config.temperature,
+                  maxSteps: 4,
+                  temperature: retryTemp2,
                   abortSignal: agentAbort,
                 });
               } catch (rephraseError) {
