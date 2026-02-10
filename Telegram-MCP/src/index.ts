@@ -12,49 +12,15 @@ import { Logger } from "@mcp/shared/Utils/logger.js";
 import { isClientConnected } from "./telegram/client.js";
 
 const logger = new Logger('telegram');
-import {
-  allTools,
-  handleSendMessage,
-  handleGetMessages,
-  handleSearchMessages,
-  handleDeleteMessages,
-  handleListChats,
-  handleGetChat,
-  handleCreateGroup,
-  handleListContacts,
-  handleAddContact,
-  handleSearchUsers,
-  handleSendMedia,
-  handleDownloadMedia,
-  handleGetMe,
-  handleMarkRead,
-  handleGetNewMessages,
-  handleSubscribeChat,
-} from "./tools/index.js";
+import { allTools } from "./tools/index.js";
 
 const transport = process.env.TRANSPORT || "stdio";
 const port = parseInt(process.env.PORT || "3000", 10);
 
-// Tool handlers map for /tools/call endpoint
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const toolHandlers: Record<string, (input: any) => Promise<unknown>> = {
-  send_message: handleSendMessage,
-  get_messages: handleGetMessages,
-  search_messages: handleSearchMessages,
-  delete_messages: handleDeleteMessages,
-  list_chats: handleListChats,
-  get_chat: handleGetChat,
-  create_group: handleCreateGroup,
-  list_contacts: handleListContacts,
-  add_contact: handleAddContact,
-  search_users: handleSearchUsers,
-  send_media: handleSendMedia,
-  download_media: handleDownloadMedia,
-  get_me: handleGetMe,
-  mark_read: handleMarkRead,
-  get_new_messages: handleGetNewMessages,
-  subscribe_chat: handleSubscribeChat,
-};
+// Derive tool handlers from allTools — single source of truth
+const toolHandlers: Record<string, (input: unknown) => Promise<unknown>> = Object.fromEntries(
+  allTools.map(({ tool, handler }) => [tool.name, handler])
+);
 
 async function main() {
   const server = createServer();

@@ -13,6 +13,7 @@ import { createServer as createHttpServer } from "node:http";
 import { getConfig } from "./utils/config.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { Logger } from "@mcp/shared/Utils/logger.js";
+import { toolEntry, type ToolMapEntry } from "@mcp/shared/Types/tools.js";
 
 const logger = new Logger('searcher');
 import {
@@ -131,11 +132,10 @@ async function main() {
             const { name, arguments: args } = JSON.parse(body);
 
             // Map tool name to handler and schema
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const toolMap: Record<string, { handler: (input: any) => Promise<unknown>; schema: any }> = {
-              web_search: { handler: handleWebSearch, schema: webSearchSchema },
-              news_search: { handler: handleNewsSearch, schema: newsSearchSchema },
-              image_search: { handler: handleImageSearch, schema: imageSearchSchema },
+            const toolMap: Record<string, ToolMapEntry> = {
+              web_search: toolEntry(webSearchSchema, handleWebSearch),
+              news_search: toolEntry(newsSearchSchema, handleNewsSearch),
+              image_search: toolEntry(imageSearchSchema, handleImageSearch),
             };
 
             const tool = toolMap[name];

@@ -18,6 +18,7 @@ import { initializeWorkspace } from "./utils/workspace.js";
 import { getConfig } from "./utils/config.js";
 import { cleanupTempFiles } from "./services/cleanup.js";
 import { Logger } from "@mcp/shared/Utils/logger.js";
+import { toolEntry, type ToolMapEntry } from "@mcp/shared/Types/tools.js";
 import {
   createFileSchema,
   handleCreateFile,
@@ -157,20 +158,20 @@ async function main() {
             const { name, arguments: args } = JSON.parse(body);
 
             // Map tool name to handler and schema
-            const toolMap: Record<string, { handler: (input: any) => Promise<unknown>, schema: any }> = {
-              create_file: { handler: handleCreateFile, schema: createFileSchema },
-              read_file: { handler: handleReadFile, schema: readFileSchema },
-              list_files: { handler: handleListFiles, schema: listFilesSchema },
-              update_file: { handler: handleUpdateFile, schema: updateFileSchema },
-              delete_file: { handler: handleDeleteFile, schema: deleteFileSchema },
-              move_file: { handler: handleMoveFile, schema: moveFileSchema },
-              copy_file: { handler: handleCopyFile, schema: copyFileSchema },
-              search_files: { handler: handleSearchFiles, schema: searchFilesSchema },
-              check_grant: { handler: handleCheckGrant, schema: checkGrantSchema },
-              request_grant: { handler: handleRequestGrant, schema: requestGrantSchema },
-              list_grants: { handler: handleListGrants, schema: listGrantsSchema },
-              get_workspace_info: { handler: handleGetWorkspaceInfo, schema: getWorkspaceInfoSchema },
-              get_audit_log: { handler: handleGetAuditLog, schema: getAuditLogSchema },
+            const toolMap: Record<string, ToolMapEntry> = {
+              create_file: toolEntry(createFileSchema, handleCreateFile),
+              read_file: toolEntry(readFileSchema, handleReadFile),
+              list_files: toolEntry(listFilesSchema, handleListFiles),
+              update_file: toolEntry(updateFileSchema, handleUpdateFile),
+              delete_file: toolEntry(deleteFileSchema, handleDeleteFile),
+              move_file: toolEntry(moveFileSchema, handleMoveFile),
+              copy_file: toolEntry(copyFileSchema, handleCopyFile),
+              search_files: toolEntry(searchFilesSchema, handleSearchFiles),
+              check_grant: toolEntry(checkGrantSchema, handleCheckGrant),
+              request_grant: toolEntry(requestGrantSchema, handleRequestGrant),
+              list_grants: toolEntry(listGrantsSchema, handleListGrants),
+              get_workspace_info: toolEntry(getWorkspaceInfoSchema, handleGetWorkspaceInfo),
+              get_audit_log: toolEntry(getAuditLogSchema, handleGetAuditLog),
             };
 
             const tool = toolMap[name];

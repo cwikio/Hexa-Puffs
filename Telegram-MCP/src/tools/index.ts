@@ -98,8 +98,7 @@ export type { SendMediaInput } from "./media/send-media.js";
 export type { DownloadMediaInput } from "./media/download-media.js";
 export type { MarkReadInput } from "./utility/mark-read.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ToolHandler = (input: any) => Promise<unknown>;
+import type { ToolHandler } from "@mcp/shared/Types/tools.js";
 
 interface ToolEntry {
   tool: {
@@ -114,27 +113,35 @@ interface ToolEntry {
   handler: ToolHandler;
 }
 
+function createToolEntry<T>(
+  tool: ToolEntry["tool"],
+  handler: (input: T) => Promise<unknown>
+): ToolEntry {
+  // Safe: Telegram handlers validate internally via safeParse
+  return { tool, handler: handler as ToolHandler };
+}
+
 export const allTools: ToolEntry[] = [
   // Messages
-  { tool: sendMessageTool, handler: handleSendMessage },
-  { tool: getMessagesTool, handler: handleGetMessages },
-  { tool: searchMessagesTool, handler: handleSearchMessages },
-  { tool: deleteMessagesTool, handler: handleDeleteMessages },
+  createToolEntry(sendMessageTool, handleSendMessage),
+  createToolEntry(getMessagesTool, handleGetMessages),
+  createToolEntry(searchMessagesTool, handleSearchMessages),
+  createToolEntry(deleteMessagesTool, handleDeleteMessages),
   // Chats
-  { tool: listChatsTool, handler: handleListChats },
-  { tool: getChatTool, handler: handleGetChat },
-  { tool: createGroupTool, handler: handleCreateGroup },
+  createToolEntry(listChatsTool, handleListChats),
+  createToolEntry(getChatTool, handleGetChat),
+  createToolEntry(createGroupTool, handleCreateGroup),
   // Contacts
-  { tool: listContactsTool, handler: handleListContacts },
-  { tool: addContactTool, handler: handleAddContact },
-  { tool: searchUsersTool, handler: handleSearchUsers },
+  createToolEntry(listContactsTool, handleListContacts),
+  createToolEntry(addContactTool, handleAddContact),
+  createToolEntry(searchUsersTool, handleSearchUsers),
   // Media
-  { tool: sendMediaTool, handler: handleSendMedia },
-  { tool: downloadMediaTool, handler: handleDownloadMedia },
+  createToolEntry(sendMediaTool, handleSendMedia),
+  createToolEntry(downloadMediaTool, handleDownloadMedia),
   // Utility
-  { tool: getMeTool, handler: handleGetMe },
-  { tool: markReadTool, handler: handleMarkRead },
+  createToolEntry(getMeTool, handleGetMe),
+  createToolEntry(markReadTool, handleMarkRead),
   // Realtime
-  { tool: getNewMessagesTool, handler: handleGetNewMessages },
-  { tool: subscribeChatTool, handler: handleSubscribeChat },
+  createToolEntry(getNewMessagesTool, handleGetNewMessages),
+  createToolEntry(subscribeChatTool, handleSubscribeChat),
 ];

@@ -3,6 +3,7 @@
  */
 
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+import type { z } from 'zod';
 
 /**
  * Standard MCP tool definition format
@@ -32,4 +33,24 @@ export type ToolHandler<TInput = unknown, TOutput = unknown> = (
 export interface ToolEntry<TInput = unknown, TOutput = unknown> {
   tool: ToolDefinition;
   handler: ToolHandler<TInput, TOutput>;
+}
+
+/**
+ * Type-erased tool map entry for HTTP /tools/call dispatch.
+ * Handler accepts unknown because dispatch code validates via schema.safeParse() first.
+ */
+export interface ToolMapEntry {
+  handler: (input: unknown) => Promise<unknown>;
+  schema: z.ZodType;
+}
+
+/**
+ * Create a type-safe ToolMapEntry — ensures handler input matches schema output at compile time.
+ * Cast is safe because dispatch code runs schema.safeParse() before calling handler().
+ */
+export function toolEntry<T>(
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  handler: (input: T) => Promise<unknown>
+): ToolMapEntry {
+  return { schema, handler: handler as (input: unknown) => Promise<unknown> };
 }

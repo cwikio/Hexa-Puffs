@@ -236,12 +236,14 @@ ORCHESTRATOR_UP=false
 THINKER_UP=false
 TELEGRAM_UP=false
 SEARCHER_UP=false
+FILER_UP=false
 GMAIL_UP=false
 
 echo -e "  ${BOLD}HTTP Service Health Checks:${RESET}"
 check_health "Orchestrator (8010)" "http://localhost:8010/health" "ok" && ORCHESTRATOR_UP=true
 check_health "Thinker (8006)" "http://localhost:8006/health" "ok" && THINKER_UP=true
 check_health "Telegram MCP (8002)" "http://localhost:8002/health" "ok" && TELEGRAM_UP=true
+check_health "Filer MCP (8004)" "http://localhost:8004/health" "healthy" && FILER_UP=true
 check_health "Searcher MCP (8007)" "http://localhost:8007/health" "healthy" && SEARCHER_UP=true
 check_health "Gmail MCP (8008)" "http://localhost:8008/health" "ok" && GMAIL_UP=true
 
@@ -312,7 +314,7 @@ if [ "$RUN_VITEST" = true ]; then
   # =====================================================
   # Section 3: Unit Tests (no running server required)
   # =====================================================
-  # Stdio MCPs (Filer, Memorizer, Guardian, 1Password) are spawned by
+  # Stdio MCPs (Memorizer, Guardian, 1Password) are spawned by
   # Orchestrator — they don't have standalone HTTP ports. Only unit
   # tests (InMemoryTransport) run here. Integration coverage comes
   # from Orchestrator tests in Section 5.
@@ -320,17 +322,17 @@ if [ "$RUN_VITEST" = true ]; then
 
   run_mcp_unit_tests "Memorizer" "$MCP_DIR/Memorizer-MCP"
   run_mcp_unit_tests "Gmail" "$MCP_DIR/Gmail-MCP"
-  run_mcp_unit_tests "Filer" "$MCP_DIR/Filer-MCP"
   run_mcp_unit_tests "Guardian" "$MCP_DIR/Guardian"
   run_mcp_tests "CodeExec" "$MCP_DIR/CodeExec-MCP"
 
   # =====================================================
   # Section 4: Standalone HTTP MCP Tests
   # =====================================================
-  # Telegram (8002) and Searcher (8007) still run their own HTTP
-  # servers — full test suites run against their standalone ports.
+  # MCPs that run their own HTTP servers — full integration test
+  # suites run against their standalone ports.
   print_section "Section 4: HTTP MCP Tests (standalone servers)"
 
+  run_mcp_tests "Filer" "$MCP_DIR/Filer-MCP"
   run_mcp_tests "Telegram" "$MCP_DIR/Telegram-MCP"
   run_mcp_tests "Searcher" "$MCP_DIR/Searcher-MCP"
 
