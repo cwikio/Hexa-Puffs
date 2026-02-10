@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { selectToolsWithFallback } from '../../src/agent/tool-selection.js';
 import type { EmbeddingToolSelector } from '../../src/agent/embedding-tool-selector.js';
+import type { ToolSelectionStats } from '../../src/agent/embedding-tool-selector.js';
 import type { CoreTool } from 'ai';
 
 function makeTool(description: string): CoreTool {
@@ -19,6 +20,16 @@ describe('selectToolsWithFallback', () => {
     const selector = {
       isInitialized: () => true,
       selectTools: vi.fn().mockResolvedValue(mockResult),
+      getLastSelectionStats: vi.fn().mockReturnValue({
+        method: 'embedding',
+        selectedCount: 1,
+        totalTools: 3,
+        topScore: 0.85,
+        bottomSelectedScore: 0.85,
+        coreToolCount: 1,
+        aboveThreshold: 1,
+        topTools: [{ name: 'send_telegram', score: 0.85 }],
+      } satisfies ToolSelectionStats),
     } as unknown as EmbeddingToolSelector;
 
     const result = await selectToolsWithFallback('hello', TOOLS, selector);
@@ -36,6 +47,7 @@ describe('selectToolsWithFallback', () => {
     const selector = {
       isInitialized: () => false,
       selectTools: vi.fn(),
+      getLastSelectionStats: vi.fn(),
     } as unknown as EmbeddingToolSelector;
 
     const result = await selectToolsWithFallback('hello', TOOLS, selector);
@@ -47,10 +59,32 @@ describe('selectToolsWithFallback', () => {
     const selector = {
       isInitialized: () => true,
       selectTools: vi.fn().mockRejectedValue(new Error('connection failed')),
+      getLastSelectionStats: vi.fn().mockReturnValue(null),
     } as unknown as EmbeddingToolSelector;
 
     const result = await selectToolsWithFallback('hello', TOOLS, selector);
     // Should not throw — returns regex fallback
     expect(Object.keys(result).length).toBeGreaterThan(0);
+  });
+
+  it('logs method=embedding when embedding selector succeeds', async () => {
+    const mockResult = { send_telegram: TOOLS.send_telegram };
+    const selector = {
+      isInitialized: () => true,
+      selectTools: vi.fn().mockResolvedValue(mockResult),
+      getLastSelectionStats: vi.fn().mockReturnValue({
+        method: 'embedding',
+        selectedCount: 1,
+        totalTools: 3,
+        topScore: 0.85,
+        bottomSelectedScore: 0.85,
+        coreToolCount: 1,
+        aboveThreshold: 1,
+        topTools: [{ name: 'send_telegram', score: 0.85 }],
+      } satisfies ToolSelectionStats),
+    } as unknown as EmbeddingToolSelector;
+
+    await selectToolsWithFallback('hello', TOOLS, selector);
+    expect(selector.getLastSelectionStats).toHaveBeenCalled();
   });
 });

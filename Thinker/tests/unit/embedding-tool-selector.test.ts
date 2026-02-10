@@ -99,4 +99,43 @@ describe('EmbeddingToolSelector', () => {
     await selector.selectTools('search the web for cats', ALL_TOOLS, CORE_TOOLS);
     expect(provider.embed).toHaveBeenCalledWith('search the web for cats');
   });
+
+  // ─── Observability (stats getter) ────────────────────────────────
+
+  it('returns null stats before any selection', () => {
+    expect(selector.getLastSelectionStats()).toBeNull();
+  });
+
+  it('populates stats after selectTools()', async () => {
+    await selector.selectTools('search the web', ALL_TOOLS, CORE_TOOLS);
+    const stats = selector.getLastSelectionStats();
+
+    expect(stats).not.toBeNull();
+    expect(stats!.method).toBe('embedding');
+    expect(stats!.totalTools).toBe(5);
+    expect(stats!.selectedCount).toBeGreaterThanOrEqual(4); // core + minTools
+    expect(stats!.topScore).toBeGreaterThan(0);
+    expect(stats!.coreToolCount).toBe(2);
+    expect(stats!.topTools).toHaveLength(5);
+    expect(stats!.topTools[0]).toHaveProperty('name');
+    expect(stats!.topTools[0]).toHaveProperty('score');
+  });
+
+  // ─── Re-initialization ──────────────────────────────────────────
+
+  it('re-initializes with a different tool set', async () => {
+    const newTools: Record<string, CoreTool> = {
+      searcher_web_search: makeTool('Search the web'),
+      new_tool: makeTool('A brand new tool'),
+    };
+
+    // Reset the mock to track second call
+    (provider.embedBatch as ReturnType<typeof vi.fn>).mockClear();
+    await selector.initialize(newTools);
+
+    expect(selector.isInitialized()).toBe(true);
+    // Should have been called for the 2 uncached tools (no cache path = no caching)
+    expect(provider.embedBatch).toHaveBeenCalledOnce();
+    expect((provider.embedBatch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toHaveLength(2);
+  });
 });
