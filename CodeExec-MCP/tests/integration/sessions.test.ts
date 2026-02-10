@@ -168,4 +168,40 @@ describe('Session tools via MCP protocol', () => {
       arguments: { session_id: sessionId },
     });
   });
+
+  it('should auto-create session when session_id is omitted', async () => {
+    // Send code without a session_id — should auto-create
+    const sendResult = await client.callTool({
+      name: 'send_to_session',
+      arguments: { language: 'python', code: 'print(7 * 6)' },
+    });
+    const send = parseToolResult(sendResult);
+    expect(send.success).toBe(true);
+    const sendData = send.data as Record<string, unknown>;
+    expect(sendData.session_id).toMatch(/^sess_/);
+    expect((sendData.stdout as string).trim()).toBe('42');
+    expect(sendData.created_session).toBeDefined();
+
+    const created = sendData.created_session as Record<string, unknown>;
+    expect(created.language).toBe('python');
+    expect(created.pid).toBeGreaterThan(0);
+
+    // Follow up — use the returned session_id (state persists)
+    const sessionId = sendData.session_id as string;
+    const send2Result = await client.callTool({
+      name: 'send_to_session',
+      arguments: { session_id: sessionId, code: 'print("still here")' },
+    });
+    const send2 = parseToolResult(send2Result);
+    expect(send2.success).toBe(true);
+    const send2Data = send2.data as Record<string, unknown>;
+    expect((send2Data.stdout as string).trim()).toBe('still here');
+    expect(send2Data.created_session).toBeUndefined();
+
+    // Clean up
+    await client.callTool({
+      name: 'close_session',
+      arguments: { session_id: sessionId },
+    });
+  });
 });

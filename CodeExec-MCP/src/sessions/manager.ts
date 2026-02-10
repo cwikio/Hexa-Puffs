@@ -132,11 +132,55 @@ export class SessionManager {
 
   // ── Send Code ─────────────────────────────────────────────────────────────
 
+  async sendToSession(opts: {
+    sessionId?: string;
+    language?: SessionLanguage;
+    code: string;
+    timeoutMs?: number;
+  }): Promise<SessionExecResult>;
   async sendToSession(
     sessionId: string,
     code: string,
     timeoutMs?: number,
+  ): Promise<SessionExecResult>;
+  async sendToSession(
+    optsOrId: string | { sessionId?: string; language?: SessionLanguage; code: string; timeoutMs?: number },
+    codeArg?: string,
+    timeoutMsArg?: number,
   ): Promise<SessionExecResult> {
+    // Normalize to options object
+    let sessionId: string | undefined;
+    let language: SessionLanguage | undefined;
+    let code: string;
+    let timeoutMs: number | undefined;
+
+    if (typeof optsOrId === 'string') {
+      sessionId = optsOrId;
+      code = codeArg!;
+      timeoutMs = timeoutMsArg;
+    } else {
+      sessionId = optsOrId.sessionId;
+      language = optsOrId.language;
+      code = optsOrId.code;
+      timeoutMs = optsOrId.timeoutMs;
+    }
+
+    // Auto-create session if no session_id provided
+    let createdSession: SessionExecResult['created_session'];
+    if (!sessionId) {
+      if (!language) {
+        throw new Error('language is required when session_id is not provided');
+      }
+      const startResult = await this.startSession({ language });
+      sessionId = startResult.session_id;
+      createdSession = {
+        language: startResult.language,
+        name: startResult.name,
+        pid: startResult.pid,
+        started_at: startResult.started_at,
+      };
+    }
+
     const session = this.getSession(sessionId);
 
     // Chain on the previous execution to serialize sends
@@ -149,7 +193,13 @@ export class SessionManager {
       () => {},
     );
 
-    return execPromise;
+    const result = await execPromise;
+
+    if (createdSession) {
+      result.created_session = createdSession;
+    }
+
+    return result;
   }
 
   private async doSend(

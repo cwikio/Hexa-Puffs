@@ -93,12 +93,13 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
   registerTool(server, {
     name: 'send_to_session',
     description:
-      'Send code to a running REPL session. Output reflects cumulative state from all previous sends.\n\n' +
+      'Send code to a REPL session. If session_id is omitted, a new session is created automatically.\n\n' +
       'Args:\n' +
-      '  - session_id (string): Session ID from start_session\n' +
+      '  - session_id (string, optional): Session ID from start_session. Omit to auto-create a new session.\n' +
+      '  - language ("python" | "node", optional): Required when session_id is omitted. Ignored otherwise.\n' +
       '  - code (string): Code to execute\n' +
       '  - timeout_ms (number, optional): Per-execution timeout\n\n' +
-      'Returns: { execution_id, session_id, stdout, stderr, duration_ms, truncated, timed_out }',
+      'Returns: { execution_id, session_id, stdout, stderr, duration_ms, truncated, timed_out, created_session? }',
     inputSchema: sendToSessionSchema,
     annotations: {
       readOnlyHint: false,

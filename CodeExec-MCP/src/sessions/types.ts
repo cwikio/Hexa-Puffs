@@ -44,6 +44,13 @@ export interface SessionExecResult {
   duration_ms: number;
   truncated: boolean;
   timed_out: boolean;
+  /** Present when the session was auto-created by this call */
+  created_session?: {
+    language: SessionLanguage;
+    name: string;
+    pid: number;
+    started_at: string;
+  };
 }
 
 export interface StartSessionResult {

@@ -37,8 +37,16 @@ export function handleStartSession(manager: SessionManager) {
 export const sendToSessionSchema = z.object({
   session_id: z
     .string()
-    .min(1)
-    .describe('Session ID returned by start_session'),
+    .optional()
+    .describe(
+      'Session ID from a previous start_session call. If omitted, a new session is created automatically (requires language).',
+    ),
+  language: z
+    .enum(['python', 'node'])
+    .optional()
+    .describe(
+      'Language for auto-created session. Required when session_id is omitted. Ignored when session_id is provided.',
+    ),
   code: z.string().min(1).describe('Code to execute in the session'),
   timeout_ms: z
     .number()
@@ -52,11 +60,12 @@ export type SendToSessionInput = z.infer<typeof sendToSessionSchema>;
 
 export function handleSendToSession(manager: SessionManager) {
   return async (input: SendToSessionInput) => {
-    return manager.sendToSession(
-      input.session_id,
-      input.code,
-      input.timeout_ms,
-    );
+    return manager.sendToSession({
+      sessionId: input.session_id,
+      language: input.language,
+      code: input.code,
+      timeoutMs: input.timeout_ms,
+    });
   };
 }
 

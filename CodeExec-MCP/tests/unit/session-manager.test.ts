@@ -245,3 +245,59 @@ describe('SessionManager - lifecycle', () => {
     expect((await manager.listSessions()).length).toBe(0);
   });
 });
+
+describe('SessionManager - auto-create session', () => {
+  it('should auto-create a Python session when session_id is omitted', async () => {
+    const result = await manager.sendToSession({
+      language: 'python',
+      code: 'print(2 + 2)',
+    });
+
+    expect(result.success !== undefined || result.session_id).toBeTruthy();
+    expect(result.session_id).toMatch(/^sess_/);
+    expect(result.stdout.trim()).toBe('4');
+    expect(result.created_session).toBeDefined();
+    expect(result.created_session?.language).toBe('python');
+    expect(result.created_session?.pid).toBeGreaterThan(0);
+  });
+
+  it('should auto-create a Node session when session_id is omitted', async () => {
+    const result = await manager.sendToSession({
+      language: 'node',
+      code: 'console.log(3 * 7)',
+    });
+
+    expect(result.session_id).toMatch(/^sess_/);
+    expect(result.stdout.trim()).toBe('21');
+    expect(result.created_session).toBeDefined();
+    expect(result.created_session?.language).toBe('node');
+  });
+
+  it('should leave the auto-created session open for follow-up sends', async () => {
+    const r1 = await manager.sendToSession({
+      language: 'python',
+      code: 'x = 100',
+    });
+    const sessionId = r1.session_id;
+    expect(r1.created_session).toBeDefined();
+
+    // Send follow-up to the same session (state persists)
+    const r2 = await manager.sendToSession(sessionId, 'print(x + 1)');
+    expect(r2.stdout.trim()).toBe('101');
+    expect(r2.created_session).toBeUndefined();
+  });
+
+  it('should throw when session_id and language are both omitted', async () => {
+    await expect(
+      manager.sendToSession({ code: 'print("hi")' }),
+    ).rejects.toThrow('language is required');
+  });
+
+  it('should not include created_session when using existing session_id', async () => {
+    const { session_id } = await manager.startSession({ language: 'python' });
+
+    const result = await manager.sendToSession(session_id, 'print("hello")');
+    expect(result.stdout.trim()).toBe('hello');
+    expect(result.created_session).toBeUndefined();
+  });
+});
