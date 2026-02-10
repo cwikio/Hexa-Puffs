@@ -12,15 +12,15 @@
 - `console.log = () => {}` globally kills all console.log output to prevent GramJS noise from corrupting stdio transport. This silences logging from every dependency, making debugging nearly impossible.
 - **Fix:** Targeted GramJS log interception instead of global suppression.
 
-### 2. Filer path traversal weakness
-- **File:** `Filer-MCP/src/utils/paths.ts`
-- `hasPathTraversal` only checks for `..` substring. Doesn't handle encoded traversal (`%2e%2e`), and paths are resolved *before* checking forbidden directories, so symlinks could bypass protections.
-- **Fix:** Resolve path first, then check against allowlist. Handle URL-encoded sequences.
+### ~~2. Filer path traversal weakness~~ ✅
+- ~~**File:** `Filer-MCP/src/utils/paths.ts`~~
+- ~~`hasPathTraversal` only checks for `..` substring. Doesn't handle encoded traversal (`%2e%2e`), and paths are resolved *before* checking forbidden directories, so symlinks could bypass protections.~~
+- ~~**Fix:** Resolve path first, then check against allowlist. Handle URL-encoded sequences.~~ *(hasPathTraversal now decodes URL-encoded sequences; resolvePath resolves symlinks via realpathSync and re-checks forbidden/workspace boundaries.)*
 
-### 3. Filer grants race condition
-- **File:** `Filer-MCP/src/db/grants.ts`
-- `recordAccess` does read-modify-save without locking. Concurrent tool calls can silently lose grant updates.
-- **Fix:** Add SQLite transaction or mutex around grant operations.
+### ~~3. Filer grants race condition~~ ✅
+- ~~**File:** `Filer-MCP/src/db/grants.ts`~~
+- ~~`recordAccess` does read-modify-save without locking. Concurrent tool calls can silently lose grant updates.~~
+- ~~**Fix:** Add SQLite transaction or mutex around grant operations.~~ *(saveGrants now serialized via Promise queue; generateGrantId uses crypto.randomUUID.)*
 
 ---
 
@@ -148,7 +148,7 @@
 
 ## Summary
 
-- **3 critical** issues (Telegram logging, Filer security x2)
+- ~~3~~ **1 critical** issue remaining (Telegram logging) — ✅ 2 fixed (Filer path traversal, Filer grants race condition)
 - ~~5~~ **3 high** issues remaining (dotenv, token validation, rate limiting) — ✅ 2 fixed (1Password tests, StandardResponse dupes)
 - ~~10~~ **9 medium** issues remaining — ✅ 1 fixed (register-tool generics)
 - ~~8~~ **5 low** issues remaining — ✅ 3 fixed (unified logging, fact dedup, Gmail split, 1Password SSE)

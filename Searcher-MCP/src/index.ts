@@ -180,19 +180,21 @@ async function main() {
               })
             );
           } catch (error) {
-            res.writeHead(500, { "Content-Type": "application/json" });
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            logger.error(`Tool call failed`, { tool: JSON.parse(body).name, error: errorMessage });
+            res.writeHead(200, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({
                 content: [
                   {
                     type: "text",
                     text: JSON.stringify({
-                      error:
-                        error instanceof Error ? error.message : "Unknown error",
+                      error: errorMessage,
                       success: false,
                     }),
                   },
                 ],
+                isError: true,
               })
             );
           }

@@ -4,7 +4,7 @@
 
 import { resolve, normalize, isAbsolute, basename, join } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { getConfig, expandHome } from "./config.js";
 
 // Forbidden paths that can NEVER be accessed (even with grants)
@@ -37,7 +37,14 @@ export function isForbiddenPath(absolutePath: string): boolean {
  * Check for path traversal attempts
  */
 export function hasPathTraversal(path: string): boolean {
-  return path.includes("..");
+  if (path.includes("..")) return true;
+  try {
+    if (decodeURIComponent(path).includes("..")) return true;
+  } catch {
+    // Malformed encoding is suspicious — block it
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -94,6 +101,14 @@ export function resolvePath(path: string): PathResolution {
       throw new Error("Path escapes workspace boundary");
     }
 
+    // Resolve symlinks and re-check workspace boundary
+    if (existsSync(fullPath)) {
+      const realPath = realpathSync(fullPath);
+      if (!realPath.startsWith(workspaceRoot) && realPath !== workspaceRoot) {
+        throw new Error("Path escapes workspace boundary via symlink");
+      }
+    }
+
     return {
       fullPath,
       domain: "workspace",
@@ -108,6 +123,14 @@ export function resolvePath(path: string): PathResolution {
   // Check forbidden paths
   if (isForbiddenPath(normalizedPath)) {
     throw new Error("Access to this path is forbidden for security reasons");
+  }
+
+  // Resolve symlinks and re-check forbidden paths
+  if (existsSync(normalizedPath)) {
+    const realPath = realpathSync(normalizedPath);
+    if (isForbiddenPath(realPath)) {
+      throw new Error("Access to this path is forbidden for security reasons");
+    }
   }
 
   return {

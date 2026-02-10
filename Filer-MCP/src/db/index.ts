@@ -6,6 +6,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 import { getConfig } from "../utils/config.js";
 import type { Grant } from "./grants.js";
 
@@ -55,18 +56,26 @@ export async function loadGrants(): Promise<GrantsData> {
 
 /**
  * Save grants to JSON file
+ * Writes are serialized via a Promise queue to prevent interleaved writeFile calls
  */
+let saveQueue: Promise<void> = Promise.resolve();
+
 export async function saveGrants(): Promise<void> {
-  if (!grantsData) return;
+  const doSave = async () => {
+    if (!grantsData) return;
 
-  const path = getDbPath();
-  const dir = dirname(path);
+    const path = getDbPath();
+    const dir = dirname(path);
 
-  if (!existsSync(dir)) {
-    await mkdir(dir, { recursive: true });
-  }
+    if (!existsSync(dir)) {
+      await mkdir(dir, { recursive: true });
+    }
 
-  await writeFile(path, JSON.stringify(grantsData, null, 2), "utf-8");
+    await writeFile(path, JSON.stringify(grantsData, null, 2), "utf-8");
+  };
+
+  saveQueue = saveQueue.then(doSave, doSave);
+  return saveQueue;
 }
 
 /**
@@ -87,5 +96,5 @@ export async function initDatabase(): Promise<void> {
  * Generate a unique grant ID
  */
 export function generateGrantId(): string {
-  return `grant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return `grant_${randomUUID()}`;
 }
