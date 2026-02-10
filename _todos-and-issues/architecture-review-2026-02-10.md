@@ -225,7 +225,7 @@ Unified all 12 packages to `"node": ">=22.0.0"` matching the existing `.nvmrc`. 
 | P4 | ~~Tool cache invalidation in Thinker~~ | ✅ Done |
 | P5 | ~~Session JSONL auto-compaction~~ | ✅ Already implemented |
 
-### Tier 4: Architecture — PARTIAL
+### Tier 4: Architecture — ✅ ALL DONE (except pnpm)
 
 | # | Improvement | Effort | Status |
 |---|-------------|--------|--------|

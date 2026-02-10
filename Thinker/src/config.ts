@@ -119,6 +119,9 @@ export const ConfigSchema = z.object({
   // Post-conversation fact extraction
   factExtraction: FactExtractionConfigSchema.default({}),
 
+  // Embedding cache directory (for persisting tool embeddings across restarts)
+  embeddingCacheDir: z.string().default('~/.annabelle/data'),
+
   // Cost controls (optional, configured via Orchestrator env vars)
   costControl: CostControlSchema.optional(),
 });
@@ -202,6 +205,9 @@ export function loadConfig(): Config {
       maxTurns: parseInteger(process.env.THINKER_FACT_EXTRACTION_MAX_TURNS, 10),
       confidenceThreshold: parseNumber(process.env.THINKER_FACT_EXTRACTION_CONFIDENCE, 0.7),
     },
+
+    // Embedding cache directory
+    embeddingCacheDir: process.env.EMBEDDING_CACHE_DIR || '~/.annabelle/data',
 
     // Cost controls — only built when explicitly enabled via env var
     ...(parseBoolean(process.env.THINKER_COST_CONTROL_ENABLED, false) ? {

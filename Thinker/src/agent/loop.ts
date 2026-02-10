@@ -1,5 +1,5 @@
 import { readFile } from 'fs/promises';
-import { resolve } from 'path';
+import { resolve, join } from 'path';
 import { homedir } from 'os';
 import { generateText, type CoreMessage, type CoreTool } from 'ai';
 import type { LanguageModelV1 } from 'ai';
@@ -247,10 +247,14 @@ export class Agent {
     try {
       const provider = createEmbeddingProviderFromEnv();
       if (provider) {
+        const cacheDir = (this.config.embeddingCacheDir ?? '~/.annabelle/data').replace(/^~/, homedir());
         this.embeddingSelector = new EmbeddingToolSelector(provider, {
           similarityThreshold: Number(process.env.TOOL_SELECTOR_THRESHOLD) || 0.3,
           topK: Number(process.env.TOOL_SELECTOR_TOP_K) || 15,
           minTools: Number(process.env.TOOL_SELECTOR_MIN_TOOLS) || 5,
+          cachePath: join(cacheDir, 'embedding-cache.json'),
+          providerName: process.env.EMBEDDING_PROVIDER || 'ollama',
+          modelName: process.env.OLLAMA_EMBEDDING_MODEL || 'nomic-embed-text',
         });
         await this.embeddingSelector.initialize(this.tools);
       }
@@ -266,6 +270,50 @@ export class Agent {
       logger.info(`Playbook cache loaded: ${this.playbookCache.getPlaybooks().length} playbook(s)`);
     } catch (error) {
       logger.warn('Failed to initialize playbooks (non-fatal):', error);
+    }
+  }
+
+  /**
+   * Re-discover tools from Orchestrator and re-initialize the embedding selector
+   * when the tool set changes. Uses getCachedToolsOrRefresh() which has a 10-min
+   * TTL, so this is a no-op on most calls.
+   */
+  private async refreshToolsIfNeeded(): Promise<void> {
+    try {
+      const freshOrchestratorTools = await this.orchestrator.getCachedToolsOrRefresh();
+      const freshNames = new Set(freshOrchestratorTools.map(t => t.name));
+      const currentNames = new Set(Object.keys(this.tools));
+
+      // Quick set equality check
+      if (freshNames.size === currentNames.size && [...freshNames].every(n => currentNames.has(n))) {
+        return; // no change
+      }
+
+      const added = [...freshNames].filter(n => !currentNames.has(n));
+      const removed = [...currentNames].filter(n => !freshNames.has(n));
+      logger.info(`Tool set changed: +${added.length} added, -${removed.length} removed`);
+      if (added.length > 0) logger.info(`  Added: ${added.join(', ')}`);
+      if (removed.length > 0) logger.info(`  Removed: ${removed.join(', ')}`);
+
+      // Rebuild tools
+      const dynamicTools = createToolsFromOrchestrator(
+        freshOrchestratorTools,
+        this.orchestrator,
+        () => this.currentTrace,
+      );
+      const essentialTools = createEssentialTools(
+        this.orchestrator,
+        this.config.thinkerAgentId,
+        () => this.currentTrace,
+      );
+      this.tools = { ...dynamicTools, ...essentialTools };
+
+      // Re-initialize embedding selector (cache makes this fast for existing tools)
+      if (this.embeddingSelector) {
+        await this.embeddingSelector.initialize(this.tools);
+      }
+    } catch (error) {
+      logger.warn('refreshToolsIfNeeded failed (non-fatal):', error);
     }
   }
 
@@ -447,6 +495,9 @@ export class Agent {
         await new Promise((r) => setTimeout(r, this.minApiCallIntervalMs - timeSinceLastCall));
       }
       this.lastApiCallTime = Date.now();
+
+      // Check for tool changes (uses TTL-cached Orchestrator call — fast no-op most of the time)
+      await this.refreshToolsIfNeeded();
 
       // Build context
       const context = await this.buildContext(message.chatId, message.text, trace);
@@ -921,6 +972,9 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
         await new Promise((r) => setTimeout(r, this.minApiCallIntervalMs - timeSinceLastCall));
       }
       this.lastApiCallTime = Date.now();
+
+      // Check for tool changes
+      await this.refreshToolsIfNeeded();
 
       // Build system prompt for autonomous task (same priority chain as buildContext)
       const basePrompt = this.customSystemPrompt || this.personaPrompt || DEFAULT_SYSTEM_PROMPT;

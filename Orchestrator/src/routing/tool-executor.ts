@@ -39,7 +39,7 @@ export class ToolExecutor {
 
   /** Check if a tool is sensitive — supports exact names and prefix patterns (ending with `_`). */
   private isSensitive(tool: string): boolean {
-    if (this.isSensitive(tool)) return true;
+    if (this.sensitiveTools.has(tool)) return true;
     for (const entry of this.sensitiveTools) {
       if (entry.endsWith('_') && tool.startsWith(entry)) return true;
     }
