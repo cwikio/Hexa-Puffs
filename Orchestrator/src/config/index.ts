@@ -1,5 +1,6 @@
-import { config as dotenvConfig } from 'dotenv';
-import { existsSync } from 'node:fs';
+import { loadEnvSafely } from '@mcp/shared/Utils/env.js';
+loadEnvSafely(import.meta.url, 2);
+
 import { ConfigSchema, type Config, type StdioMCPServerConfig, type MCPServerConfig } from './schema.js';
 import { ConfigurationError } from '../utils/errors.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
@@ -15,12 +16,6 @@ import { scanForMCPs } from './scanner.js';
 // Get the MCPs root directory (parent of Orchestrator)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-// Only load .env if it exists — dotenv v17 writes to stdout otherwise
-const envPath = resolve(__dirname, '../../.env');
-if (existsSync(envPath)) {
-  dotenvConfig({ path: envPath, quiet: true });
-}
 // Both compiled (dist/config/) and source (src/config/) are 3 levels from MCPs root:
 // config → dist/src → Orchestrator → MCPs
 const mcpsRoot = resolve(__dirname, '../../../');
