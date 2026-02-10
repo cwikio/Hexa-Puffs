@@ -17,7 +17,9 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { createServer } from "./server.js";
 import { createServer as createHttpServer } from "node:http";
 import { verifyConnection, getHost, getModelName, getProviderName } from "./provider.js";
+import { Logger } from "@mcp/shared/Utils/logger.js";
 
+const logger = new Logger('guardian');
 const TRANSPORT = process.env.TRANSPORT || "stdio";
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
@@ -26,13 +28,11 @@ async function main() {
   const provider = getProviderName();
   try {
     await verifyConnection();
-    console.error(`Connected to ${provider} at ${getHost()}`);
-    console.error(`Using model: ${getModelName()}`);
+    logger.info(`Connected to ${provider} at ${getHost()}`);
+    logger.info(`Using model: ${getModelName()}`);
   } catch (error) {
-    console.error(
-      `Warning: ${error instanceof Error ? error.message : `Cannot connect to ${provider}`}`
-    );
-    console.error(`Scans will fail until ${provider} is available.`);
+    logger.warn(error instanceof Error ? error.message : `Cannot connect to ${provider}`);
+    logger.warn(`Scans will fail until ${provider} is available.`);
   }
 
   const server = createServer();
@@ -42,7 +42,7 @@ async function main() {
     const transports = new Map<string, SSEServerTransport>();
 
     const httpServer = createHttpServer(async (req, res) => {
-      console.error(`${req.method} ${req.url}`);
+      logger.debug(`${req.method} ${req.url}`);
 
       // CORS headers
       res.setHeader("Access-Control-Allow-Origin", "*");
@@ -59,11 +59,11 @@ async function main() {
         const transport = new SSEServerTransport("/messages", res);
         const sessionId = transport.sessionId;
         transports.set(sessionId, transport);
-        console.error(`SSE connection established - sessionId: ${sessionId}`);
+        logger.info(`SSE connection established`, { sessionId });
 
         // Clean up on close
         res.on("close", () => {
-          console.error(`SSE connection closed - sessionId: ${sessionId}`);
+          logger.info(`SSE connection closed`, { sessionId });
           transports.delete(sessionId);
         });
 
@@ -75,7 +75,7 @@ async function main() {
       const parsedUrl = new URL(req.url || "/", `http://localhost:${PORT}`);
       if (parsedUrl.pathname === "/messages" && req.method === "POST") {
         const sessionId = parsedUrl.searchParams.get("sessionId");
-        console.error(`POST /messages - sessionId: ${sessionId}, active sessions: ${Array.from(transports.keys()).join(", ")}`);
+        logger.debug(`POST /messages`, { sessionId, activeSessions: Array.from(transports.keys()) });
 
         if (!sessionId || !transports.has(sessionId)) {
           res.writeHead(400, { "Content-Type": "application/json" });
@@ -117,19 +117,19 @@ async function main() {
     });
 
     httpServer.listen(PORT, () => {
-      console.error(`Guardian MCP server listening on port ${PORT}`);
-      console.error(`SSE endpoint: http://localhost:${PORT}/sse`);
-      console.error(`Health check: http://localhost:${PORT}/health`);
+      logger.info(`Guardian MCP server listening on port ${PORT}`);
+      logger.info(`SSE endpoint: http://localhost:${PORT}/sse`);
+      logger.info(`Health check: http://localhost:${PORT}/health`);
     });
   } else {
     // Default: stdio transport for Claude Desktop
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error("Guardian MCP server running on stdio");
+    logger.info("Guardian MCP server running on stdio");
   }
 }
 
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  logger.error("Fatal error", error);
   process.exit(1);
 });

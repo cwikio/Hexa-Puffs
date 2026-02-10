@@ -2,6 +2,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { createServer } from "./server.js";
 import { createServer as createHttpServer } from "node:http";
+import { Logger } from "@mcp/shared/Utils/logger.js";
+
+const logger = new Logger('1password');
 
 const TRANSPORT = process.env.TRANSPORT || "stdio";
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -53,19 +56,19 @@ async function main() {
     });
 
     httpServer.listen(PORT, () => {
-      console.error(`1Password MCP server listening on port ${PORT}`);
-      console.error(`SSE endpoint: http://localhost:${PORT}/sse`);
-      console.error(`Health check: http://localhost:${PORT}/health`);
+      logger.info(`1Password MCP server listening on port ${PORT}`);
+      logger.info(`SSE endpoint: http://localhost:${PORT}/sse`);
+      logger.info(`Health check: http://localhost:${PORT}/health`);
     });
   } else {
     // Default: stdio transport for Claude Desktop
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error("1Password MCP server running on stdio");
+    logger.info("1Password MCP server running on stdio");
   }
 }
 
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  logger.error("Fatal error", error);
   process.exit(1);
 });

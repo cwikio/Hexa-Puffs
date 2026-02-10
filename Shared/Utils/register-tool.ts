@@ -9,6 +9,7 @@
 
 import type { z } from 'zod';
 import type { StandardResponse } from '../Types/StandardResponse.js';
+import { createErrorFromException } from '../Types/StandardResponse.js';
 
 /**
  * Structural interface for McpServer — avoids concrete class import
@@ -63,10 +64,7 @@ export function registerTool(
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
         };
       } catch (error) {
-        const errorResponse: StandardResponse = {
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        };
+        const errorResponse = createErrorFromException(error);
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(errorResponse) }],
         };

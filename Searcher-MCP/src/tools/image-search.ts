@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod";
-import type { StandardResponse } from "../types/shared.js";
+import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { imageSearch } from "../services/brave.js";
 
 export const imageSearchSchema = z.object({

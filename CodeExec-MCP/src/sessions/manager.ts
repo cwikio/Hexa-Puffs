@@ -14,6 +14,7 @@ import { getConfig, getStrippedEnv, isForbiddenPath, expandHome } from '../confi
 import { generateSessionId, generateExecutionId } from '../utils/id-generator.js';
 import { truncateOutput } from '../utils/output-truncate.js';
 import { logSessionEvent } from '../logging/writer.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
 import type {
   Session,
   SessionLanguage,
@@ -27,6 +28,7 @@ import type {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WRAPPER_DIR = resolve(__dirname, 'wrappers');
 
+const logger = new Logger('codexec:session');
 const SIGKILL_GRACE_MS = 5_000;
 
 export class SessionManager {
@@ -106,7 +108,7 @@ export class SessionManager {
     child.on('close', () => {
       if (this.sessions.has(sessionId)) {
         this.closeSession(sessionId, 'process_exit').catch((err) =>
-          console.error(`[codexec] Auto-close failed for ${sessionId}: ${err}`),
+          logger.error(`Auto-close failed for ${sessionId}: ${err}`),
         );
       }
     });
@@ -119,7 +121,7 @@ export class SessionManager {
       name,
       pid: child.pid,
       started_at: now,
-    }).catch((err) => console.error(`[codexec] Log write failed: ${err}`));
+    }).catch((err) => logger.error(`Log write failed: ${err}`));
 
     return {
       session_id: sessionId,
@@ -275,7 +277,7 @@ export class SessionManager {
       duration_ms: duration,
       timed_out,
       at: session.last_activity_at,
-    }).catch((err) => console.error(`[codexec] Log write failed: ${err}`));
+    }).catch((err) => logger.error(`Log write failed: ${err}`));
 
     return {
       execution_id: executionId,
@@ -397,7 +399,7 @@ export class SessionManager {
       total_duration_ms: totalDuration,
       executions_count: session.executions_count,
       at: new Date().toISOString(),
-    }).catch((err) => console.error(`[codexec] Log write failed: ${err}`));
+    }).catch((err) => logger.error(`Log write failed: ${err}`));
 
     return {
       session_id: sessionId,
@@ -502,7 +504,7 @@ export class SessionManager {
         version,
         success,
         at: new Date().toISOString(),
-      }).catch((err) => console.error(`[codexec] Log write failed: ${err}`));
+      }).catch((err) => logger.error(`Log write failed: ${err}`));
     }
 
     // Truncate output for response
@@ -545,7 +547,7 @@ export class SessionManager {
     const config = getConfig();
     session.idleTimer = setTimeout(() => {
       this.closeSession(session.session_id, 'idle_timeout').catch((err) =>
-        console.error(`[codexec] Idle close failed for ${session.session_id}: ${err}`),
+        logger.error(`Idle close failed for ${session.session_id}: ${err}`),
       );
     }, config.sessionIdleTimeoutMs);
   }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import { registerTool } from '../Utils/register-tool.js';
+import { ValidationError } from '../Types/errors.js';
 
 function createMockServer() {
   return { registerTool: vi.fn() };
@@ -122,6 +123,28 @@ describe('registerTool', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toBe('Unknown error');
+    });
+
+    it('should include errorCode and errorDetails when handler throws BaseError', async () => {
+      const server = createMockServer();
+
+      registerTool(server, {
+        name: 'validate',
+        description: 'validates',
+        inputSchema: z.object({}),
+        handler: async () => { throw new ValidationError('bad email', { field: 'email' }); },
+      });
+
+      const handler = server.registerTool.mock.calls[0][2] as (
+        args: Record<string, unknown>
+      ) => Promise<{ content: Array<{ type: string; text: string }> }>;
+
+      const result = await handler({});
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toBe('bad email');
+      expect(parsed.errorCode).toBe('VALIDATION_ERROR');
+      expect(parsed.errorDetails).toEqual({ field: 'email' });
     });
 
     it('should pass input arguments to the handler', async () => {
