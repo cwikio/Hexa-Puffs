@@ -70,9 +70,12 @@ export function loadConfig(): Config {
 
     security: {
       scanAllInputs: getEnvBoolean('SCAN_ALL_INPUTS', true),
+      // Derive sensitive tools from MCP manifests: MCPs with sensitive: true
+      // get prefix patterns (e.g. "onepassword_"), plus per-tool additions.
       sensitiveTools: [
-        'onepassword_get',
-        'telegram_send',
+        ...discovered
+          .filter((mcp) => mcp.sensitive)
+          .map((mcp) => `${mcp.name}_`),
         'filer_create_file',
         'filer_update_file',
         'filer_read_file',

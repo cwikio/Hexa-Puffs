@@ -163,35 +163,26 @@ Changed fixed 10s cooldown to `10s * 2^restartCount` (10s, 20s, 40s, 80s, 160s).
 
 ### Architecture / Flexibility
 
-#### A1. StandardResponse duplication in Gmail (Low)
+#### ~~A1. StandardResponse duplication in Gmail~~ ✅ DONE
 
-**File:** `Gmail-MCP/src/types/responses.ts:5-9`
+Replaced Gmail's local `StandardResponse` (missing `errorCode`/`errorDetails`) with canonical import from `@mcp/shared/Types/StandardResponse.js` in all 6 tool files + test helper. Local `responses.ts` now re-exports from Shared for backwards compatibility.
 
-Gmail defines a local `StandardResponse` missing `errorCode` and `errorDetails` fields from `@mcp/shared`. Functionally works but creates two sources of truth.
+#### ~~A2. Channel extensibility is limited~~ ✅ DONE
 
-**Fix:** Import from `@mcp/shared` like other MCPs. Part of the deferred Phase 3-5 migration.
+Removed hardcoded `telegram_send` and `onepassword_get` from `sensitiveTools` config. Now derived dynamically from MCP manifest `sensitive: true` flag via prefix patterns. `ToolExecutor.isSensitive()` supports both exact tool names and `${mcpName}_` prefix matching. `GenericChannelAdapter` already handles any channel MCP following the `send_message`/`get_messages` convention.
 
-#### A2. Channel extensibility is limited (Medium)
+#### ~~A3. No versioning strategy~~ ✅ DONE
 
-Telegram is hardcoded as the primary channel. A generic channel adapter exists (`Orchestrator/src/channels/adapters/generic-channel-adapter.ts`) but there's no "channel manifest" like MCPs have. Adding Discord or Slack requires writing a custom adapter in the Orchestrator codebase.
+Implemented two-layer versioning:
+- **System version**: `VERSION` file at repo root (starting at `1.0.0`), exposed in Orchestrator `/health` and `/status` endpoints
+- **Per-MCP SemVer**: Individual `package.json` version fields (standard semver discipline)
+- **Changelog**: Root `CHANGELOG.md` organized by system version with per-MCP sections
+- **Tooling**: `version.sh` helper script for bumping system/package versions
+- **Git tags**: `v1.0.0` convention for releases
 
-**Fix:** Define a channel plugin interface (similar to MCP auto-discovery). Low priority — Telegram is the only channel needed currently.
+#### ~~A4. Type safety gaps — `Record<string, unknown>` in registerTool~~ ✅ DONE
 
-#### A3. No versioning strategy (Low-Medium)
-
-All packages are at `1.0.0` (or `0.1.0` for Thinker). No changelog, no compatibility matrix, no semantic versioning. `@mcp/shared` is referenced via `file:../Shared` with no version constraint.
-
-**Mitigating factor:** Single developer, single deployment. Versioning adds overhead without current benefit.
-
-**Fix:** Adopt SemVer when workspace tooling (Item 1) is implemented. Not needed before that.
-
-#### A4. Type safety gaps — 168 uses of `Record<string, unknown>` (Low-Medium)
-
-The `registerTool()` handler receives `Record<string, unknown>` (by design in `Shared/Utils/register-tool.ts:50`). Callers must cast to their specific input type. This is a limitation of the SDK's type system — Zod validates at runtime, but TypeScript doesn't carry the validated type into the handler.
-
-**Impact:** No IDE autocomplete for tool inputs inside handlers. Easy to access non-existent properties.
-
-**Fix:** Consider a generic `registerTool<T>()` that passes `T` to the handler. Moderate effort, affects all MCPs.
+Made `registerTool` generic: `registerTool<T extends z.AnyZodObject>()`. The handler now receives `z.infer<T>` instead of `Record<string, unknown>`. The single centralised cast lives inside the wrapper (`args as z.infer<T>`). Removed 47 `as FooInput` casts and unused type imports across 6 MCPs (CodeExec, Searcher, Filer, Onepassword, Guardian, Telegram). Gmail and Memorizer already had no casts.
 
 #### ~~A5. Test helper duplication across packages~~ ✅ DONE
 
@@ -240,9 +231,10 @@ Unified all 12 packages to `"node": ">=22.0.0"` matching the existing `.nvmrc`. 
 |---|-------------|--------|--------|
 | 4 | ~~Embedding-based tool selection~~ | Medium | ✅ Done |
 | 1 | Workspace tooling (pnpm) | Medium | Not started |
-| A4 | Generic `registerTool<T>()` for type safety | Medium | Not started |
-| A2 | Channel plugin interface | Medium | Not started |
-| A1 | StandardResponse dedup in Gmail | Low | Not started (Phase 3-5) |
+| A4 | ~~Generic `registerTool<T>()` for type safety~~ | Medium | ✅ Done |
+| A2 | ~~Channel plugin interface~~ | Medium | ✅ Done |
+| A1 | ~~StandardResponse dedup in Gmail~~ | Low | ✅ Done |
+| A3 | ~~Versioning strategy~~ | Low-Medium | ✅ Done |
 
 ### Tier 5: Housekeeping — ✅ ALL DONE
 
@@ -261,7 +253,6 @@ Unified all 12 packages to `"node": ">=22.0.0"` matching the existing `.nvmrc`. 
 | # | Topic | Notes |
 |---|-------|-------|
 | S6 | Indirect prompt injection | Architectural tradeoff — scanning outputs adds latency. Revisit if attack surface grows. |
-| A3 | Versioning strategy | Adopt with workspace tooling (Item 1). No benefit before that. |
 
 ---
 
@@ -295,9 +286,9 @@ Gmail, Telegram, and Memorizer still use the old `Server` class. Migration to `M
 
 Tracked in `new-mcp-plan.md`.
 
-### N5. Generic `registerTool<T>()` (Medium effort, Medium value)
+### ~~N5. Generic `registerTool<T>()`~~ ✅ DONE (as A4)
 
-Item A4. Add a type parameter so the handler receives a properly typed input instead of `Record<string, unknown>`. Eliminates `as FooInput` casts across all MCPs. Requires updating the Shared wrapper + all call sites.
+Implemented as part of A4 above. `registerTool<T extends z.AnyZodObject>()` with `z.infer<T>` handler type. 47 casts removed across 6 MCPs.
 
 ### N6. Embedding cache persistence (Low effort, Low value)
 
@@ -311,5 +302,5 @@ Item A4. Add a type parameter so the handler receives a properly typed input ins
 2. **N2** — Observability (helps tune thresholds with real traffic data)
 3. **N3** — pnpm workspaces (structural, enables many downstream improvements)
 4. **N4** — Phase 3-5 migration (consistency across all MCPs)
-5. **N5** — Generic registerTool (developer experience)
+5. ~~**N5** — Generic registerTool~~ ✅ Done (A4)
 6. **N6** — Embedding cache (optimization, low urgency with local Ollama)

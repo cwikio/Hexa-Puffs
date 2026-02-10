@@ -26,7 +26,7 @@ export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
 
 export const SecurityConfigSchema = z.object({
   scanAllInputs: z.boolean().default(true),
-  sensitiveTools: z.array(z.string()).default(['onepassword_get', 'telegram_send']),
+  sensitiveTools: z.array(z.string()).default([]),
   failMode: z.enum(['open', 'closed']).default('closed'),
 });
 

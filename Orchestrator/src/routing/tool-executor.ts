@@ -37,6 +37,15 @@ export class ToolExecutor {
     this.logger = logger.child('tools');
   }
 
+  /** Check if a tool is sensitive — supports exact names and prefix patterns (ending with `_`). */
+  private isSensitive(tool: string): boolean {
+    if (this.isSensitive(tool)) return true;
+    for (const entry of this.sensitiveTools) {
+      if (entry.endsWith('_') && tool.startsWith(entry)) return true;
+    }
+    return false;
+  }
+
   async executeTelegram(
     message: string,
     chatId?: string
@@ -49,7 +58,7 @@ export class ToolExecutor {
     }
 
     // Security scan for sensitive output
-    if (this.sensitiveTools.has(tool)) {
+    if (this.isSensitive(tool)) {
       const scanResult = await this.security.scanOutput(message, tool);
       if (!scanResult.allowed) {
         return { success: false, error: `Blocked by security: ${scanResult.reason}` };
@@ -142,7 +151,7 @@ export class ToolExecutor {
 
     if (result.found && result.item) {
       // Security scan the output to prevent credential leakage
-      if (this.sensitiveTools.has(tool)) {
+      if (this.isSensitive(tool)) {
         const itemStr = JSON.stringify(result.item);
         const scanResult = await this.security.scanOutput(itemStr, tool);
         if (!scanResult.allowed) {
@@ -163,7 +172,7 @@ export class ToolExecutor {
     }
 
     // Security scan for file content operations
-    if (this.sensitiveTools.has(tool) && (params.content || params.query)) {
+    if (this.isSensitive(tool) && (params.content || params.query)) {
       const contentToScan = (params.content || params.query) as string;
       const scanResult = await this.security.scanOutput(contentToScan, tool);
       if (!scanResult.allowed) {

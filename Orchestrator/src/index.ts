@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { createServer as createHttpServer } from 'http';
@@ -9,6 +12,15 @@ import { logger } from '@mcp/shared/Utils/logger.js';
 import { startInngestServer } from './jobs/inngest-server.js';
 import { getOrchestrator } from './core/orchestrator.js';
 import { handleListTools, handleCallTool } from './core/http-handlers.js';
+
+// Read system version from root VERSION file
+const __dirname = dirname(fileURLToPath(import.meta.url));
+let systemVersion = 'unknown';
+try {
+  systemVersion = readFileSync(resolve(__dirname, '../../../VERSION'), 'utf-8').trim();
+} catch {
+  // VERSION file not found — running from non-standard location
+}
 
 const ANNABELLE_TOKEN = process.env.ANNABELLE_TOKEN;
 
@@ -64,7 +76,7 @@ async function main(): Promise<void> {
         // Health check endpoint (always open — no token required)
         if (req.url === '/health' && req.method === 'GET') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'ok' }));
+          res.end(JSON.stringify({ status: 'ok', version: systemVersion }));
           return;
         }
 
@@ -83,6 +95,7 @@ async function main(): Promise<void> {
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
+            version: systemVersion,
             status: status.ready ? 'ready' : 'initializing',
             uptime: status.uptime,
             mcpServers: status.mcpServers,

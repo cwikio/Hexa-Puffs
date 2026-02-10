@@ -47,7 +47,7 @@ export function registerTool<T extends z.AnyZodObject>(
     description: string;
     inputSchema: T;
     annotations?: ToolAnnotations;
-    handler: (input: z.infer<T>) => Promise<StandardResponse>;
+    handler: (input: z.infer<NoInfer<T>>) => Promise<StandardResponse>;
   }
 ): void {
   server.registerTool(
