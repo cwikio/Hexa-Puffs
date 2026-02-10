@@ -30,9 +30,9 @@
 - ~~No test files, no test script in package.json.~~
 - ~~**Fix:** Add at least basic integration tests for `op` CLI wrapper.~~
 
-### 5. Inconsistent dotenv handling
-- Only CodeExec and Guardian check `existsSync()` before loading dotenv. All others load unconditionally — dotenv v17 writes debug messages to stdout, corrupting stdio transport.
-- **Fix:** Apply CodeExec pattern (`existsSync` + `quiet: true`) to all MCPs.
+### ~~5. Inconsistent dotenv handling~~ ✅
+- ~~Only CodeExec and Guardian check `existsSync()` before loading dotenv. All others load unconditionally — dotenv v17 writes debug messages to stdout, corrupting stdio transport.~~
+- ~~**Fix:** Apply CodeExec pattern (`existsSync` + `quiet: true`) to all MCPs.~~ *(Applied `existsSync` + `quiet: true` pattern to Guardian, Filer, Memorizer, Searcher, Gmail, Orchestrator, and Thinker.)*
 
 ### 6. Gmail token validation — warn instead of fail
 - **File:** `Gmail-MCP/src/index.ts:30-33`
@@ -75,9 +75,9 @@
 - If `sqlite-vec` fails to load, vector search is silently disabled. Only a warning log. Users may not realize they're getting LIKE fallback.
 - **Fix:** Expose vector search status in health endpoint.
 
-### 14. Dependency version inconsistency
-- `dotenv` v16 in Memorizer vs v17 elsewhere. `zod` 3.22 vs 3.24.
-- **Fix:** Align versions across all packages.
+### ~~14. Dependency version inconsistency~~ ✅
+- ~~`dotenv` v16 in Memorizer vs v17 elsewhere. `zod` 3.22 vs 3.24.~~
+- ~~**Fix:** Align versions across all packages.~~ *(dotenv unified to ^17.2.4 across all 9 packages. Zod previously unified to ^3.24.0 in architecture review A6.)*
 
 ### 15. Tool selector — keyword-only routing (Thinker)
 - **File:** `Thinker/src/agent/tool-selector.ts`

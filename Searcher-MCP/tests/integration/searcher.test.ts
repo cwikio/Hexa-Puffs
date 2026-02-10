@@ -13,6 +13,7 @@ import {
   logSection,
   logInfo,
   SEARCHER_URL,
+  authHeaders,
 } from "../helpers/mcp-client.js";
 import {
   validQueries,
@@ -53,11 +54,12 @@ describe("Searcher MCP Tests", () => {
       const toolsList = await listTools();
       expect(toolsList).not.toBeNull();
       expect(toolsList?.tools).toBeInstanceOf(Array);
-      expect(toolsList?.tools.length).toBe(2);
+      expect(toolsList?.tools.length).toBe(3);
 
       const toolNames = toolsList?.tools.map((t) => t.name) || [];
       expect(toolNames).toContain("web_search");
       expect(toolNames).toContain("news_search");
+      expect(toolNames).toContain("image_search");
     });
 
     it("1.4 should have correct tool schemas", async () => {
@@ -82,16 +84,16 @@ describe("Searcher MCP Tests", () => {
       logSection("Web Search Tests");
       const result = await tools.webSearch(validQueries.simple);
       expect(result.success).toBe(true);
-      expect(result.data?.success).toBe(true);
-      expect(result.data?.data?.results).toBeInstanceOf(Array);
-      expect(result.data?.data?.query).toBe(validQueries.simple);
+
+      expect(result.data?.results).toBeInstanceOf(Array);
+      expect(result.data?.query).toBe(validQueries.simple);
     });
 
     it("2.2 should return results with correct structure", async () => {
       const result = await tools.webSearch(validQueries.multiWord);
       expect(result.success).toBe(true);
 
-      const data = result.data?.data;
+      const data = result.data;
       expect(data).toBeDefined();
 
       // Check required fields
@@ -114,7 +116,7 @@ describe("Searcher MCP Tests", () => {
     it("2.3 should handle query with special characters", async () => {
       const result = await tools.webSearch(validQueries.withSpecialChars);
       expect(result.success).toBe(true);
-      expect(result.data?.data?.query).toBe(validQueries.withSpecialChars);
+      expect(result.data?.query).toBe(validQueries.withSpecialChars);
     });
 
     it("2.4 should handle unicode queries", async () => {
@@ -126,7 +128,7 @@ describe("Searcher MCP Tests", () => {
       const result = await tools.webSearch(validQueries.simple, { count: 5 });
       expect(result.success).toBe(true);
 
-      const data = result.data?.data;
+      const data = result.data;
       if (data?.results) {
         expect(data.total_count).toBe(data.results.length);
       }
@@ -142,25 +144,25 @@ describe("Searcher MCP Tests", () => {
       const result = await tools.webSearch(validQueries.simple);
       expect(result.success).toBe(true);
       // Default is 10, results may be less if fewer available
-      expect(result.data?.data?.results?.length).toBeLessThanOrEqual(10);
+      expect(result.data?.results?.length).toBeLessThanOrEqual(10);
     });
 
     it("3.2 should respect count=1", async () => {
       const result = await tools.webSearch(validQueries.simple, { count: 1 });
       expect(result.success).toBe(true);
-      expect(result.data?.data?.results?.length).toBeLessThanOrEqual(1);
+      expect(result.data?.results?.length).toBeLessThanOrEqual(1);
     });
 
     it("3.3 should respect count=5", async () => {
       const result = await tools.webSearch(validQueries.simple, { count: 5 });
       expect(result.success).toBe(true);
-      expect(result.data?.data?.results?.length).toBeLessThanOrEqual(5);
+      expect(result.data?.results?.length).toBeLessThanOrEqual(5);
     });
 
     it("3.4 should respect count=20 (maximum)", async () => {
       const result = await tools.webSearch(validQueries.simple, { count: 20 });
       expect(result.success).toBe(true);
-      expect(result.data?.data?.results?.length).toBeLessThanOrEqual(20);
+      expect(result.data?.results?.length).toBeLessThanOrEqual(20);
     });
 
     it("3.5 should reject count=0 (below minimum)", async () => {
@@ -283,16 +285,16 @@ describe("Searcher MCP Tests", () => {
       logSection("News Search Tests");
       const result = await tools.newsSearch(validQueries.newsWorthy);
       expect(result.success).toBe(true);
-      expect(result.data?.success).toBe(true);
-      expect(result.data?.data?.results).toBeInstanceOf(Array);
-      expect(result.data?.data?.query).toBe(validQueries.newsWorthy);
+
+      expect(result.data?.results).toBeInstanceOf(Array);
+      expect(result.data?.query).toBe(validQueries.newsWorthy);
     });
 
     it("6.2 should return results with correct structure", async () => {
       const result = await tools.newsSearch(validQueries.trending);
       expect(result.success).toBe(true);
 
-      const data = result.data?.data;
+      const data = result.data;
       expect(data).toBeDefined();
 
       // Check required fields
@@ -324,7 +326,7 @@ describe("Searcher MCP Tests", () => {
       });
       expect(result.success).toBe(true);
 
-      const data = result.data?.data;
+      const data = result.data;
       if (data?.results) {
         expect(data.total_count).toBe(data.results.length);
       }
@@ -339,7 +341,7 @@ describe("Searcher MCP Tests", () => {
     it("7.1 should use default count (10) when not specified", async () => {
       const result = await tools.newsSearch(validQueries.newsWorthy);
       expect(result.success).toBe(true);
-      expect(result.data?.data?.results?.length).toBeLessThanOrEqual(10);
+      expect(result.data?.results?.length).toBeLessThanOrEqual(10);
     });
 
     it("7.2 should respect count=1", async () => {
@@ -347,7 +349,7 @@ describe("Searcher MCP Tests", () => {
         count: 1,
       });
       expect(result.success).toBe(true);
-      expect(result.data?.data?.results?.length).toBeLessThanOrEqual(1);
+      expect(result.data?.results?.length).toBeLessThanOrEqual(1);
     });
 
     it("7.3 should respect count=20 (maximum)", async () => {
@@ -355,7 +357,7 @@ describe("Searcher MCP Tests", () => {
         count: 20,
       });
       expect(result.success).toBe(true);
-      expect(result.data?.data?.results?.length).toBeLessThanOrEqual(20);
+      expect(result.data?.results?.length).toBeLessThanOrEqual(20);
     });
 
     it("7.4 should reject count=0 (below minimum)", async () => {
@@ -494,6 +496,7 @@ describe("Searcher MCP Tests", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...authHeaders(),
         },
         body: "{ invalid json }",
       });
@@ -501,13 +504,16 @@ describe("Searcher MCP Tests", () => {
     });
 
     it("10.4 should return 404 for non-existent endpoint", async () => {
-      const response = await fetch(`${SEARCHER_URL}/nonexistent`);
+      const response = await fetch(`${SEARCHER_URL}/nonexistent`, {
+        headers: authHeaders(),
+      });
       expect(response.status).toBe(404);
     });
 
     it("10.5 should handle OPTIONS request (CORS preflight)", async () => {
       const response = await fetch(`${SEARCHER_URL}/tools/call`, {
         method: "OPTIONS",
+        headers: authHeaders(),
       });
       expect(response.status).toBe(204);
     });
@@ -526,7 +532,7 @@ describe("Searcher MCP Tests", () => {
         safesearch: "strict",
       });
       expect(result.success).toBe(true);
-      expect(result.data?.data?.results?.length).toBeLessThanOrEqual(5);
+      expect(result.data?.results?.length).toBeLessThanOrEqual(5);
     });
 
     it("11.2 should handle news_search with all parameters", async () => {
@@ -535,7 +541,7 @@ describe("Searcher MCP Tests", () => {
         freshness: "24h",
       });
       expect(result.success).toBe(true);
-      expect(result.data?.data?.results?.length).toBeLessThanOrEqual(3);
+      expect(result.data?.results?.length).toBeLessThanOrEqual(3);
     });
   });
 

@@ -30,7 +30,7 @@
     "@mcp/shared": "file:../Shared",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "croner": "^10.0.1",
-    "dotenv": "^16.3.0",
+    "dotenv": "^17.2.4",
     "inngest": "^3.50.0",
     "zod": "^3.24.0"
   },

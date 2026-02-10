@@ -1,4 +1,7 @@
 import { config as dotenvConfig } from 'dotenv';
+import { existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ConfigSchema, type Config } from './schema.js';
 import { ConfigurationError } from '../utils/errors.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
@@ -9,8 +12,14 @@ import {
   getEnvBoolean,
 } from '@mcp/shared/Utils/config.js';
 
-// Load .env file
-dotenvConfig();
+// Only load .env if it exists — dotenv v17 writes to stdout otherwise,
+// which corrupts MCP stdio transport
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const envPath = resolve(__dirname, '../../.env');
+if (existsSync(envPath)) {
+  dotenvConfig({ path: envPath, quiet: true });
+}
 
 // Use getEnvFloat for decimal values (temperature, thresholds)
 const getEnvNumber = getEnvFloat;

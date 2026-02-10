@@ -12,7 +12,7 @@ export const SEARCHER_URL = process.env.SEARCHER_URL || "http://localhost:8007";
 const client = new MCPTestClient('Searcher', SEARCHER_URL);
 
 /** Auth headers for raw fetch calls that bypass MCPTestClient */
-function authHeaders(): Record<string, string> {
+export function authHeaders(): Record<string, string> {
   const token = resolveToken();
   if (token) return { 'X-Annabelle-Token': token };
   return {};
@@ -141,7 +141,7 @@ export const tools = {
       safesearch?: "off" | "moderate" | "strict";
     }
   ) =>
-    callTool<StandardResponse<WebSearchData>>("web_search", {
+    callTool<WebSearchData>("web_search", {
       query,
       ...options,
     }),
@@ -153,14 +153,14 @@ export const tools = {
       freshness?: "24h" | "week" | "month";
     }
   ) =>
-    callTool<StandardResponse<NewsSearchData>>("news_search", {
+    callTool<NewsSearchData>("news_search", {
       query,
       ...options,
     }),
 
   webSearchRaw: (args: Record<string, unknown>) =>
-    callTool<StandardResponse<WebSearchData>>("web_search", args),
+    callTool<WebSearchData>("web_search", args),
 
   newsSearchRaw: (args: Record<string, unknown>) =>
-    callTool<StandardResponse<NewsSearchData>>("news_search", args),
+    callTool<NewsSearchData>("news_search", args),
 };

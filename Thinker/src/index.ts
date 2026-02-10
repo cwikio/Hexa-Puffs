@@ -1,4 +1,16 @@
-import 'dotenv/config';
+import { config as dotenvConfig } from 'dotenv';
+import { existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const envPath = resolve(__dirname, '../.env');
+// Only load .env if it exists — dotenv v17 writes to stdout otherwise
+if (existsSync(envPath)) {
+  dotenvConfig({ path: envPath, quiet: true });
+}
+
 import express, { Request, Response } from 'express';
 import type { AddressInfo } from 'net';
 import { loadConfig, validateProviderConfig, Config } from './config.js';

@@ -6,11 +6,17 @@
 import { config as dotenvConfig } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 
 // Load .env before any other imports that read process.env
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-dotenvConfig({ path: resolve(__dirname, "../.env") });
+const envPath = resolve(__dirname, "../.env");
+// Only load .env if it exists — dotenv v17 writes to stdout otherwise,
+// which corrupts MCP stdio transport
+if (existsSync(envPath)) {
+  dotenvConfig({ path: envPath, quiet: true });
+}
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
