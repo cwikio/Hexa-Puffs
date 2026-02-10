@@ -3,16 +3,12 @@ import { registerTool } from "@mcp/shared/Utils/register-tool.js";
 import {
   listVaultsSchema,
   handleListVaults,
-  type ListVaultsInput,
   listItemsSchema,
   handleListItems,
-  type ListItemsInput,
   getItemSchema,
   handleGetItem,
-  type GetItemInput,
   readSecretSchema,
   handleReadSecret,
-  type ReadSecretInput,
 } from "./tools/index.js";
 
 export function createServer(): McpServer {
@@ -32,7 +28,7 @@ export function createServer(): McpServer {
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (params) => handleListVaults(params as ListVaultsInput),
+    handler: async (params) => handleListVaults(params),
   });
 
   registerTool(server, {
@@ -46,7 +42,7 @@ export function createServer(): McpServer {
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (params) => handleListItems(params as ListItemsInput),
+    handler: async (params) => handleListItems(params),
   });
 
   registerTool(server, {
@@ -60,7 +56,7 @@ export function createServer(): McpServer {
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (params) => handleGetItem(params as GetItemInput),
+    handler: async (params) => handleGetItem(params),
   });
 
   registerTool(server, {
@@ -74,7 +70,7 @@ export function createServer(): McpServer {
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (params) => handleReadSecret(params as ReadSecretInput),
+    handler: async (params) => handleReadSecret(params),
   });
 
   return server;

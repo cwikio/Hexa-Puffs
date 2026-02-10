@@ -9,13 +9,10 @@ import { createSuccess } from "@mcp/shared/Types/StandardResponse.js";
 import {
   webSearchSchema,
   handleWebSearch,
-  type WebSearchInput,
   newsSearchSchema,
   handleNewsSearch,
-  type NewsSearchInput,
   imageSearchSchema,
   handleImageSearch,
-  type ImageSearchInput,
 } from "./tools/index.js";
 
 export function createServer(): McpServer {
@@ -36,7 +33,7 @@ export function createServer(): McpServer {
       openWorldHint: true,
     },
     handler: async (params) => {
-      const result = await handleWebSearch(params as WebSearchInput);
+      const result = await handleWebSearch(params);
       return createSuccess(result);
     },
   });
@@ -53,7 +50,7 @@ export function createServer(): McpServer {
       openWorldHint: true,
     },
     handler: async (params) => {
-      const result = await handleNewsSearch(params as NewsSearchInput);
+      const result = await handleNewsSearch(params);
       return createSuccess(result);
     },
   });
@@ -70,7 +67,7 @@ export function createServer(): McpServer {
       openWorldHint: true,
     },
     handler: async (params) => {
-      const result = await handleImageSearch(params as ImageSearchInput);
+      const result = await handleImageSearch(params);
       return createSuccess(result);
     },
   });

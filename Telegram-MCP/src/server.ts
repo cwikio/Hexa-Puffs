@@ -58,23 +58,6 @@ import {
   handleGetNewMessages,
   handleSubscribeChat,
 } from "./tools/index.js";
-import type {
-  SendMessageInput,
-  GetMessagesInput,
-  SearchMessagesInput,
-  DeleteMessagesInput,
-  ListChatsInput,
-  GetChatInput,
-  CreateGroupInput,
-  AddContactInput,
-  SearchUsersInput,
-  SendMediaInput,
-  DownloadMediaInput,
-  MarkReadInput,
-} from "./tools/index.js";
-
-// registerTool handler receives Record<string, unknown>; the SDK validates input
-// against the Zod schema before calling the handler, so the casts below are safe.
 
 export function createServer(): McpServer {
   const server = new McpServer({
@@ -88,7 +71,7 @@ export function createServer(): McpServer {
     description: sendMessageTool.description,
     inputSchema: sendMessageSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleSendMessage(params as SendMessageInput) }),
+    handler: async (params) => ({ success: true, data: await handleSendMessage(params) }),
   });
 
   registerTool(server, {
@@ -96,7 +79,7 @@ export function createServer(): McpServer {
     description: getMessagesTool.description,
     inputSchema: getMessagesSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleGetMessages(params as GetMessagesInput) }),
+    handler: async (params) => ({ success: true, data: await handleGetMessages(params) }),
   });
 
   registerTool(server, {
@@ -104,7 +87,7 @@ export function createServer(): McpServer {
     description: searchMessagesTool.description,
     inputSchema: searchMessagesSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleSearchMessages(params as SearchMessagesInput) }),
+    handler: async (params) => ({ success: true, data: await handleSearchMessages(params) }),
   });
 
   registerTool(server, {
@@ -112,7 +95,7 @@ export function createServer(): McpServer {
     description: deleteMessagesTool.description,
     inputSchema: deleteMessagesSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleDeleteMessages(params as DeleteMessagesInput) }),
+    handler: async (params) => ({ success: true, data: await handleDeleteMessages(params) }),
   });
 
   // Chats
@@ -121,7 +104,7 @@ export function createServer(): McpServer {
     description: listChatsTool.description,
     inputSchema: listChatsSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleListChats(params as ListChatsInput) }),
+    handler: async (params) => ({ success: true, data: await handleListChats(params) }),
   });
 
   registerTool(server, {
@@ -129,7 +112,7 @@ export function createServer(): McpServer {
     description: getChatTool.description,
     inputSchema: getChatSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleGetChat(params as GetChatInput) }),
+    handler: async (params) => ({ success: true, data: await handleGetChat(params) }),
   });
 
   registerTool(server, {
@@ -137,7 +120,7 @@ export function createServer(): McpServer {
     description: createGroupTool.description,
     inputSchema: createGroupSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleCreateGroup(params as CreateGroupInput) }),
+    handler: async (params) => ({ success: true, data: await handleCreateGroup(params) }),
   });
 
   // Contacts
@@ -154,7 +137,7 @@ export function createServer(): McpServer {
     description: addContactTool.description,
     inputSchema: addContactSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleAddContact(params as AddContactInput) }),
+    handler: async (params) => ({ success: true, data: await handleAddContact(params) }),
   });
 
   registerTool(server, {
@@ -162,7 +145,7 @@ export function createServer(): McpServer {
     description: searchUsersTool.description,
     inputSchema: searchUsersSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleSearchUsers(params as SearchUsersInput) }),
+    handler: async (params) => ({ success: true, data: await handleSearchUsers(params) }),
   });
 
   // Media
@@ -171,7 +154,7 @@ export function createServer(): McpServer {
     description: sendMediaTool.description,
     inputSchema: sendMediaSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleSendMedia(params as SendMediaInput) }),
+    handler: async (params) => ({ success: true, data: await handleSendMedia(params) }),
   });
 
   registerTool(server, {
@@ -179,7 +162,7 @@ export function createServer(): McpServer {
     description: downloadMediaTool.description,
     inputSchema: downloadMediaSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleDownloadMedia(params as DownloadMediaInput) }),
+    handler: async (params) => ({ success: true, data: await handleDownloadMedia(params) }),
   });
 
   // Utility
@@ -196,7 +179,7 @@ export function createServer(): McpServer {
     description: markReadTool.description,
     inputSchema: markReadSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    handler: async (params) => ({ success: true, data: await handleMarkRead(params as MarkReadInput) }),
+    handler: async (params) => ({ success: true, data: await handleMarkRead(params) }),
   });
 
   // Realtime

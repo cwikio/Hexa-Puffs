@@ -10,49 +10,36 @@ import { createSuccess } from '@mcp/shared/Types/StandardResponse.js';
 import {
   executeCodeSchema,
   handleExecuteCode,
-  type ExecuteCodeInput,
 } from './tools/execute-code.js';
 import {
   startSessionSchema,
   handleStartSession,
-  type StartSessionInput,
   sendToSessionSchema,
   handleSendToSession,
-  type SendToSessionInput,
   closeSessionSchema,
   handleCloseSession,
-  type CloseSessionInput,
   listSessionsSchema,
   handleListSessions,
-  type ListSessionsInput,
 } from './tools/sessions.js';
 import {
   installPackageSchema,
   handleInstallPackage,
-  type InstallPackageInput,
 } from './tools/packages.js';
 import {
   saveScriptSchema,
   handleSaveScript,
-  type SaveScriptInput,
   getScriptSchema,
   handleGetScript,
-  type GetScriptInput,
   listScriptsSchema,
   handleListScripts,
-  type ListScriptsInput,
   searchScriptsSchema,
   handleSearchScripts,
-  type SearchScriptsInput,
   runScriptSchema,
   handleRunScript,
-  type RunScriptInput,
   saveAndRunScriptSchema,
   handleSaveAndRunScript,
-  type SaveAndRunScriptInput,
   deleteScriptSchema,
   handleDeleteScript,
-  type DeleteScriptInput,
 } from './tools/scripts.js';
 import { SessionManager } from './sessions/manager.js';
 import { ScriptLibrary } from './scripts/library.js';
@@ -85,7 +72,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: true,
     },
     handler: async (params) => {
-      const result = await handleExecuteCode(params as ExecuteCodeInput);
+      const result = await handleExecuteCode(params);
       return createSuccess(result);
     },
   });
@@ -109,7 +96,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: true,
     },
     handler: async (params) => {
-      const result = await handleStartSession(sessionManager)(params as StartSessionInput);
+      const result = await handleStartSession(sessionManager)(params);
       return createSuccess(result);
     },
   });
@@ -132,7 +119,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: true,
     },
     handler: async (params) => {
-      const result = await handleSendToSession(sessionManager)(params as SendToSessionInput);
+      const result = await handleSendToSession(sessionManager)(params);
       return createSuccess(result);
     },
   });
@@ -152,7 +139,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleCloseSession(sessionManager)(params as CloseSessionInput);
+      const result = await handleCloseSession(sessionManager)(params);
       return createSuccess(result);
     },
   });
@@ -170,7 +157,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleListSessions(sessionManager)(params as ListSessionsInput);
+      const result = await handleListSessions(sessionManager)(params);
       return createSuccess(result);
     },
   });
@@ -194,7 +181,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: true,
     },
     handler: async (params) => {
-      const result = await handleInstallPackage(sessionManager)(params as InstallPackageInput);
+      const result = await handleInstallPackage(sessionManager)(params);
       return createSuccess(result);
     },
   });
@@ -223,7 +210,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleSaveScript(scriptLibrary)(params as SaveScriptInput);
+      const result = await handleSaveScript(scriptLibrary)(params);
       return createSuccess(result);
     },
   });
@@ -243,7 +230,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleGetScript(scriptLibrary)(params as GetScriptInput);
+      const result = await handleGetScript(scriptLibrary)(params);
       return createSuccess(result);
     },
   });
@@ -264,7 +251,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleListScripts(scriptLibrary)(params as ListScriptsInput);
+      const result = await handleListScripts(scriptLibrary)(params);
       return createSuccess(result);
     },
   });
@@ -284,7 +271,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleSearchScripts(scriptLibrary)(params as SearchScriptsInput);
+      const result = await handleSearchScripts(scriptLibrary)(params);
       return createSuccess(result);
     },
   });
@@ -307,7 +294,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: true,
     },
     handler: async (params) => {
-      const result = await handleRunScript(scriptLibrary)(params as RunScriptInput);
+      const result = await handleRunScript(scriptLibrary)(params);
       return createSuccess(result);
     },
   });
@@ -336,7 +323,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: true,
     },
     handler: async (params) => {
-      const result = await handleSaveAndRunScript(scriptLibrary)(params as SaveAndRunScriptInput);
+      const result = await handleSaveAndRunScript(scriptLibrary)(params);
       return createSuccess(result);
     },
   });
@@ -356,7 +343,7 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleDeleteScript(scriptLibrary)(params as DeleteScriptInput);
+      const result = await handleDeleteScript(scriptLibrary)(params);
       return createSuccess(result);
     },
   });

@@ -7,19 +7,19 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerTool } from "@mcp/shared/Utils/register-tool.js";
 import { createSuccess } from "@mcp/shared/Types/StandardResponse.js";
 import {
-  createFileSchema, handleCreateFile, type CreateFileInput,
-  readFileSchema, handleReadFile, type ReadFileInput,
-  listFilesSchema, handleListFiles, type ListFilesInput,
-  updateFileSchema, handleUpdateFile, type UpdateFileInput,
-  deleteFileSchema, handleDeleteFile, type DeleteFileInput,
-  moveFileSchema, handleMoveFile, type MoveFileInput,
-  copyFileSchema, handleCopyFile, type CopyFileInput,
-  searchFilesSchema, handleSearchFiles, type SearchFilesInput,
-  checkGrantSchema, handleCheckGrant, type CheckGrantInput,
-  requestGrantSchema, handleRequestGrant, type RequestGrantInput,
-  listGrantsSchema, handleListGrants, type ListGrantsInput,
-  getWorkspaceInfoSchema, handleGetWorkspaceInfo, type GetWorkspaceInfoInput,
-  getAuditLogSchema, handleGetAuditLog, type GetAuditLogInput,
+  createFileSchema, handleCreateFile,
+  readFileSchema, handleReadFile,
+  listFilesSchema, handleListFiles,
+  updateFileSchema, handleUpdateFile,
+  deleteFileSchema, handleDeleteFile,
+  moveFileSchema, handleMoveFile,
+  copyFileSchema, handleCopyFile,
+  searchFilesSchema, handleSearchFiles,
+  checkGrantSchema, handleCheckGrant,
+  requestGrantSchema, handleRequestGrant,
+  listGrantsSchema, handleListGrants,
+  getWorkspaceInfoSchema, handleGetWorkspaceInfo,
+  getAuditLogSchema, handleGetAuditLog,
 } from "./tools/index.js";
 
 export function createServer(): McpServer {
@@ -42,7 +42,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleCreateFile(params as CreateFileInput);
+      const result = await handleCreateFile(params);
       return createSuccess(result);
     },
   });
@@ -59,7 +59,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleReadFile(params as ReadFileInput);
+      const result = await handleReadFile(params);
       return createSuccess(result);
     },
   });
@@ -76,7 +76,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleListFiles(params as ListFilesInput);
+      const result = await handleListFiles(params);
       return createSuccess(result);
     },
   });
@@ -93,7 +93,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleUpdateFile(params as UpdateFileInput);
+      const result = await handleUpdateFile(params);
       return createSuccess(result);
     },
   });
@@ -110,7 +110,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleDeleteFile(params as DeleteFileInput);
+      const result = await handleDeleteFile(params);
       return createSuccess(result);
     },
   });
@@ -127,7 +127,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleMoveFile(params as MoveFileInput);
+      const result = await handleMoveFile(params);
       return createSuccess(result);
     },
   });
@@ -144,7 +144,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleCopyFile(params as CopyFileInput);
+      const result = await handleCopyFile(params);
       return createSuccess(result);
     },
   });
@@ -161,7 +161,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleSearchFiles(params as SearchFilesInput);
+      const result = await handleSearchFiles(params);
       return createSuccess(result);
     },
   });
@@ -180,7 +180,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleCheckGrant(params as CheckGrantInput);
+      const result = await handleCheckGrant(params);
       return createSuccess(result);
     },
   });
@@ -197,7 +197,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleRequestGrant(params as RequestGrantInput);
+      const result = await handleRequestGrant(params);
       return createSuccess(result);
     },
   });
@@ -214,7 +214,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleListGrants(params as ListGrantsInput);
+      const result = await handleListGrants(params);
       return createSuccess(result);
     },
   });
@@ -233,7 +233,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleGetWorkspaceInfo(params as GetWorkspaceInfoInput);
+      const result = await handleGetWorkspaceInfo(params);
       return createSuccess(result);
     },
   });
@@ -250,7 +250,7 @@ export function createServer(): McpServer {
       openWorldHint: false,
     },
     handler: async (params) => {
-      const result = await handleGetAuditLog(params as GetAuditLogInput);
+      const result = await handleGetAuditLog(params);
       return createSuccess(result);
     },
   });

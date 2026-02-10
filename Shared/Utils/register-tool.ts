@@ -40,14 +40,14 @@ interface ToolAnnotations extends Record<string, unknown> {
  * Handler receives already-validated input and should return a StandardResponse.
  * The wrapper handles MCP content formatting and error wrapping.
  */
-export function registerTool(
+export function registerTool<T extends z.AnyZodObject>(
   server: McpServerLike,
   config: {
     name: string;
     description: string;
-    inputSchema: z.AnyZodObject;
+    inputSchema: T;
     annotations?: ToolAnnotations;
-    handler: (input: Record<string, unknown>) => Promise<StandardResponse>;
+    handler: (input: z.infer<T>) => Promise<StandardResponse>;
   }
 ): void {
   server.registerTool(
@@ -59,7 +59,9 @@ export function registerTool(
     },
     async (args: Record<string, unknown>) => {
       try {
-        const result = await config.handler(args);
+        // SDK validates args against inputSchema before calling this callback,
+        // so the cast is safe — it's centralised here instead of at every call site.
+        const result = await config.handler(args as z.infer<T>);
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
         };

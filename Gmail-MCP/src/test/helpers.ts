@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import type { StandardResponse } from "../types/responses.js";
+import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 
 /**
  * Assert a StandardResponse is successful and return its data

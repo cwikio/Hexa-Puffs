@@ -5,7 +5,7 @@ import {
   type StandardResponse,
   createSuccess,
   createError,
-} from "../types/responses.js";
+} from "@mcp/shared/Types/StandardResponse.js";
 import type { Label } from "../types/gmail.js";
 
 // ============ LIST LABELS ============

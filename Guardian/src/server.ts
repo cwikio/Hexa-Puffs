@@ -9,10 +9,8 @@ import { createSuccess } from "@mcp/shared/Types/StandardResponse.js";
 import {
   scanContentSchema,
   handleScanContent,
-  type ScanContentInput,
   getScanLogSchema,
   handleGetScanLog,
-  type GetScanLogInput,
 } from "./tools/index.js";
 
 export function createServer(): McpServer {
@@ -34,7 +32,7 @@ export function createServer(): McpServer {
     },
     // SDK validates params against scanContentSchema before calling this handler
     handler: async (params) => {
-      const scanResult = await handleScanContent(params as ScanContentInput);
+      const scanResult = await handleScanContent(params);
       return createSuccess(scanResult);
     },
   });
@@ -52,7 +50,7 @@ export function createServer(): McpServer {
     },
     // SDK validates params against getScanLogSchema before calling this handler
     handler: async (params) => {
-      const logResult = await handleGetScanLog(params as GetScanLogInput);
+      const logResult = await handleGetScanLog(params);
       return createSuccess(logResult);
     },
   });

@@ -11,7 +11,7 @@ import {
   type StandardResponse,
   createSuccess,
   createError,
-} from "../types/responses.js";
+} from "@mcp/shared/Types/StandardResponse.js";
 import type { Draft } from "../types/gmail.js";
 
 // ============ LIST DRAFTS ============

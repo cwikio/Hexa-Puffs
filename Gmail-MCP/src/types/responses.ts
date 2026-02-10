@@ -1,23 +1,9 @@
 /**
- * Standardized response format used across all MCP tools
- * Matches the StandardResponse interface from the parent Shared folder
+ * Re-export from @mcp/shared for backwards compatibility.
+ * All tool files now import directly from @mcp/shared/Types/StandardResponse.js.
  */
-export interface StandardResponse<T = unknown> {
-  success: boolean;
-  error?: string;
-  data?: T;
-}
-
-/**
- * Create a successful response with data
- */
-export function createSuccess<T>(data: T): StandardResponse<T> {
-  return { success: true, data };
-}
-
-/**
- * Create an error response
- */
-export function createError(error: string): StandardResponse<never> {
-  return { success: false, error };
-}
+export {
+  type StandardResponse,
+  createSuccess,
+  createError,
+} from "@mcp/shared/Types/StandardResponse.js";
