@@ -31,6 +31,7 @@ const TOOL_GROUPS: Record<string, string[]> = {
   ],
   jobs: ['create_job', 'queue_task', 'list_jobs', 'get_job_status', 'delete_job',
          'memory_store_skill', 'memory_list_skills'],
+  codexec: ['codexec_*'],
 };
 
 /** Keyword patterns → tool groups to activate */
@@ -51,6 +52,8 @@ const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
     groups: ['telegram'] },
   { pattern: /browse|website|navigate|webpage|screenshot|login.*site|fill.*form|open.*page|scrape|web.*page|visit.*site|www\.\w|https?:\/\/|go\s+to\s+\S+\.\S/i,
     groups: ['browser'] },
+  { pattern: /\bcode\b|script|execute|python|node\.?js|bash|calculate|compute|program/i,
+    groups: ['codexec'] },
   { pattern: /cron|remind me|recurring|every\s+(day|hour|week|minute|morning|evening|\d)|daily at|weekly|hourly|schedule.*(task|job|remind)|per\s+(minute|hour|day|week)|for\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(minute|hour|day|week)|\d+\s*times|once\s+a\s+(day|week|hour|minute)|repeat/i,
     groups: ['jobs'] },
   { pattern: /photo|picture|image|pic|show\s?me|gallery|wallpaper/i,

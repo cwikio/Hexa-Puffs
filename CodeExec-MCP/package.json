@@ -1,0 +1,36 @@
+{
+  "name": "codexec-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for sandboxed code execution",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && npm run copy-wrappers",
+    "copy-wrappers": "mkdir -p dist/sessions/wrappers && cp src/sessions/wrappers/* dist/sessions/wrappers/",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": ["mcp", "code-execution", "sandbox", "model-context-protocol"],
+  "license": "MIT",
+  "dependencies": {
+    "@mcp/shared": "file:../Shared",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^17.2.3",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "annabelle": {
+    "mcpName": "codexec",
+    "transport": "stdio",
+    "sensitive": true
+  }
+}

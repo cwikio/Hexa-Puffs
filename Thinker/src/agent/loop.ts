@@ -443,6 +443,17 @@ export class Agent {
       const selectedTools = selectToolsForMessage(message.text, this.tools);
       let result;
       let usedTextOnlyFallback = false;
+
+      // Capture completed steps via onStepFinish so we can recover tool results
+      // if generateText() fails mid-loop (e.g., tools execute but the follow-up LLM call errors)
+      interface CapturedStep {
+        toolCalls: Array<{ toolName: string; args: unknown }>;
+        toolResults: Array<{ result: unknown }>;
+        text: string;
+      }
+      const capturedSteps: CapturedStep[] = [];
+      const onStepFinish = (step: CapturedStep) => { capturedSteps.push(step); };
+
       try {
         result = await generateText({
           model: this.modelFactory.getModel(),
@@ -453,6 +464,7 @@ export class Agent {
           maxSteps: 8,
           temperature: this.config.temperature,
           abortSignal: agentAbort,
+          onStepFinish,
         });
       } catch (toolError) {
         // If function calling fails (malformed JSON from model), retry with tools once, then fallback
@@ -466,16 +478,18 @@ export class Agent {
           console.warn(`Tool call failed, retrying once with tools: ${toolErrorMsg}`);
 
           try {
-            // First retry: try again with tools (sometimes it's just a flaky response)
+            // First retry: reduce complexity and nudge temperature for a different response path
+            const retryTemp = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
             result = await generateText({
               model: this.modelFactory.getModel(),
               system: context.systemPrompt,
               messages: [...context.conversationHistory, { role: 'user', content: message.text }],
               tools: selectedTools,
               toolChoice: 'auto',
-              maxSteps: 8,
-              temperature: this.config.temperature,
+              maxSteps: 4,
+              temperature: retryTemp,
               abortSignal: agentAbort,
+              onStepFinish,
             });
           } catch (retryError) {
             const retryErrorMsg = retryError instanceof Error ? retryError.message : '';
@@ -489,20 +503,74 @@ export class Agent {
               const rephrasedText = `Context from the previous response: "${lastAssistantMsg.content.substring(0, 300)}"\n\nThe user is now asking: ${message.text}`;
               try {
                 console.warn('Trying rephrased message with tools...');
+                const retryTemp2 = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
                 result = await generateText({
                   model: this.modelFactory.getModel(),
                   system: context.systemPrompt,
                   messages: [...context.conversationHistory, { role: 'user', content: rephrasedText }],
                   tools: selectedTools,
                   toolChoice: 'auto',
-                  maxSteps: 8,
-                  temperature: this.config.temperature,
+                  maxSteps: 4,
+                  temperature: retryTemp2,
                   abortSignal: agentAbort,
+                  onStepFinish,
                 });
               } catch (rephraseError) {
                 const rephraseErrorMsg = rephraseError instanceof Error ? rephraseError.message : '';
                 console.warn(`Rephrased retry also failed, falling back to text-only: ${rephraseErrorMsg}`);
                 result = undefined;
+              }
+            }
+
+            // If retries failed but tools DID execute (captured via onStepFinish),
+            // summarize the tool results instead of losing them to text-only fallback
+            if (!result && capturedSteps.length > 0) {
+              const collectedResults: Array<{ tool: string; result: unknown }> = [];
+              for (const step of capturedSteps) {
+                if (step.toolCalls?.length && step.toolResults?.length) {
+                  for (let j = 0; j < step.toolCalls.length; j++) {
+                    const call = step.toolCalls[j];
+                    const res = step.toolResults[j];
+                    if (res?.result !== undefined && res.result !== null) {
+                      collectedResults.push({ tool: call.toolName, result: res.result });
+                    }
+                  }
+                }
+              }
+
+              if (collectedResults.length > 0) {
+                console.log(`[tool-recovery] Retries failed but ${collectedResults.length} tool(s) executed — summarizing results`);
+                const resultsText = collectedResults
+                  .map((r) => {
+                    const json = JSON.stringify(r.result);
+                    const truncated = json.length > 2000 ? json.substring(0, 2000) + '...(truncated)' : json;
+                    return `Tool: ${r.tool}\nResult: ${truncated}`;
+                  })
+                  .join('\n\n');
+
+                try {
+                  result = await generateText({
+                    model: this.modelFactory.getModel(),
+                    system: 'You are a helpful assistant. The user asked a question and tools were called to get data. Summarize the tool results into a concise, natural response for the user. Do NOT mention tools or technical details — just answer naturally.',
+                    messages: [
+                      { role: 'user', content: message.text },
+                      { role: 'user', content: `Here are the results:\n\n${resultsText}` },
+                    ],
+                    temperature: this.config.temperature,
+                    abortSignal: agentAbort,
+                  });
+                  console.log('[tool-recovery] Summarization successful');
+                } catch (summaryError) {
+                  console.warn('[tool-recovery] Summarization failed, using raw output:', summaryError);
+                  // Build a synthetic result-like object — the raw text will be used as responseText
+                  const rawText = collectedResults
+                    .map((r) => {
+                      const json = JSON.stringify(r.result, null, 2);
+                      return json.length > 500 ? json.substring(0, 500) + '...' : json;
+                    })
+                    .join('\n\n');
+                  result = { text: rawText, steps: [], toolCalls: [], toolResults: [], finishReason: 'stop', usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, warnings: undefined, response: { id: '', timestamp: new Date(), modelId: '' }, logprobs: undefined, reasoning: undefined, reasoningDetails: [], files: [], sources: [], request: {}, responseMessages: [] } as unknown as typeof result;
+                }
               }
             }
 
@@ -584,7 +652,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
             console.log(`[tool-recovery] Recovery successful, response: "${responseText.substring(0, 80)}"`);
           } else {
             console.warn(`[tool-recovery] Recovery failed: ${recovery.error}`);
-            responseText = sanitizeResponseText(result.text || '');
+            responseText = leak.preamble || 'I tried to do that but ran into an issue. Could you try again?';
           }
         } else {
           responseText = sanitizeResponseText(result.text || '');
@@ -711,13 +779,16 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
         }
       }
 
-      // Collect tools used (include any recovered leaked tool calls)
+      // Collect tools used (include any recovered leaked tool calls and captured step tools)
+      const resultToolNames = result.steps.flatMap(
+        (step) => step.toolCalls?.map((tc) => tc.toolName) || []
+      );
+      const capturedToolNames = capturedSteps.flatMap(
+        (step) => step.toolCalls?.map((tc) => tc.toolName) || []
+      );
       const toolsUsed = usedTextOnlyFallback
         ? ['(text-only fallback)']
-        : [
-            ...result.steps.flatMap((step) => step.toolCalls?.map((tc) => tc.toolName) || []),
-            ...recoveredTools,
-          ];
+        : [...new Set([...resultToolNames, ...capturedToolNames, ...recoveredTools])];
 
       // Send response to Telegram and store conversation
       // (skip when Orchestrator handles delivery — sendResponseDirectly=false)
@@ -900,7 +971,7 @@ Complete the task step by step, using your available tools. When done, provide a
             recoveredTools = [leak.toolName];
           } else {
             console.warn(`[tool-recovery] Proactive recovery failed: ${recovery.error}`);
-            responseText = sanitizeResponseText(result.text || 'Task completed without summary.');
+            responseText = leak.preamble || 'Task encountered an issue. Please check and try again.';
           }
         } else {
           responseText = sanitizeResponseText(result.text || 'Task completed without summary.');

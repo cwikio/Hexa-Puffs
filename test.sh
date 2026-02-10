@@ -347,6 +347,7 @@ if [ "$RUN_VITEST" = true ]; then
   run_mcp_unit_tests "Gmail" "$MCP_DIR/Gmail-MCP"
   run_mcp_unit_tests "Filer" "$MCP_DIR/Filer-MCP"
   run_mcp_unit_tests "Guardian" "$MCP_DIR/Guardian"
+  run_mcp_tests "CodeExec" "$MCP_DIR/CodeExec-MCP"
 
   # =====================================================
   # Section 4: Standalone HTTP MCP Tests

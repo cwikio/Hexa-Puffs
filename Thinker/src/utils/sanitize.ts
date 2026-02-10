@@ -19,7 +19,8 @@ const SANITIZE_PATTERNS: RegExp[] = [
   /<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi,
 
   // JSON-style function calls: {"function": ...}, {"tool_call": ...}, or {"name": ..., "parameters": ...}
-  /\{"(?:function|tool_call|name)"\s*:\s*"[^"]+"\s*,?\s*(?:"(?:parameters|arguments)"\s*:\s*\{[\s\S]*?\})?\s*\}/gi,
+  // Uses \s* after opening brace to handle pretty-printed/multi-line JSON from Groq/Llama
+  /\{\s*"(?:function|tool_call|name)"\s*:\s*"[^"]+"\s*,?\s*(?:"(?:parameters|arguments)"\s*:\s*\{[\s\S]*?\})?\s*\}/gi,
 
   // Action tags: [Action: tool_name] or [[tool_name]]
   /\[(?:Action:\s*)?[a-z_]+(?:\s*\([^)]*\))?\]/gi,
