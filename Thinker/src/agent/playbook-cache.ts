@@ -8,6 +8,9 @@ import type { OrchestratorClient } from '../orchestrator/client.js';
 import type { TraceContext } from '../tracing/types.js';
 import { type CachedPlaybook, parseSkillToPlaybook } from './playbook-classifier.js';
 import { SkillLoader } from './skill-loader.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:playbooks');
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -36,10 +39,10 @@ export class PlaybookCache {
       try {
         this.fileSkills = await this.skillLoader.scan();
         if (this.fileSkills.length > 0) {
-          console.log(`Loaded ${this.fileSkills.length} file-based skill(s) from disk`);
+          logger.info(`Loaded ${this.fileSkills.length} file-based skill(s) from disk`);
         }
       } catch (error) {
-        console.warn('Failed to load file-based skills (non-fatal):', error);
+        logger.warn('Failed to load file-based skills (non-fatal)', error);
       }
     }
 
@@ -98,7 +101,7 @@ export class PlaybookCache {
       this.lastRefresh = Date.now();
     } catch (error) {
       // Keep stale cache on failure — better than no playbooks
-      console.error('Failed to refresh playbook cache:', error);
+      logger.error('Failed to refresh playbook cache', error);
     }
   }
 }

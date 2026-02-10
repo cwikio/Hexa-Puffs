@@ -14,6 +14,7 @@
     "test:proactive": "vitest run tests/integration/proactive-tasks.test.ts"
   },
   "dependencies": {
+    "@mcp/shared": "file:../Shared",
     "@ai-sdk/groq": "^1.2.9",
     "@ai-sdk/openai": "^1.0.0",
     "ai": "^4.0.0",

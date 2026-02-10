@@ -47,15 +47,7 @@ export interface GuardianScanResult {
   explanation: string;
 }
 
-export class OllamaClientError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode?: number
-  ) {
-    super(message);
-    this.name = "OllamaClientError";
-  }
-}
+import { OllamaClientError } from '../errors.js';
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434";
 const MODEL_NAME = process.env.MODEL_NAME || "guardian";

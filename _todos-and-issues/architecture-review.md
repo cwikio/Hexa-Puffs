@@ -129,13 +129,11 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 
 **Resolved:** All HTTP servers (dual-transport, Searcher, Orchestrator, Inngest) bind `127.0.0.1`. CORS restricted to `localhost`/`127.0.0.1` origins. `start-all.sh` generates a per-session `ANNABELLE_TOKEN` (saved to `~/.annabelle/annabelle.token`), passed to all services. Non-`/health` requests require `X-Annabelle-Token` header. Orchestrator's `BaseMCPClient` sends the token on all outgoing HTTP calls. `test.sh` reads the token from file.
 
-### 9. Standardize Logging (Low-Medium Impact, Low Effort)
+### ~~9. Standardize Logging~~ ✅ DONE
 
-**Status:** Partially done
+**Problem:** Thinker was the only package still using `console.log`/`console.error` (95 calls across 13 files) instead of the shared `Logger` from `@mcp/shared`.
 
-**Current state:** Orchestrator (100% shared Logger, 0 console.log), Guardian, Filer, Memorizer all use shared Logger. **Thinker is the outlier** — 110 `console.log` occurrences across 13 files vs 13 shared Logger calls.
-
-**Remaining:** Migrate Thinker from `console.log`/`console.error` to shared `Logger`.
+**Resolved:** All 13 Thinker source files migrated to shared `Logger`. Console override hack in `index.ts` removed. `LISTENING_PORT=` protocol line preserved on stdout via `process.stdout.write()`.
 
 ---
 
@@ -165,17 +163,17 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 
 **Resolved:** Removed legacy port cleanup lines. Updated tip to reference `./restart.sh` instead of `pkill -f "node dist"`.
 
-### E. 1Password-MCP has zero tests (Medium Impact, Low Effort)
+### ~~E. 1Password-MCP has zero tests~~ ✅ DONE
 
 **Problem:** Only package with no test files (11/12 have tests). Has `vitest.config.ts` but no actual tests. Read-only MCP but still untested.
 
-**Fix:** Add integration tests for vault listing and item retrieval tools.
+**Resolved:** Added vitest setup (`vitest.config.ts`, `test`/`test:unit` scripts), 16 unit tests for all 4 tool handlers (success, OpClientError, generic error paths) + 2 server registration tests. All 18 tests pass.
 
-### F. Guardian still uses plain `Error` (Low Impact, Low Effort)
+### ~~F. Guardian shared error types~~ ✅ DONE
 
-**Problem:** Orchestrator and Memorizer extend `BaseError` from shared. Guardian still uses `throw new Error()` in 3 files (groq/safeguard-client.ts, groq/client.ts, ollama/client.ts).
+**Problem:** Orchestrator and Memorizer extend `BaseError` from shared. Guardian still used plain `Error` subclasses (`GroqClientError`, `OllamaClientError`).
 
-**Fix:** Extend shared error types in Guardian.
+**Resolved:** Created `Guardian/src/errors.ts` with `GuardianError` → `GroqClientError` / `OllamaClientError` extending `BaseError`. Constructor signatures preserved — no call-site changes needed.
 
 ### G. Deprecated `Server` class in Gmail, Telegram, Memorizer (Low Impact, Medium Effort)
 
@@ -208,11 +206,11 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 | --- | ---------------------------------------- | ------ | ------ | ------ |
 | ~~8~~ | ~~HTTP transport security (CORS, bind, auth)~~ | Low  | High   | ✅ |
 
-### Tier 3: Test gaps
+### ~~Tier 3: Test gaps~~ ✅ ALL DONE
 
-| #   | Improvement                              | Effort | Impact |
-| --- | ---------------------------------------- | ------ | ------ |
-| E   | Add tests for 1Password-MCP             | Low    | Medium |
+| #   | Improvement                              | Effort | Impact | Status |
+| --- | ---------------------------------------- | ------ | ------ | ------ |
+| ~~E~~ | ~~Add tests for 1Password-MCP~~        | Low    | Medium | ✅ |
 
 ### Tier 4: Consistency
 

@@ -5,6 +5,9 @@
 
 import type { OrchestratorClient } from '../orchestrator/client.js';
 import type { TraceContext } from '../tracing/types.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:playbook-seed');
 
 interface PlaybookSeed {
   name: string;
@@ -510,12 +513,12 @@ export async function seedPlaybooks(
     if (response.success) {
       seeded++;
     } else {
-      console.error(`Failed to seed playbook "${playbook.name}":`, response.error);
+      logger.error(`Failed to seed playbook "${playbook.name}"`, response.error);
     }
   }
 
   if (seeded > 0) {
-    console.log(`Seeded ${seeded} playbook(s) (${existing.length} already existed)`);
+    logger.info(`Seeded ${seeded} playbook(s) (${existing.length} already existed)`);
   }
 
   return seeded;

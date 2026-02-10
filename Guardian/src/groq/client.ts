@@ -68,15 +68,7 @@ const BLOCKING_CATEGORIES = new Set([
   "S14", // Code Interpreter Abuse / Prompt Injection
 ]);
 
-export class GroqClientError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode?: number
-  ) {
-    super(message);
-    this.name = "GroqClientError";
-  }
-}
+import { GroqClientError } from '../errors.js';
 
 /**
  * Check if Groq API is accessible

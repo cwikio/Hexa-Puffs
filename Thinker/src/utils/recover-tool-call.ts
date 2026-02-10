@@ -7,6 +7,9 @@
  */
 
 import type { CoreTool } from 'ai';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:tool-recovery');
 
 interface LeakDetection {
   detected: boolean;
@@ -77,11 +80,11 @@ export async function recoverLeakedToolCall(
       toolCallId: `recovery-${Date.now()}`,
       messages: [],
     });
-    console.log(`[tool-recovery] Tool "${toolName}" executed successfully`);
+    logger.info(`Tool "${toolName}" executed successfully`);
     return { success: true, result };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error(`[tool-recovery] Tool "${toolName}" execution failed: ${msg}`);
+    logger.error(`Tool "${toolName}" execution failed: ${msg}`);
     return { success: false, error: msg };
   }
 }

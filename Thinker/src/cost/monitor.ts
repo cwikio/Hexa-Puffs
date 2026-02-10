@@ -17,6 +17,9 @@
  */
 
 import type { CostControlConfig, CostStatus, TokenBucket } from './types.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:cost');
 
 const TOTAL_BUCKETS = 60; // 60 minutes = 1 hour of history
 
@@ -70,7 +73,7 @@ export class CostMonitor {
       this._paused = true;
       this._pauseReason = result.reason;
       this._pausedAt = Date.now();
-      console.warn(`[CostMonitor] PAUSED — ${result.reason}`);
+      logger.warn(`PAUSED — ${result.reason}`);
     }
   }
 

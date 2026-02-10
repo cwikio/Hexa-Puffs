@@ -11,6 +11,9 @@ import { readdir, readFile, stat } from 'fs/promises';
 import { resolve, join } from 'path';
 import { parse as parseYaml } from 'yaml';
 import type { CachedPlaybook } from './playbook-classifier.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:skill-loader');
 
 /**
  * Parsed SKILL.md frontmatter following the agentskills.io spec.
@@ -117,7 +120,7 @@ export class SkillLoader {
     // Split frontmatter from body
     const parts = splitFrontmatter(content);
     if (!parts) {
-      console.warn(`[skill-loader] ${dirName}/SKILL.md has no valid YAML frontmatter, skipping`);
+      logger.warn(` ${dirName}/SKILL.md has no valid YAML frontmatter, skipping`);
       return null;
     }
 
@@ -126,27 +129,26 @@ export class SkillLoader {
     try {
       fm = parseYaml(parts.yaml);
     } catch (error) {
-      console.warn(
-        `[skill-loader] Failed to parse YAML in ${dirName}/SKILL.md:`,
-        error instanceof Error ? error.message : error,
+      logger.warn(
+        `Failed to parse YAML in ${dirName}/SKILL.md: ${error instanceof Error ? error.message : error}`,
       );
       return null;
     }
 
     // Validate required fields (agentskills.io spec)
     if (!fm.name || typeof fm.name !== 'string') {
-      console.warn(`[skill-loader] ${dirName}/SKILL.md missing required 'name' field, skipping`);
+      logger.warn(` ${dirName}/SKILL.md missing required 'name' field, skipping`);
       return null;
     }
     if (!fm.description || typeof fm.description !== 'string') {
-      console.warn(`[skill-loader] ${dirName}/SKILL.md missing required 'description' field, skipping`);
+      logger.warn(` ${dirName}/SKILL.md missing required 'description' field, skipping`);
       return null;
     }
 
     // Validate name matches directory name (agentskills.io requirement)
     if (fm.name !== dirName) {
-      console.warn(
-        `[skill-loader] ${dirName}/SKILL.md name "${fm.name}" doesn't match directory name "${dirName}", skipping`,
+      logger.warn(
+        `${dirName}/SKILL.md name "${fm.name}" doesn't match directory name "${dirName}", skipping`,
       );
       return null;
     }

@@ -29,13 +29,18 @@ The MCP stack uses a **multi-level testing strategy**:
 
 Each MCP has its own test suite that can be run independently:
 
-| MCP | Port | Test Command | Description |
-|-----|------|--------------|-------------|
-| Filer | 8004 | `cd Filer-MCP && npm test` | File operations (CRUD, search, audit) |
-| Memorizer | 8005 | `cd Memorizer-MCP && npm test` | Facts, conversations, profiles |
-| Telegram | 8002 | `cd Telegram-MCP && npm test` | Message send/receive, chat management |
-| Guardian | 8003 | `cd Guardian && npm test` | Security scanning, content validation |
-| Orchestrator | 8010 | `cd Orchestrator && npm test` | Routing, workflows, jobs |
+| MCP | Transport | Test Command | Description |
+|-----|-----------|--------------|-------------|
+| Shared | — | `cd Shared && npm test` | Shared utilities, types, logger |
+| Guardian | stdio | `cd Guardian && npm test` | Security scanning, content validation |
+| Filer | stdio | `cd Filer-MCP && npm test` | File operations (CRUD, search, audit) |
+| Memorizer | stdio | `cd Memorizer-MCP && npm test` | Facts, conversations, profiles |
+| 1Password | stdio | `cd Onepassword-MCP && npm test` | Vault reading (read-only) |
+| CodeExec | stdio | `cd CodeExec-MCP && npm test` | Sandboxed code execution |
+| Telegram | HTTP :8002 | `cd Telegram-MCP && npm test` | Message send/receive, chat management |
+| Searcher | HTTP :8007 | `cd Searcher-MCP && npm test` | Web/news/image search |
+| Gmail | HTTP :8008 | `cd Gmail-MCP && npm test` | Email and calendar operations |
+| Orchestrator | HTTP :8010 | `cd Orchestrator && npm test` | Routing, discovery, workflows, jobs |
 
 ## Level 3 Workflow Tests
 
@@ -69,19 +74,14 @@ npm run test:workflow:jobs
 
 ### Required Services
 
-Before running tests, ensure the required MCPs are running:
+Before running integration/workflow tests, ensure the stack is running:
 
 ```bash
-# Launch all MCPs
+# Launch full stack (Orchestrator spawns stdio MCPs automatically)
 ./start-all.sh
-
-# Or launch individually
-cd Filer-MCP && npm run dev &
-cd Memorizer-MCP && npm run dev &
-cd Telegram-MCP && npm run dev &
-cd Guardian && npm run dev &
-cd Orchestrator && npm run dev &
 ```
+
+Note: Stdio MCPs (Guardian, Filer, Memorizer, 1Password, CodeExec) are spawned by Orchestrator — they don't need individual launch commands. Only HTTP MCPs (Telegram, Searcher, Gmail) and Orchestrator itself are started by `start-all.sh`. Unit tests (`npm test` per package) don't require running services.
 
 ### External Dependencies
 

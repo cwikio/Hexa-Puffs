@@ -1,5 +1,8 @@
 import { generateText, type LanguageModelV1 } from 'ai';
 import { z } from 'zod';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:fact-extraction');
 
 /**
  * Fact categories matching Memorizer-MCP's schema
@@ -117,7 +120,7 @@ export async function extractFactsFromConversation(
     // Extract JSON from response (handle models that wrap in markdown)
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.log('[fact-extraction] No JSON found in LLM response');
+      logger.info('No JSON found in LLM response');
       return [];
     }
 
@@ -125,7 +128,7 @@ export async function extractFactsFromConversation(
     const validated = ExtractionResponseSchema.safeParse(parsed);
 
     if (!validated.success) {
-      console.warn('[fact-extraction] Response validation failed:', validated.error.flatten());
+      logger.warn('Response validation failed', validated.error.flatten());
       return [];
     }
 
@@ -133,10 +136,7 @@ export async function extractFactsFromConversation(
       .filter((f) => f.confidence >= confidenceThreshold)
       .slice(0, 5);
   } catch (error) {
-    console.warn(
-      '[fact-extraction] Extraction failed (non-fatal):',
-      error instanceof Error ? error.message : error,
-    );
+    logger.warn('Extraction failed (non-fatal)', error instanceof Error ? error.message : error);
     return [];
   }
 }

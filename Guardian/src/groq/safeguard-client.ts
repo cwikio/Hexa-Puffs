@@ -6,7 +6,7 @@
  */
 
 import { type GuardianScanResult } from "../ollama/client.js";
-import { GroqClientError } from "./client.js";
+import { GroqClientError } from "../errors.js";
 import { waitForRateLimit } from "./rate-limiter.js";
 import { MCP_SECURITY_POLICY, SAFEGUARD_CATEGORY_MAP } from "./policies.js";
 import { Logger } from "@mcp/shared/Utils/logger.js";

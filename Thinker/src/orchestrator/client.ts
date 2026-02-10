@@ -1,6 +1,9 @@
 import type { Config } from '../config.js';
 import type { TraceContext } from '../tracing/types.js';
 import { createTraceHeaders } from '../tracing/context.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:orchestrator');
 import type {
   OrchestratorTool,
   ToolExecutionResponse,
@@ -86,7 +89,7 @@ export class OrchestratorClient {
 
       return tools;
     } catch (error) {
-      console.error('Failed to discover tools:', error);
+      logger.error('Failed to discover tools', error);
       return [];
     }
   }

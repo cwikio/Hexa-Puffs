@@ -21,6 +21,9 @@ import { seedPlaybooks } from './playbook-seed.js';
 import { selectToolsForMessage } from './tool-selector.js';
 import { extractFactsFromConversation } from './fact-extractor.js';
 import { detectLeakedToolCall, recoverLeakedToolCall } from '../utils/recover-tool-call.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:agent');
 
 /**
  * Default system prompt for the agent
@@ -167,15 +170,15 @@ export class Agent {
     // Initialize cost monitor if enabled
     if (config.costControl?.enabled) {
       this.costMonitor = new CostMonitor(config.costControl);
-      console.log(`Cost monitor enabled (spike: ${config.costControl.spikeMultiplier}x, hard cap: ${config.costControl.hardCapTokensPerHour} tokens/hr)`);
+      logger.info(`Cost monitor enabled (spike: ${config.costControl.spikeMultiplier}x, hard cap: ${config.costControl.hardCapTokensPerHour} tokens/hr)`);
     }
 
     if (config.sessionConfig.enabled) {
-      console.log(`Session persistence enabled (dir: ${config.sessionsDir}, compaction: ${config.sessionConfig.compactionEnabled})`);
+      logger.info(`Session persistence enabled (dir: ${config.sessionsDir}, compaction: ${config.sessionConfig.compactionEnabled})`);
     }
 
     if (config.factExtraction.enabled) {
-      console.log(`Fact extraction enabled (idle: ${config.factExtraction.idleMs / 1000}s, maxTurns: ${config.factExtraction.maxTurns})`);
+      logger.info(`Fact extraction enabled (idle: ${config.factExtraction.idleMs / 1000}s, maxTurns: ${config.factExtraction.maxTurns})`);
     }
   }
 
@@ -183,15 +186,15 @@ export class Agent {
    * Initialize the agent - discover tools, etc.
    */
   async initialize(): Promise<void> {
-    console.log('Initializing agent...');
+    logger.info('Initializing agent...');
 
     // Load custom system prompt from file if configured
     if (this.config.systemPromptPath) {
       try {
         this.customSystemPrompt = await readFile(this.config.systemPromptPath, 'utf-8');
-        console.log(`Loaded custom system prompt from ${this.config.systemPromptPath} (${this.customSystemPrompt.length} chars)`);
+        logger.info(`Loaded custom system prompt from ${this.config.systemPromptPath} (${this.customSystemPrompt.length} chars)`);
       } catch (error) {
-        console.error(`Failed to load system prompt from ${this.config.systemPromptPath}:`, error);
+        logger.error(`Failed to load system prompt from ${this.config.systemPromptPath}:`, error);
         // Fall through to DEFAULT_SYSTEM_PROMPT
       }
     }
@@ -201,20 +204,20 @@ export class Agent {
     const personaPath = resolve(personaDir, this.config.thinkerAgentId, 'instructions.md');
     try {
       this.personaPrompt = await readFile(personaPath, 'utf-8');
-      console.log(`Loaded persona from ${personaPath} (${this.personaPrompt.length} chars)`);
+      logger.info(`Loaded persona from ${personaPath} (${this.personaPrompt.length} chars)`);
     } catch {
-      console.log(`No persona file at ${personaPath}, using defaults`);
+      logger.info(`No persona file at ${personaPath}, using defaults`);
     }
 
     // Check Orchestrator health
     const healthy = await this.orchestrator.healthCheck();
     if (!healthy) {
-      console.warn('Warning: Orchestrator is not healthy. Some features may not work.');
+      logger.warn('Warning: Orchestrator is not healthy. Some features may not work.');
     }
 
     // Discover tools from Orchestrator
     const orchestratorTools = await this.orchestrator.discoverTools();
-    console.log(`Discovered ${orchestratorTools.length} tools from Orchestrator`);
+    logger.info(`Discovered ${orchestratorTools.length} tools from Orchestrator`);
 
     // Create tools from Orchestrator
     const dynamicTools = createToolsFromOrchestrator(
@@ -233,15 +236,15 @@ export class Agent {
     // Merge tools (essential tools override dynamic ones)
     this.tools = { ...dynamicTools, ...essentialTools };
 
-    console.log(`Total tools available: ${Object.keys(this.tools).length}`);
+    logger.info(`Total tools available: ${Object.keys(this.tools).length}`);
 
     // Seed default playbooks (idempotent) and initialize cache
     try {
       await seedPlaybooks(this.orchestrator, this.config.thinkerAgentId);
       await this.playbookCache.initialize();
-      console.log(`Playbook cache loaded: ${this.playbookCache.getPlaybooks().length} playbook(s)`);
+      logger.info(`Playbook cache loaded: ${this.playbookCache.getPlaybooks().length} playbook(s)`);
     } catch (error) {
-      console.warn('Failed to initialize playbooks (non-fatal):', error);
+      logger.warn('Failed to initialize playbooks (non-fatal):', error);
     }
   }
 
@@ -266,10 +269,10 @@ export class Agent {
         if (saved) {
           messages = saved.messages;
           compactionSummary = saved.compactionSummary;
-          console.log(`Restored session ${chatId} from disk (${saved.turnCount} turns${compactionSummary ? ', with compaction summary' : ''})`);
+          logger.info(`Restored session ${chatId} from disk (${saved.turnCount} turns${compactionSummary ? ', with compaction summary' : ''})`);
         }
       } catch (error) {
-        console.warn(`Failed to load session ${chatId} from disk:`, error);
+        logger.warn(`Failed to load session ${chatId} from disk:`, error);
       }
     }
 
@@ -395,7 +398,7 @@ export class Agent {
     try {
       // Circuit breaker check
       if (this.circuitBreakerTripped) {
-        console.warn('Circuit breaker is tripped - skipping message processing');
+        logger.warn('Circuit breaker is tripped - skipping message processing');
         return {
           success: false,
           toolsUsed: [],
@@ -406,7 +409,7 @@ export class Agent {
 
       // Cost control pause check
       if (this.costMonitor?.paused) {
-        console.warn('Agent paused by cost controls - skipping message processing');
+        logger.warn('Agent paused by cost controls - skipping message processing');
         return {
           success: false,
           toolsUsed: [],
@@ -475,7 +478,7 @@ export class Agent {
           toolErrorMsg.includes('tool call validation failed') ||
           toolErrorMsg.includes('maximum number of items');
         if (isToolCallError) {
-          console.warn(`Tool call failed, retrying once with tools: ${toolErrorMsg}`);
+          logger.warn(`Tool call failed, retrying once with tools: ${toolErrorMsg}`);
 
           try {
             // First retry: reduce complexity and nudge temperature for a different response path
@@ -493,7 +496,7 @@ export class Agent {
             });
           } catch (retryError) {
             const retryErrorMsg = retryError instanceof Error ? retryError.message : '';
-            console.warn(`Tool retry failed: ${retryErrorMsg}`);
+            logger.warn(`Tool retry failed: ${retryErrorMsg}`);
 
             // Second retry: rephrase the message with explicit context from the last assistant turn
             const lastAssistantMsg = context.conversationHistory
@@ -502,7 +505,7 @@ export class Agent {
             if (lastAssistantMsg && typeof lastAssistantMsg.content === 'string') {
               const rephrasedText = `Context from the previous response: "${lastAssistantMsg.content.substring(0, 300)}"\n\nThe user is now asking: ${message.text}`;
               try {
-                console.warn('Trying rephrased message with tools...');
+                logger.warn('Trying rephrased message with tools...');
                 const retryTemp2 = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
                 result = await generateText({
                   model: this.modelFactory.getModel(),
@@ -517,7 +520,7 @@ export class Agent {
                 });
               } catch (rephraseError) {
                 const rephraseErrorMsg = rephraseError instanceof Error ? rephraseError.message : '';
-                console.warn(`Rephrased retry also failed, falling back to text-only: ${rephraseErrorMsg}`);
+                logger.warn(`Rephrased retry also failed, falling back to text-only: ${rephraseErrorMsg}`);
                 result = undefined;
               }
             }
@@ -539,7 +542,7 @@ export class Agent {
               }
 
               if (collectedResults.length > 0) {
-                console.log(`[tool-recovery] Retries failed but ${collectedResults.length} tool(s) executed — summarizing results`);
+                logger.info(`[tool-recovery] Retries failed but ${collectedResults.length} tool(s) executed — summarizing results`);
                 const resultsText = collectedResults
                   .map((r) => {
                     const json = JSON.stringify(r.result);
@@ -559,9 +562,9 @@ export class Agent {
                     temperature: this.config.temperature,
                     abortSignal: agentAbort,
                   });
-                  console.log('[tool-recovery] Summarization successful');
+                  logger.info('[tool-recovery] Summarization successful');
                 } catch (summaryError) {
-                  console.warn('[tool-recovery] Summarization failed, using raw output:', summaryError);
+                  logger.warn('[tool-recovery] Summarization failed, using raw output:', summaryError);
                   // Build a synthetic result-like object — the raw text will be used as responseText
                   const rawText = collectedResults
                     .map((r) => {
@@ -631,7 +634,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       if (shouldAttemptRecovery) {
         const leak = detectLeakedToolCall(result.text, selectedTools);
         if (leak.detected) {
-          console.log(`[tool-recovery] Leaked tool detected: ${leak.toolName}`);
+          logger.info(`[tool-recovery] Leaked tool detected: ${leak.toolName}`);
           const recovery = await recoverLeakedToolCall(
             leak.toolName,
             leak.parameters,
@@ -649,9 +652,9 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
             }
             responseText = leak.preamble || toolResponse || 'Done.';
             recoveredTools = [leak.toolName];
-            console.log(`[tool-recovery] Recovery successful, response: "${responseText.substring(0, 80)}"`);
+            logger.info(`[tool-recovery] Recovery successful, response: "${responseText.substring(0, 80)}"`);
           } else {
-            console.warn(`[tool-recovery] Recovery failed: ${recovery.error}`);
+            logger.warn(`[tool-recovery] Recovery failed: ${recovery.error}`);
             responseText = leak.preamble || 'I tried to do that but ran into an issue. Could you try again?';
           }
         } else {
@@ -724,7 +727,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
               }
             } catch (summaryError) {
               // If summarization fails, fall back to raw formatted output
-              console.warn('Tool result summarization failed, using raw output:', summaryError);
+              logger.warn('Tool result summarization failed, using raw output:', summaryError);
               responseText = collectedResults
                 .map((r) => {
                   const json = JSON.stringify(r.result, null, 2);
@@ -775,7 +778,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
             }
           }
         } catch (sessionError) {
-          console.warn('Session persistence error (non-fatal):', sessionError);
+          logger.warn('Session persistence error (non-fatal):', sessionError);
         }
       }
 
@@ -834,14 +837,14 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
         errorMessage = `${providerInfo.provider} API error: ${errorMessage}`;
       }
 
-      console.error('Error processing message:', errorMessage);
+      logger.error('Error processing message:', errorMessage);
 
       await this.logger.logError(trace, errorMessage);
 
       // Circuit breaker: track consecutive errors
       this.consecutiveErrors++;
       if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
-        console.error(`CIRCUIT BREAKER TRIPPED: ${this.consecutiveErrors} consecutive errors`);
+        logger.error(`CIRCUIT BREAKER TRIPPED: ${this.consecutiveErrors} consecutive errors`);
         this.circuitBreakerTripped = true;
       }
 
@@ -872,13 +875,13 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
     const trace = createTrace('thinker-skill');
     this.currentTrace = trace;
 
-    console.log(`Processing proactive task (maxSteps: ${maxSteps})`);
+    logger.info(`Processing proactive task (maxSteps: ${maxSteps})`);
 
     const providerInfo = this.modelFactory.getProviderInfo();
 
     // Cost control pause check
     if (this.costMonitor?.paused) {
-      console.warn('Agent paused by cost controls - skipping proactive task');
+      logger.warn('Agent paused by cost controls - skipping proactive task');
       return {
         success: false,
         summary: 'Agent paused by cost controls',
@@ -952,7 +955,7 @@ Complete the task step by step, using your available tools. When done, provide a
       ) {
         const leak = detectLeakedToolCall(result.text, selectedTools);
         if (leak.detected) {
-          console.log(`[tool-recovery] Proactive task: leaked tool detected: ${leak.toolName}`);
+          logger.info(`[tool-recovery] Proactive task: leaked tool detected: ${leak.toolName}`);
           const recovery = await recoverLeakedToolCall(
             leak.toolName,
             leak.parameters,
@@ -970,7 +973,7 @@ Complete the task step by step, using your available tools. When done, provide a
             responseText = leak.preamble || toolResponse || 'Task completed.';
             recoveredTools = [leak.toolName];
           } else {
-            console.warn(`[tool-recovery] Proactive recovery failed: ${recovery.error}`);
+            logger.warn(`[tool-recovery] Proactive recovery failed: ${recovery.error}`);
             responseText = leak.preamble || 'Task encountered an issue. Please check and try again.';
           }
         } else {
@@ -985,7 +988,7 @@ Complete the task step by step, using your available tools. When done, provide a
         ...recoveredTools,
       ];
 
-      console.log(`Proactive task completed (${result.steps.length} steps, tools: ${toolsUsed.join(', ') || 'none'})`);
+      logger.info(`Proactive task completed (${result.steps.length} steps, tools: ${toolsUsed.join(', ') || 'none'})`);
 
       // Framework: store execution summary in memory as a pattern fact
       try {
@@ -996,7 +999,7 @@ Complete the task step by step, using your available tools. When done, provide a
           trace
         );
       } catch (memError) {
-        console.error('Failed to store skill execution summary in memory:', memError);
+        logger.error('Failed to store skill execution summary in memory:', memError);
       }
 
       // Optionally notify via Telegram (always via Orchestrator)
@@ -1005,7 +1008,7 @@ Complete the task step by step, using your available tools. When done, provide a
           const notificationText = `📋 Skill completed:\n\n${responseText}`;
           await this.orchestrator.sendTelegramMessage(notifyChatId, notificationText, undefined, trace);
         } catch (notifyError) {
-          console.error('Failed to send skill completion notification:', notifyError);
+          logger.error('Failed to send skill completion notification:', notifyError);
         }
       }
 
@@ -1018,7 +1021,7 @@ Complete the task step by step, using your available tools. When done, provide a
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error processing proactive task:', errorMessage);
+      logger.error('Error processing proactive task:', errorMessage);
 
       return {
         success: false,
@@ -1049,7 +1052,7 @@ Complete the task step by step, using your available tools. When done, provide a
     const timer = setTimeout(() => {
       this.extractionTimers.delete(chatId);
       this.runFactExtraction(chatId).catch((error) => {
-        console.warn('[fact-extraction] Error (non-fatal):', error);
+        logger.warn('[fact-extraction] Error (non-fatal):', error);
       });
     }, this.config.factExtraction.idleMs);
 
@@ -1072,7 +1075,7 @@ Complete the task step by step, using your available tools. When done, provide a
     // Skip if already extracted for the current conversation state
     if (state.lastExtractionAt && state.lastExtractionAt >= state.lastActivity) return;
 
-    console.log(`[fact-extraction] Running for chat ${chatId} (${state.messages.length} messages)`);
+    logger.info(`[fact-extraction] Running for chat ${chatId} (${state.messages.length} messages)`);
 
     try {
       // Gather recent text messages
@@ -1100,7 +1103,7 @@ Complete the task step by step, using your available tools. When done, provide a
       );
 
       if (facts.length === 0) {
-        console.log('[fact-extraction] No new facts found');
+        logger.info('[fact-extraction] No new facts found');
         state.lastExtractionAt = Date.now();
         return;
       }
@@ -1117,9 +1120,9 @@ Complete the task step by step, using your available tools. When done, provide a
       }
 
       state.lastExtractionAt = Date.now();
-      console.log(`[fact-extraction] Stored ${stored}/${facts.length} new facts for chat ${chatId}`);
+      logger.info(`[fact-extraction] Stored ${stored}/${facts.length} new facts for chat ${chatId}`);
     } catch (error) {
-      console.warn(
+      logger.warn(
         '[fact-extraction] Failed (non-fatal):',
         error instanceof Error ? error.message : error,
       );
@@ -1175,7 +1178,7 @@ Complete the task step by step, using your available tools. When done, provide a
       return { success: false, message: 'Agent is not paused' };
     }
     this.costMonitor.resume(resetWindow);
-    console.log(`Agent resumed from cost pause (resetWindow=${resetWindow})`);
+    logger.info(`Agent resumed from cost pause (resetWindow=${resetWindow})`);
     return { success: true, message: 'Agent resumed' };
   }
 }

@@ -14,6 +14,9 @@ import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { generateText, type LanguageModelV1 } from 'ai';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:session');
 import type {
   SessionConfig,
   SessionEntry,
@@ -122,7 +125,7 @@ export class SessionStore {
           // Skip header entries — they're metadata only
         } catch {
           // Skip corrupted lines
-          console.warn(`Skipping corrupted session line in ${chatId}: ${line.substring(0, 100)}`);
+          logger.warn(`Skipping corrupted session line in ${chatId}: ${line.substring(0, 100)}`);
         }
       }
 
@@ -136,7 +139,7 @@ export class SessionStore {
 
       return { messages, compactionSummary, turnCount };
     } catch (error) {
-      console.error(`Failed to load session ${chatId}:`, error);
+      logger.error(`Failed to load session ${chatId}`, error);
       return null;
     }
   }
@@ -233,7 +236,7 @@ export class SessionStore {
       .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
       .join('\n\n');
 
-    console.log(`Compacting session ${chatId}: ${oldMessages.length} messages → summary, keeping ${recentMessages.length} recent`);
+    logger.info(`Compacting session ${chatId}: ${oldMessages.length} messages → summary, keeping ${recentMessages.length} recent`);
 
     try {
       // Summarize using the cheap compaction model
@@ -297,11 +300,11 @@ export class SessionStore {
       this.turnCounts.set(chatId, recentMessages.length / 2);
       this.lastCompactionTimes.set(chatId, Date.now());
 
-      console.log(`Session ${chatId} compacted successfully (summary: ${summary.length} chars)`);
+      logger.info(`Session ${chatId} compacted successfully (summary: ${summary.length} chars)`);
 
       return { messages: recentMessages, summary };
     } catch (error) {
-      console.error(`Failed to compact session ${chatId}:`, error);
+      logger.error(`Failed to compact session ${chatId}`, error);
       // Return original messages unchanged — compaction is best-effort
       return { messages, summary: '' };
     }
@@ -340,15 +343,15 @@ export class SessionStore {
             this.lastCompactionTimes.delete(chatId);
           }
         } catch (fileError) {
-          console.warn(`Failed to check/clean session file ${file}:`, fileError);
+          logger.warn(`Failed to check/clean session file ${file}`, fileError);
         }
       }
 
       if (cleaned > 0) {
-        console.log(`Cleaned up ${cleaned} old session file(s)`);
+        logger.info(`Cleaned up ${cleaned} old session file(s)`);
       }
     } catch (error) {
-      console.error('Failed to cleanup old sessions:', error);
+      logger.error('Failed to cleanup old sessions', error);
     }
 
     return cleaned;

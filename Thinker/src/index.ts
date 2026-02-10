@@ -4,15 +4,9 @@ import type { AddressInfo } from 'net';
 import { loadConfig, validateProviderConfig, Config } from './config.js';
 import { Agent } from './agent/index.js';
 import { getProviderDisplayName } from './llm/providers.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
 
-// Override console methods to include ISO timestamps
-const originalLog = console.log.bind(console);
-const originalError = console.error.bind(console);
-const originalWarn = console.warn.bind(console);
-
-console.log = (...args: unknown[]) => originalLog(`[${new Date().toISOString()}]`, ...args);
-console.error = (...args: unknown[]) => originalError(`[${new Date().toISOString()}] ERROR:`, ...args);
-console.warn = (...args: unknown[]) => originalWarn(`[${new Date().toISOString()}] WARN:`, ...args);
+const logger = new Logger('thinker');
 
 /**
  * Health check response type
@@ -96,7 +90,7 @@ function createServer(config: Config, startTime: number) {
       return;
     }
 
-    console.log(`Received message dispatch: chat=${chatId}, agent=${agentId || 'default'}`);
+    logger.info(`Received message dispatch: chat=${chatId}, agent=${agentId || 'default'}`);
 
     try {
       const result = await agentRef.processMessage({
@@ -116,7 +110,7 @@ function createServer(config: Config, startTime: number) {
         ...(result.paused ? { paused: true } : {}),
       });
     } catch (error) {
-      console.error('Error processing dispatched message:', error);
+      logger.error('Error processing dispatched message:', error);
       res.status(500).json({
         success: false,
         toolsUsed: [],
@@ -140,7 +134,7 @@ function createServer(config: Config, startTime: number) {
       return;
     }
 
-    console.log(`Received skill execution request: skillId=${skillId}, maxSteps=${maxSteps}`);
+    logger.info(`Received skill execution request: skillId=${skillId}, maxSteps=${maxSteps}`);
 
     try {
       const notifyChatId = notifyOnCompletion
@@ -163,7 +157,7 @@ function createServer(config: Config, startTime: number) {
         error: result.error,
       });
     } catch (error) {
-      console.error('Error executing skill:', error);
+      logger.error('Error executing skill:', error);
       res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -204,26 +198,26 @@ function createServer(config: Config, startTime: number) {
  */
 async function main() {
   const startTime = Date.now();
-  console.log('Starting Thinker MCP...');
-  console.log('='.repeat(50));
+  logger.info('Starting Thinker MCP...');
+  logger.info('='.repeat(50));
 
   // Load and validate configuration
   let config: Config;
   try {
     config = loadConfig();
     const providerName = getProviderDisplayName(config.llmProvider);
-    console.log(`Configuration loaded:`);
-    console.log(`  - LLM Provider: ${providerName}`);
-    console.log(`  - Port: ${config.thinkerPort}`);
-    console.log(`  - Orchestrator: ${config.orchestratorUrl}`);
+    logger.info(`Configuration loaded:`);
+    logger.info(`  - LLM Provider: ${providerName}`);
+    logger.info(`  - Port: ${config.thinkerPort}`);
+    logger.info(`  - Orchestrator: ${config.orchestratorUrl}`);
   } catch (error) {
-    console.error('Failed to load configuration:', error);
+    logger.error('Failed to load configuration:', error);
     process.exit(1);
   }
 
   // Check if Thinker is enabled
   if (!config.thinkerEnabled) {
-    console.log('Thinker is disabled (THINKER_ENABLED=false). Exiting.');
+    logger.info('Thinker is disabled (THINKER_ENABLED=false). Exiting.');
     process.exit(0);
   }
 
@@ -231,7 +225,7 @@ async function main() {
   try {
     validateProviderConfig(config);
   } catch (error) {
-    console.error('Provider configuration error:', error);
+    logger.error('Provider configuration error:', error);
     process.exit(1);
   }
 
@@ -240,10 +234,10 @@ async function main() {
 
   const server = app.listen(config.thinkerPort, () => {
     const actualPort = (server.address() as AddressInfo).port;
-    // Machine-parseable line for AgentManager to detect actual port (dynamic port allocation)
-    console.log(`LISTENING_PORT=${actualPort}`);
-    console.log(`HTTP server running on port ${actualPort}`);
-    console.log(`Health check: http://localhost:${actualPort}/health`);
+    // Machine-parseable line for AgentManager — MUST stay on stdout
+    process.stdout.write(`LISTENING_PORT=${actualPort}\n`);
+    logger.info(`HTTP server running on port ${actualPort}`);
+    logger.info(`Health check: http://localhost:${actualPort}/health`);
   });
 
   // Initialize agent and make it available to routes
@@ -251,18 +245,18 @@ async function main() {
 
   try {
     await agent.initialize();
-    console.log('Agent initialized successfully');
+    logger.info('Agent initialized successfully');
   } catch (error) {
-    console.error('Failed to initialize agent:', error);
-    console.log('Continuing with limited functionality...');
+    logger.error('Failed to initialize agent:', error);
+    logger.info('Continuing with limited functionality...');
   }
 
   // Make agent available to all routes registered in createServer()
   agentRef = agent;
 
   // Thinker is now a passive agent runtime — Orchestrator dispatches messages via HTTP
-  console.log('='.repeat(50));
-  console.log('Waiting for dispatched messages from Orchestrator');
+  logger.info('='.repeat(50));
+  logger.info('Waiting for dispatched messages from Orchestrator');
 
   // Periodic cleanup of old conversation states and session files
   setInterval(async () => {
@@ -270,24 +264,24 @@ async function main() {
     try {
       await agent.cleanupOldSessions();
     } catch (error) {
-      console.warn('Session cleanup error (non-fatal):', error);
+      logger.warn('Session cleanup error (non-fatal):', error);
     }
   }, 5 * 60 * 1000); // Every 5 minutes
 
   // Handle graceful shutdown
   process.on('SIGINT', () => {
-    console.log('\nShutting down Thinker...');
+    logger.info('Shutting down Thinker...');
     process.exit(0);
   });
 
   process.on('SIGTERM', () => {
-    console.log('\nShutting down Thinker...');
+    logger.info('Shutting down Thinker...');
     process.exit(0);
   });
 }
 
 // Run main
 main().catch((error) => {
-  console.error('Fatal error:', error);
+  logger.error('Fatal error:', error);
   process.exit(1);
 });

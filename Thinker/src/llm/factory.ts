@@ -1,5 +1,8 @@
 import type { LanguageModel } from 'ai';
 import type { Config } from '../config.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:llm');
 import {
   createGroqProvider,
   createLMStudioProvider,
@@ -16,7 +19,7 @@ export function createLanguageModel(config: Config): LanguageModel {
   const modelId = getModelId(config);
   const providerName = getProviderDisplayName(config.llmProvider);
 
-  console.log(`Initializing ${providerName} with model: ${modelId}`);
+  logger.info(`Initializing ${providerName} with model: ${modelId}`);
 
   switch (config.llmProvider) {
     case 'groq': {
@@ -70,7 +73,7 @@ export class ModelFactory {
     if (!this.compactionModel) {
       if (this.config.compactionProvider && this.config.compactionModel) {
         this.compactionModel = createCompactionModel(this.config);
-        console.log(`Compaction model initialized: ${this.config.compactionProvider}/${this.config.compactionModel}`);
+        logger.info(`Compaction model initialized: ${this.config.compactionProvider}/${this.config.compactionModel}`);
       } else {
         // Fallback to main model
         this.compactionModel = this.getModel();

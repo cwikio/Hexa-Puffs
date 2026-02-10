@@ -1,4 +1,7 @@
 import type { CoreTool } from 'ai';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:tool-selector');
 
 /**
  * Tool groups — core is always included.
@@ -129,7 +132,7 @@ export function selectToolsForMessage(
   }
 
   const groupList = Array.from(activeGroups).join(', ');
-  console.log(`Tool selector: [${groupList}] → ${Object.keys(selected).length} tools`);
+  logger.info(`Tool selector: [${groupList}] → ${Object.keys(selected).length} tools`);
 
   return selected;
 }

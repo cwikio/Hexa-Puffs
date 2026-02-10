@@ -3,6 +3,9 @@ import { createGroq } from '@ai-sdk/groq';
 import type { LanguageModel } from 'ai';
 import type { Config } from '../config.js';
 import type { ProviderName } from './types.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('thinker:groq-debug');
 
 /**
  * Create Groq provider using the dedicated @ai-sdk/groq package.
@@ -16,15 +19,15 @@ export function createGroqProvider(config: Config) {
     fetch: async (url, init) => {
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
       if (body?.tools) {
-        console.log(`[GROQ-DEBUG] Request has ${body.tools.length} tools, tool_choice=${JSON.stringify(body.tool_choice)}`);
-        console.log(`[GROQ-DEBUG] First tool: ${JSON.stringify(body.tools[0]?.function?.name)}`);
+        logger.debug(`[GROQ] Request has ${body.tools.length} tools, tool_choice=${JSON.stringify(body.tool_choice)}`);
+        logger.debug(`[GROQ] First tool: ${JSON.stringify(body.tools[0]?.function?.name)}`);
         // Dump image_search tool definition to see exact schema
         const imgTool = body.tools.find((t: { function?: { name?: string } }) => t.function?.name === 'searcher_image_search');
         if (imgTool) {
-          console.log(`[GROQ-DEBUG] image_search tool: ${JSON.stringify(imgTool)}`);
+          logger.debug(`[GROQ] image_search tool: ${JSON.stringify(imgTool)}`);
         }
         // Dump first tool to see format
-        console.log(`[GROQ-DEBUG] First tool full: ${JSON.stringify(body.tools[0])}`);
+        logger.debug(`[GROQ] First tool full: ${JSON.stringify(body.tools[0])}`);
       }
       const response = await globalThis.fetch(url, init);
       // Clone to read body without consuming it
@@ -34,9 +37,9 @@ export function createGroqProvider(config: Config) {
         const json: any = await cloned.json();
         const choice = json?.choices?.[0];
         if (choice) {
-          console.log(`[GROQ-DEBUG] Response finish_reason=${choice.finish_reason}, has_tool_calls=${!!choice.message?.tool_calls}, content_length=${choice.message?.content?.length ?? 0}`);
+          logger.debug(`[GROQ] Response finish_reason=${choice.finish_reason}, has_tool_calls=${!!choice.message?.tool_calls}, content_length=${choice.message?.content?.length ?? 0}`);
           if (choice.message?.content && !choice.message?.tool_calls) {
-            console.log(`[GROQ-DEBUG] Content preview: ${choice.message.content.substring(0, 200)}`);
+            logger.debug(`[GROQ] Content preview: ${choice.message.content.substring(0, 200)}`);
           }
         }
       } catch { /* streaming or parse error, ignore */ }
