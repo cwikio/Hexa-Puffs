@@ -47,7 +47,7 @@ describe("Searcher MCP Tests", () => {
       expect(healthData).not.toBeNull();
       expect(healthData?.status).toBe("healthy");
       expect(healthData?.transport).toBe("http");
-      expect(typeof healthData?.port).toBe("number");
+      expect(healthData?.searchProvider).toBe("brave");
     });
 
     it("1.3 should list available tools", async () => {

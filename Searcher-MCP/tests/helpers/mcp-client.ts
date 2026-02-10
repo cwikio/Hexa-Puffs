@@ -48,7 +48,7 @@ export async function checkHealth(): Promise<boolean> {
 export async function getHealthData(): Promise<{
   status: string;
   transport: string;
-  port: number;
+  searchProvider: string;
 } | null> {
   try {
     const response = await fetch(`${SEARCHER_URL}/health`, { headers: authHeaders() });
