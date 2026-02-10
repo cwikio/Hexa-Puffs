@@ -9,6 +9,9 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getConfig } from '../config.js';
 import type { ExecutionLogEntry, SessionLogEntry } from './types.js';
+import { Logger } from '@mcp/shared/Utils/logger.js';
+
+const logger = new Logger('codexec:log');
 
 /**
  * Append an execution log entry to the daily JSONL file.
@@ -27,7 +30,7 @@ export async function logExecution(entry: ExecutionLogEntry): Promise<void> {
   try {
     await appendFile(filepath, line, 'utf-8');
   } catch (err) {
-    console.error(`[codexec] Failed to write log: ${err}`);
+    logger.error(`Failed to write log: ${err}`);
   }
 }
 
@@ -48,6 +51,6 @@ export async function logSessionEvent(entry: SessionLogEntry): Promise<void> {
   try {
     await appendFile(filepath, line, 'utf-8');
   } catch (err) {
-    console.error(`[codexec] Failed to write session log: ${err}`);
+    logger.error(`Failed to write session log: ${err}`);
   }
 }

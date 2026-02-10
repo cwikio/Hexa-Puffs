@@ -9,6 +9,9 @@ import { type GuardianScanResult } from "../ollama/client.js";
 import { GroqClientError } from "./client.js";
 import { waitForRateLimit } from "./rate-limiter.js";
 import { MCP_SECURITY_POLICY, SAFEGUARD_CATEGORY_MAP } from "./policies.js";
+import { Logger } from "@mcp/shared/Utils/logger.js";
+
+const logger = new Logger('guardian:groq-safeguard');
 
 export type { GuardianScanResult };
 
@@ -155,8 +158,8 @@ export async function scanWithGuardian(
     });
 
     if (response.status === 429 && attempt < MAX_RETRIES) {
-      console.warn(
-        `[Guardian] Groq 429 rate limit — retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1}/${MAX_RETRIES})`
+      logger.warn(
+        `Groq 429 rate limit — retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1}/${MAX_RETRIES})`
       );
       await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
       continue;
