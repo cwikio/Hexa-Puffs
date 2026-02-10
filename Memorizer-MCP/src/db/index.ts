@@ -49,7 +49,9 @@ export function getDatabase(): Database.Database {
       db.exec(SCHEMA_SQL);
 
       // Run migrations for existing databases (idempotent)
-      for (const stmt of MIGRATIONS_SQL.split(';').map(s => s.trim()).filter(Boolean)) {
+      // Strip SQL comment lines before splitting — comments may contain semicolons
+      const migrationSql = MIGRATIONS_SQL.replace(/^--.*$/gm, '');
+      for (const stmt of migrationSql.split(';').map(s => s.trim()).filter(Boolean)) {
         try {
           db.exec(stmt);
         } catch (error) {

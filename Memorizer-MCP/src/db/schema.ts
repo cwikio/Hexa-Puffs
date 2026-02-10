@@ -109,7 +109,7 @@ export interface FactRow {
 export const MIGRATIONS_SQL = `
 -- Add last_accessed_at column if missing (added in memory consolidation update)
 -- Note: ALTER TABLE ADD COLUMN requires a constant default in SQLite, so use NULL here.
--- The CREATE TABLE schema uses datetime('now') for new databases; existing rows get NULL.
+-- The CREATE TABLE schema uses datetime('now') for new databases. Existing rows get NULL.
 ALTER TABLE facts ADD COLUMN last_accessed_at TEXT DEFAULT NULL;
 `;
 

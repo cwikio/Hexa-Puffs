@@ -19,6 +19,7 @@ import { getConfig } from "./utils/config.js";
 import { cleanupTempFiles } from "./services/cleanup.js";
 import { Logger } from "@mcp/shared/Utils/logger.js";
 import { toolEntry, type ToolMapEntry, ValidationError } from "@mcp/shared/Types/tools.js";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   createFileSchema,
   handleCreateFile,
@@ -47,6 +48,30 @@ import {
   getAuditLogSchema,
   handleGetAuditLog,
 } from "./tools/index.js";
+
+// Tool dispatch map — shared between /tools/list and /tools/call
+const toolMap: Record<string, ToolMapEntry> = {
+  create_file: toolEntry(createFileSchema, handleCreateFile),
+  read_file: toolEntry(readFileSchema, handleReadFile),
+  list_files: toolEntry(listFilesSchema, handleListFiles),
+  update_file: toolEntry(updateFileSchema, handleUpdateFile),
+  delete_file: toolEntry(deleteFileSchema, handleDeleteFile),
+  move_file: toolEntry(moveFileSchema, handleMoveFile),
+  copy_file: toolEntry(copyFileSchema, handleCopyFile),
+  search_files: toolEntry(searchFilesSchema, handleSearchFiles),
+  check_grant: toolEntry(checkGrantSchema, handleCheckGrant),
+  request_grant: toolEntry(requestGrantSchema, handleRequestGrant),
+  list_grants: toolEntry(listGrantsSchema, handleListGrants),
+  get_workspace_info: toolEntry(getWorkspaceInfoSchema, handleGetWorkspaceInfo),
+  get_audit_log: toolEntry(getAuditLogSchema, handleGetAuditLog),
+};
+
+// Pre-built tool definitions for /tools/list (name + inputSchema as JSON Schema)
+const toolDefinitions = Object.entries(toolMap).map(([name, entry]) => ({
+  name,
+  description: name.replace(/_/g, " "),
+  inputSchema: zodToJsonSchema(entry.schema),
+}));
 
 const logger = new Logger('filer');
 const TRANSPORT = process.env.TRANSPORT || "stdio";
@@ -148,6 +173,12 @@ async function main() {
         return;
       }
 
+      if (req.url === "/tools/list" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ tools: toolDefinitions }));
+        return;
+      }
+
       if (req.url === "/tools/call" && req.method === "POST") {
         let body = "";
         req.on("data", (chunk) => {
@@ -156,23 +187,6 @@ async function main() {
         req.on("end", async () => {
           try {
             const { name, arguments: args } = JSON.parse(body);
-
-            // Map tool name to handler and schema
-            const toolMap: Record<string, ToolMapEntry> = {
-              create_file: toolEntry(createFileSchema, handleCreateFile),
-              read_file: toolEntry(readFileSchema, handleReadFile),
-              list_files: toolEntry(listFilesSchema, handleListFiles),
-              update_file: toolEntry(updateFileSchema, handleUpdateFile),
-              delete_file: toolEntry(deleteFileSchema, handleDeleteFile),
-              move_file: toolEntry(moveFileSchema, handleMoveFile),
-              copy_file: toolEntry(copyFileSchema, handleCopyFile),
-              search_files: toolEntry(searchFilesSchema, handleSearchFiles),
-              check_grant: toolEntry(checkGrantSchema, handleCheckGrant),
-              request_grant: toolEntry(requestGrantSchema, handleRequestGrant),
-              list_grants: toolEntry(listGrantsSchema, handleListGrants),
-              get_workspace_info: toolEntry(getWorkspaceInfoSchema, handleGetWorkspaceInfo),
-              get_audit_log: toolEntry(getAuditLogSchema, handleGetAuditLog),
-            };
 
             const tool = toolMap[name];
             if (!tool) {
@@ -237,7 +251,7 @@ async function main() {
       logger.info(`Starting Filer MCP`, { transport: TRANSPORT, port: PORT });
       logger.info(`Workspace: ${config.workspace.path}`);
       logger.info(`Filer MCP running on http://localhost:${PORT}`);
-      logger.info(`Endpoints: GET /health, GET /sse, POST /message`);
+      logger.info(`Endpoints: GET /health, GET /tools/list, POST /tools/call, GET /sse`);
     });
   } else {
     // Default: stdio transport for Claude Desktop
