@@ -66,7 +66,7 @@ function parseToolResult(result: { content?: unknown }): Record<string, unknown>
 }
 
 describe('Script Library - MCP Protocol', () => {
-  it('should list all 6 script tools', async () => {
+  it('should list all 7 script tools', async () => {
     const { tools } = await client.listTools();
     const toolNames = tools.map((t) => t.name);
 
@@ -75,6 +75,7 @@ describe('Script Library - MCP Protocol', () => {
     expect(toolNames).toContain('list_scripts');
     expect(toolNames).toContain('search_scripts');
     expect(toolNames).toContain('run_script');
+    expect(toolNames).toContain('save_and_run_script');
     expect(toolNames).toContain('delete_script');
   });
 
@@ -215,6 +216,42 @@ describe('Script Library - MCP Protocol', () => {
     expect(runParsed.success).toBe(true);
     const runData = runParsed.data as Record<string, unknown>;
     expect((runData.stdout as string).trim()).toBe('Hello World!');
+  });
+
+  it('should save and run a script atomically', async () => {
+    const result = await client.callTool({
+      name: 'save_and_run_script',
+      arguments: {
+        name: 'atomic test',
+        description: 'Atomic save and run',
+        language: 'python',
+        code: 'print("atomic works")',
+        tags: ['test'],
+      },
+    });
+
+    const parsed = parseToolResult(result);
+    expect(parsed.success).toBe(true);
+    const data = parsed.data as Record<string, unknown>;
+
+    const saved = data.saved as Record<string, unknown>;
+    expect(saved.name).toBe('atomic-test');
+    expect(saved.created).toBe(true);
+
+    const run = data.run as Record<string, unknown>;
+    expect((run.stdout as string).trim()).toBe('atomic works');
+    expect(run.exit_code).toBe(0);
+
+    // Verify it's persisted
+    const listResult = await client.callTool({
+      name: 'list_scripts',
+      arguments: {},
+    });
+    const listParsed = parseToolResult(listResult);
+    const listData = listParsed.data as Record<string, unknown>;
+    const scripts = listData.scripts as Array<Record<string, unknown>>;
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0].run_count).toBe(1);
   });
 
   it('should filter scripts by language', async () => {

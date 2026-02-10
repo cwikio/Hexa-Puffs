@@ -470,6 +470,42 @@ describe('ScriptLibrary - run', () => {
   });
 });
 
+// ── Save and Run (atomic) ─────────────────────────────────────────────────────
+
+describe('ScriptLibrary - save and run atomic', () => {
+  it('should save and run in one call', async () => {
+    const saved = await library.save({
+      name: 'atomic-test',
+      description: 'Atomic save+run',
+      language: 'python',
+      code: 'print("atomic ok")',
+    });
+
+    const run = await library.run({ name: saved.name });
+
+    expect(saved.name).toBe('atomic-test');
+    expect(saved.created).toBe(true);
+    expect(run.stdout.trim()).toBe('atomic ok');
+    expect(run.exit_code).toBe(0);
+
+    // Script should be persisted
+    const { metadata } = await library.get('atomic-test');
+    expect(metadata.run_count).toBe(1);
+  });
+
+  it('should save and run with args', async () => {
+    const saved = await library.save({
+      name: 'atomic-args',
+      description: 'Args test',
+      language: 'python',
+      code: 'import sys\nprint(sys.argv[1])',
+    });
+
+    const run = await library.run({ name: saved.name, args: ['hello'] });
+    expect(run.stdout.trim()).toBe('hello');
+  });
+});
+
 // ── Index Rebuild ─────────────────────────────────────────────────────────────
 
 describe('ScriptLibrary - index rebuild', () => {

@@ -13,10 +13,10 @@ export const startSessionSchema = z.object({
   language: z
     .enum(['python', 'node'])
     .describe('Language for the REPL session'),
-  name: z.string().optional().describe('Optional human-readable session name'),
+  name: z.string().nullish().describe('Optional human-readable session name'),
   working_dir: z
     .string()
-    .optional()
+    .nullish()
     .describe('Working directory (default: sandbox temp dir)'),
 });
 
@@ -26,8 +26,8 @@ export function handleStartSession(manager: SessionManager) {
   return async (input: StartSessionInput) => {
     return manager.startSession({
       language: input.language,
-      name: input.name,
-      working_dir: input.working_dir,
+      name: input.name ?? undefined,
+      working_dir: input.working_dir ?? undefined,
     });
   };
 }
@@ -37,13 +37,13 @@ export function handleStartSession(manager: SessionManager) {
 export const sendToSessionSchema = z.object({
   session_id: z
     .string()
-    .optional()
+    .nullish()
     .describe(
       'Session ID from a previous start_session call. If omitted, a new session is created automatically (requires language).',
     ),
   language: z
     .enum(['python', 'node'])
-    .optional()
+    .nullish()
     .describe(
       'Language for auto-created session. Required when session_id is omitted. Ignored when session_id is provided.',
     ),
@@ -52,7 +52,7 @@ export const sendToSessionSchema = z.object({
     .number()
     .int()
     .positive()
-    .optional()
+    .nullish()
     .describe('Per-execution timeout in ms (default: 30000)'),
 });
 
@@ -61,10 +61,10 @@ export type SendToSessionInput = z.infer<typeof sendToSessionSchema>;
 export function handleSendToSession(manager: SessionManager) {
   return async (input: SendToSessionInput) => {
     return manager.sendToSession({
-      sessionId: input.session_id,
-      language: input.language,
+      sessionId: input.session_id ?? undefined,
+      language: input.language ?? undefined,
       code: input.code,
-      timeoutMs: input.timeout_ms,
+      timeoutMs: input.timeout_ms ?? undefined,
     });
   };
 }

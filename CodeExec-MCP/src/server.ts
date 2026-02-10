@@ -47,6 +47,9 @@ import {
   runScriptSchema,
   handleRunScript,
   type RunScriptInput,
+  saveAndRunScriptSchema,
+  handleSaveAndRunScript,
+  type SaveAndRunScriptInput,
   deleteScriptSchema,
   handleDeleteScript,
   type DeleteScriptInput,
@@ -305,6 +308,35 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
     },
     handler: async (params) => {
       const result = await handleRunScript(scriptLibrary)(params as RunScriptInput);
+      return createSuccess(result);
+    },
+  });
+
+  registerTool(server, {
+    name: 'save_and_run_script',
+    description:
+      'Save code as a reusable script AND immediately execute it in one step. ' +
+      'Use this instead of calling save_script + run_script separately.\n\n' +
+      'Args:\n' +
+      '  - name (string): Script name (slugified for storage)\n' +
+      '  - description (string): What the script does\n' +
+      '  - language ("python" | "node" | "bash"): Programming language\n' +
+      '  - code (string): The script code\n' +
+      '  - tags (string[], optional): Tags for categorization\n' +
+      '  - packages (string[], optional): Required packages\n' +
+      '  - args (string[], optional): Arguments passed to the script\n' +
+      '  - timeout_ms (number, optional): Timeout in ms\n' +
+      '  - working_dir (string, optional): Working directory\n\n' +
+      'Returns: { saved: { name, language, created }, run: { stdout, stderr, exit_code, duration_ms, ... } }',
+    inputSchema: saveAndRunScriptSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (params) => {
+      const result = await handleSaveAndRunScript(scriptLibrary)(params as SaveAndRunScriptInput);
       return createSuccess(result);
     },
   });

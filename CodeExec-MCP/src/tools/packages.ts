@@ -17,7 +17,7 @@ export const installPackageSchema = z.object({
     .describe('Package name to install (e.g., "pandas", "lodash")'),
   session_id: z
     .string()
-    .optional()
+    .nullish()
     .describe('Install into a specific session. If omitted, installs globally.'),
 });
 
@@ -28,7 +28,7 @@ export function handleInstallPackage(manager: SessionManager) {
     return manager.installPackage({
       language: input.language,
       packageName: input.package,
-      sessionId: input.session_id,
+      sessionId: input.session_id ?? undefined,
     });
   };
 }

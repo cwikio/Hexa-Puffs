@@ -40,6 +40,11 @@ export interface RunScriptResult {
   truncated: boolean;
 }
 
+export interface SaveAndRunScriptResult {
+  saved: SaveScriptResult;
+  run: RunScriptResult;
+}
+
 export interface DeleteScriptResult {
   name: string;
   deleted: boolean;

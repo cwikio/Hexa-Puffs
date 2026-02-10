@@ -14,9 +14,9 @@ export const executeCodeSchema = z.object({
     .describe('Programming language to execute'),
   code: z.string().min(1)
     .describe('Code to execute'),
-  timeout_ms: z.number().int().positive().optional()
+  timeout_ms: z.number().int().positive().nullish()
     .describe('Execution timeout in milliseconds (default: 30000, max: 300000)'),
-  working_dir: z.string().optional()
+  working_dir: z.string().nullish()
     .describe('Working directory for execution (default: sandbox temp dir)'),
 });
 
