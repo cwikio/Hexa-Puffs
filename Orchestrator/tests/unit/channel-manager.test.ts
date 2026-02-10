@@ -12,9 +12,9 @@ vi.mock('@mcp/shared/Utils/logger.js', () => ({
   },
 }));
 
-import { ChannelManager } from '../../src/core/channel-poller.js';
-import type { ChannelAdapter } from '../../src/core/channel-adapter.js';
-import type { IncomingAgentMessage } from '../../src/core/agent-types.js';
+import { ChannelManager } from '../../src/channels/channel-poller.js';
+import type { ChannelAdapter } from '../../src/channels/channel-adapter.js';
+import type { IncomingAgentMessage } from '../../src/agents/agent-types.js';
 
 // --- Helpers ---
 

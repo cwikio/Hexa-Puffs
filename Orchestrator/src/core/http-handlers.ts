@@ -1,4 +1,4 @@
-import type { ToolRouter } from './tool-router.js';
+import type { ToolRouter } from '../routing/tool-router.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { SecurityError } from '../utils/errors.js';

@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { getOrchestrator } from '../core/orchestrator.js';
 import type { StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
-import type { IncomingAgentMessage } from '../core/agent-types.js';
+import type { IncomingAgentMessage } from '../agents/agent-types.js';
 
 const SpawnSubagentInputSchema = z.object({
   task: z.string().min(1).describe('Instructions for the subagent'),
