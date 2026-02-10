@@ -1,3 +1,4 @@
+import { Agent } from 'http';
 import { type MCPServerConfig } from '../config/index.js';
 import { MCPClientError, MCPUnavailableError } from '../utils/errors.js';
 import { Logger, logger } from '@mcp/shared/Utils/logger.js';
@@ -11,11 +12,33 @@ import type {
 // Re-export types for backwards compatibility
 export type { MCPToolCall, MCPToolDefinition, ToolCallResult } from './types.js';
 
+/** HTTP keep-alive agent shared across all BaseMCPClient instances */
+const keepAliveAgent = new Agent({ keepAlive: true, maxSockets: 10, keepAliveMsecs: 30_000 });
+
+/** Check if an error is transient and worth retrying */
+function isTransientError(error: unknown): boolean {
+  if (error instanceof Error) {
+    if (error.name === 'TimeoutError') return true;
+    const msg = error.message.toLowerCase();
+    if (msg.includes('econnrefused') || msg.includes('econnreset') || msg.includes('epipe') || msg.includes('fetch failed')) return true;
+  }
+  if (error instanceof MCPClientError) {
+    const details = error.details as Record<string, unknown> | undefined;
+    if (details?.status) {
+      const status = details.status as number;
+      return status === 502 || status === 503 || status === 504;
+    }
+  }
+  return false;
+}
+
 export abstract class BaseMCPClient implements IMCPClient {
   protected config: MCPServerConfig;
   protected logger: Logger;
   protected available: boolean = false;
   private readonly token: string | undefined = process.env.ANNABELLE_TOKEN;
+  private static readonly MAX_RETRIES = 2;
+  private static readonly INITIAL_BACKOFF_MS = 500;
 
   constructor(
     public readonly name: string,
@@ -86,48 +109,74 @@ export abstract class BaseMCPClient implements IMCPClient {
     }
 
     const url = `${this.config.url}${endpoint}`;
-    const startTime = Date.now();
+    let lastError: unknown;
 
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: this.getHeaders(),
-        body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(this.config.timeout),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new MCPClientError(
-          `MCP call failed: ${response.status} ${response.statusText}`,
-          this.name,
-          { status: response.status, body: errorText }
-        );
+    for (let attempt = 0; attempt <= BaseMCPClient.MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        const backoff = BaseMCPClient.INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1);
+        this.logger.debug(`Retry ${attempt}/${BaseMCPClient.MAX_RETRIES} for ${endpoint} after ${backoff}ms`);
+        await new Promise(r => setTimeout(r, backoff));
       }
 
-      return await response.json();
-    } catch (error) {
-      const elapsed = Date.now() - startTime;
+      const startTime = Date.now();
 
-      if (error instanceof MCPClientError) {
-        throw error;
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: this.getHeaders(),
+          body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(this.config.timeout),
+          // @ts-expect-error -- Node.js fetch supports dispatcher/agent via undici
+          dispatcher: keepAliveAgent,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const err = new MCPClientError(
+            `MCP call failed: ${response.status} ${response.statusText}`,
+            this.name,
+            { status: response.status, body: errorText }
+          );
+          // Don't retry 4xx errors (client errors)
+          if (response.status >= 400 && response.status < 500) throw err;
+          lastError = err;
+          continue;
+        }
+
+        return await response.json();
+      } catch (error) {
+        const elapsed = Date.now() - startTime;
+
+        if (error instanceof MCPClientError && !isTransientError(error)) {
+          throw error;
+        }
+
+        lastError = error;
+
+        // Only retry transient errors
+        if (!isTransientError(error)) {
+          break;
+        }
       }
+    }
 
-      // Detect timeout errors
-      if (error instanceof Error && error.name === 'TimeoutError') {
-        throw new MCPClientError(
-          `MCP call timed out after ${elapsed}ms (limit: ${this.config.timeout}ms). Check if ${this.name} service at ${this.config.url} is running.`,
-          this.name,
-          { timeout: this.config.timeout, elapsed }
-        );
-      }
-
+    // All retries exhausted — throw the last error
+    const elapsed = Date.now();
+    if (lastError instanceof MCPClientError) {
+      throw lastError;
+    }
+    if (lastError instanceof Error && lastError.name === 'TimeoutError') {
       throw new MCPClientError(
-        `Failed to call MCP: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `MCP call timed out after retries (limit: ${this.config.timeout}ms). Check if ${this.name} service at ${this.config.url} is running.`,
         this.name,
-        { error, elapsed }
+        { timeout: this.config.timeout }
       );
     }
+    throw new MCPClientError(
+      `Failed to call MCP after ${BaseMCPClient.MAX_RETRIES + 1} attempts: ${lastError instanceof Error ? lastError.message : 'Unknown error'}`,
+      this.name,
+      { error: lastError }
+    );
   }
 
   async callTool(toolCall: MCPToolCall): Promise<ToolCallResult> {

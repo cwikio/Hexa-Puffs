@@ -175,11 +175,11 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 
 **Resolved:** Created `Guardian/src/errors.ts` with `GuardianError` → `GroqClientError` / `OllamaClientError` extending `BaseError`. Constructor signatures preserved — no call-site changes needed.
 
-### G. Deprecated `Server` class in Gmail, Telegram, Memorizer (Low Impact, Medium Effort)
+### ~~G. Deprecated `Server` class in Gmail, Telegram, Memorizer~~ ✅ DONE
 
-**Problem:** Phase 3-5 of the `McpServer` migration is still deferred. These packages use the old `Server` class from SDK (deprecated in 1.25.3). Not broken, but deprecated.
+**Problem:** Phase 3-5 of the `McpServer` migration was listed as deferred.
 
-**Fix:** Migrate to `McpServer` class per `new-mcp-plan.md`.
+**Resolved:** Already migrated — all three MCPs use `McpServer` + `registerTool()` + `startTransport()`. This entry was stale.
 
 ### ~~H. TESTING.md references legacy ports~~ ✅ DONE
 
@@ -212,14 +212,14 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 | --- | ---------------------------------------- | ------ | ------ | ------ |
 | ~~E~~ | ~~Add tests for 1Password-MCP~~        | Low    | Medium | ✅ |
 
-### Tier 4: Consistency
+### ~~Tier 4: Consistency~~ ✅ ALL DONE
 
 | # | Improvement | Effort | Impact | Status |
 | --- | --- | --- | --- | --- |
 | ~~9~~ | ~~Thinker logging (console → Logger)~~ | Low | Low-Med | ✅ |
 | ~~F~~ | ~~Guardian shared error types~~ | Low | Low | ✅ |
 | ~~H~~ | ~~Fix stale TESTING.md~~ | Low | Low | ✅ |
-| G | Server → McpServer migration (3 MCPs) | Medium | Low | |
+| ~~G~~ | ~~Server → McpServer migration (3 MCPs)~~ | Medium | Low | ✅ |
 
 ### Tier 5: Structural (park until pain is felt)
 

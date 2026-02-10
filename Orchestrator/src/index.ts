@@ -15,6 +15,10 @@ const ANNABELLE_TOKEN = process.env.ANNABELLE_TOKEN;
 async function main(): Promise<void> {
   const config = getConfig();
 
+  if (config.transport !== 'stdio' && !ANNABELLE_TOKEN) {
+    logger.warn('ANNABELLE_TOKEN is not set — HTTP endpoints are unauthenticated. Run via start-all.sh for automatic token generation.');
+  }
+
   logger.info('Starting Annabelle Orchestrator', {
     transport: config.transport,
     port: config.port,

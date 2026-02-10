@@ -44,10 +44,13 @@ async function main() {
     const httpServer = createHttpServer(async (req, res) => {
       logger.debug(`${req.method} ${req.url}`);
 
-      // CORS headers
-      res.setHeader("Access-Control-Allow-Origin", "*");
+      // CORS: restrict to localhost origins
+      const origin = req.headers.origin;
+      if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+      }
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Annabelle-Token");
 
       if (req.method === "OPTIONS") {
         res.writeHead(204);
@@ -116,7 +119,7 @@ async function main() {
       res.end("Not found");
     });
 
-    httpServer.listen(PORT, () => {
+    httpServer.listen(PORT, "127.0.0.1", () => {
       logger.info(`Guardian MCP server listening on port ${PORT}`);
       logger.info(`SSE endpoint: http://localhost:${PORT}/sse`);
       logger.info(`Health check: http://localhost:${PORT}/health`);

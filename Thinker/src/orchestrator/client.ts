@@ -23,6 +23,8 @@ export class OrchestratorClient {
   private agentId: string;
   private timeout: number;
   private tools: Map<string, OrchestratorTool> = new Map();
+  private toolsCachedAt: number = 0;
+  private static readonly TOOL_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
   constructor(config: Config) {
     this.baseUrl = config.orchestratorUrl;
@@ -81,11 +83,12 @@ export class OrchestratorClient {
       const response = await this.request<MCPToolsListResponse>('GET', '/tools/list');
       const tools = response.tools;
 
-      // Cache tools
+      // Cache tools with timestamp
       this.tools.clear();
       for (const tool of tools) {
         this.tools.set(tool.name, tool);
       }
+      this.toolsCachedAt = Date.now();
 
       return tools;
     } catch (error) {
@@ -95,7 +98,18 @@ export class OrchestratorClient {
   }
 
   /**
-   * Get cached tools
+   * Get cached tools, re-discovering if the cache has expired.
+   */
+  async getCachedToolsOrRefresh(): Promise<OrchestratorTool[]> {
+    if (this.tools.size === 0 || Date.now() - this.toolsCachedAt > OrchestratorClient.TOOL_CACHE_TTL_MS) {
+      logger.debug('Tool cache expired or empty — re-discovering');
+      return this.discoverTools();
+    }
+    return Array.from(this.tools.values());
+  }
+
+  /**
+   * Get cached tools (without refresh check — use getCachedToolsOrRefresh() for TTL-aware access)
    */
   getCachedTools(): OrchestratorTool[] {
     return Array.from(this.tools.values());

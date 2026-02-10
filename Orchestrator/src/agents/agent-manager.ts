@@ -624,10 +624,12 @@ export class AgentManager {
   }
 
   /**
-   * Attempt to restart a failed agent with cooldown and max attempts.
+   * Attempt to restart a failed agent with exponential backoff and max attempts.
    */
   private async tryRestart(agentId: string, managed: ManagedAgent): Promise<void> {
-    if (Date.now() - managed.lastRestartAt < AgentManager.RESTART_COOLDOWN_MS) {
+    // Exponential backoff: 10s, 20s, 40s, 80s, 160s
+    const cooldown = AgentManager.RESTART_COOLDOWN_MS * Math.pow(2, managed.restartCount);
+    if (Date.now() - managed.lastRestartAt < cooldown) {
       return;
     }
 
@@ -636,7 +638,7 @@ export class AgentManager {
       return;
     }
 
-    this.logger.info(`Restarting agent "${agentId}" (attempt ${managed.restartCount + 1})...`);
+    this.logger.info(`Restarting agent "${agentId}" (attempt ${managed.restartCount + 1}, next cooldown ${cooldown * 2 / 1000}s)...`);
 
     if (managed.process) {
       try {

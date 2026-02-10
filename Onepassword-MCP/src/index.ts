@@ -15,10 +15,13 @@ async function main() {
   if (TRANSPORT === "http" || TRANSPORT === "sse") {
     // HTTP/SSE transport for LM Studio and other HTTP clients
     const httpServer = createHttpServer(async (req, res) => {
-      // CORS headers for browser-based clients
-      res.setHeader("Access-Control-Allow-Origin", "*");
+      // CORS: restrict to localhost origins
+      const origin = req.headers.origin;
+      if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+      }
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Annabelle-Token");
 
       if (req.method === "OPTIONS") {
         res.writeHead(204);
@@ -55,7 +58,7 @@ async function main() {
       res.end("Not found");
     });
 
-    httpServer.listen(PORT, () => {
+    httpServer.listen(PORT, "127.0.0.1", () => {
       logger.info(`1Password MCP server listening on port ${PORT}`);
       logger.info(`SSE endpoint: http://localhost:${PORT}/sse`);
       logger.info(`Health check: http://localhost:${PORT}/health`);

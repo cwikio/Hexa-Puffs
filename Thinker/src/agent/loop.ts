@@ -1168,6 +1168,13 @@ Complete the task step by step, using your available tools. When done, provide a
   }
 
   /**
+   * Check if Orchestrator is reachable (for deep health checks).
+   */
+  async checkOrchestratorHealth(): Promise<boolean> {
+    return this.orchestrator.healthCheck();
+  }
+
+  /**
    * Resume from a cost-control pause (for /cost-resume endpoint).
    */
   resumeFromCostPause(resetWindow = false): { success: boolean; message: string } {

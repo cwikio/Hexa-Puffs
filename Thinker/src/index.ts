@@ -16,6 +16,7 @@ interface HealthResponse {
   service: string;
   version: string;
   uptime: number;
+  orchestratorConnected?: boolean;
   config: {
     enabled: boolean;
     llmProvider: string;
@@ -41,16 +42,29 @@ function createServer(config: Config, startTime: number) {
   app.use(express.json());
 
   // Health check endpoint — only returns 200 once agentRef is set (fully initialized)
-  app.get('/health', (_req: Request, res: Response) => {
+  // Deep health: verifies Orchestrator connectivity (non-blocking for speed)
+  let lastOrchestratorCheck = false;
+  let lastOrchestratorCheckAt = 0;
+  const ORCHESTRATOR_CHECK_INTERVAL = 30_000; // Cache result for 30s
+
+  app.get('/health', async (_req: Request, res: Response) => {
     if (!agentRef) {
       res.status(503).json({ status: 'initializing', service: 'thinker' });
       return;
     }
+
+    // Periodically verify Orchestrator connectivity (cached to avoid latency on every health poll)
+    if (Date.now() - lastOrchestratorCheckAt > ORCHESTRATOR_CHECK_INTERVAL) {
+      lastOrchestratorCheck = await agentRef.checkOrchestratorHealth();
+      lastOrchestratorCheckAt = Date.now();
+    }
+
     const response: HealthResponse = {
       status: 'ok',
       service: 'thinker',
       version: '0.1.0',
       uptime: Math.floor((Date.now() - startTime) / 1000),
+      orchestratorConnected: lastOrchestratorCheck,
       config: {
         enabled: config.thinkerEnabled,
         llmProvider: config.llmProvider,
@@ -232,7 +246,7 @@ async function main() {
   // Create and start HTTP server
   const app = createServer(config, startTime);
 
-  const server = app.listen(config.thinkerPort, () => {
+  const server = app.listen(config.thinkerPort, '127.0.0.1', () => {
     const actualPort = (server.address() as AddressInfo).port;
     // Machine-parseable line for AgentManager — MUST stay on stdout
     process.stdout.write(`LISTENING_PORT=${actualPort}\n`);
@@ -269,15 +283,19 @@ async function main() {
   }, 5 * 60 * 1000); // Every 5 minutes
 
   // Handle graceful shutdown
-  process.on('SIGINT', () => {
-    logger.info('Shutting down Thinker...');
-    process.exit(0);
-  });
+  const shutdown = () => {
+    logger.info('Shutting down Thinker — flushing conversation states...');
+    agent.cleanupOldConversations(0); // Clear all timers
+    server.close(() => {
+      logger.info('HTTP server closed');
+      process.exit(0);
+    });
+    // Force exit after 5 seconds if server doesn't close
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
 
-  process.on('SIGTERM', () => {
-    logger.info('Shutting down Thinker...');
-    process.exit(0);
-  });
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 // Run main

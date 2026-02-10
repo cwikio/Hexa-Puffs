@@ -2,6 +2,32 @@ import type { ToolRouter } from '../routing/tool-router.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { SecurityError } from '../utils/errors.js';
+
+// ─── Simple in-memory rate limiter (per-IP, sliding window) ──────
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 120;  // 120 requests per minute per IP
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+
+  entry.count++;
+  return entry.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
+// Periodic cleanup of expired entries (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip);
+  }
+}, 5 * 60 * 1000).unref();
 import {
   statusToolDefinition,
   handleStatus,
@@ -89,18 +115,37 @@ export async function handleListTools(
 /**
  * Handle POST /tools/call - Execute a tool
  */
+const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
+
 export async function handleCallTool(
   toolRouter: ToolRouter,
   req: IncomingMessage,
   res: ServerResponse
 ): Promise<void> {
+  // Rate limit by remote IP
+  const clientIp = req.socket.remoteAddress || 'unknown';
+  if (isRateLimited(clientIp)) {
+    res.writeHead(429, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Too many requests' }));
+    return;
+  }
+
   let body = '';
+  let bodySize = 0;
 
   req.on('data', (chunk) => {
+    bodySize += chunk.length;
+    if (bodySize > MAX_BODY_SIZE) {
+      res.writeHead(413, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Request body too large' }));
+      req.destroy();
+      return;
+    }
     body += chunk;
   });
 
   req.on('end', async () => {
+    if (bodySize > MAX_BODY_SIZE) return;
     try {
       const { name, arguments: args } = JSON.parse(body) as {
         name: string;
