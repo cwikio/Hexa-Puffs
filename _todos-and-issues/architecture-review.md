@@ -132,7 +132,7 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 - `channels/` — Telegram polling + dispatch
 - `commands/` — Slash command handlers
 
-### 12. Add Structured Status Endpoint (Low Impact, Low Effort)
+### 12. Add Structured Status Endpoint (Low Impact, Low Effort) - DONE
 
 **Problem:** Monitoring requires checking individual `/health` endpoints on 4+ ports.
 

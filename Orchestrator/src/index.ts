@@ -59,6 +59,26 @@ async function main(): Promise<void> {
           return;
         }
 
+        // Structured status endpoint
+        if (req.url === '/status' && req.method === 'GET') {
+          const status = orchestrator.getStatus();
+          const haltState = orchestrator.getHaltManager().getState();
+          const toolCount = orchestrator.getAvailableTools().length;
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            status: status.ready ? 'ready' : 'initializing',
+            uptime: status.uptime,
+            mcpServers: status.mcpServers,
+            agents: status.agents,
+            toolCount,
+            sessions: status.sessions,
+            security: status.security,
+            halt: haltState,
+          }));
+          return;
+        }
+
         // REST API: List tools
         if (req.url === '/tools/list' && req.method === 'GET') {
           await handleListTools(toolRouter, res);
@@ -209,6 +229,7 @@ async function main(): Promise<void> {
           logger.info(`Orchestrator running on http://localhost:${config.port}`);
           logger.info('Endpoints:');
           logger.info(`  GET  /health      - Health check`);
+          logger.info(`  GET  /status      - Structured system status`);
           logger.info(`  GET  /tools/list  - List available tools (REST API)`);
           logger.info(`  POST /tools/call  - Execute a tool (REST API)`);
           logger.info(`  POST /agents/:id/resume - Resume a cost-paused agent`);

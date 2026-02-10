@@ -207,6 +207,25 @@ describe('Stdio Mode - Orchestrator as Protocol Bridge', () => {
       log(`Tools available: ${toolsData.tools?.length || 0}`, 'success')
       log('Thinker-compatible REST API verified', 'success')
     })
+
+    it('should return structured status from /status endpoint', async () => {
+      log('Checking /status endpoint...', 'info')
+
+      const res = await fetch('http://localhost:8010/status')
+      expect(res.ok).toBe(true)
+
+      const data = await res.json() as Record<string, unknown>
+
+      expect(data.status).toMatch(/^(ready|initializing)$/)
+      expect(typeof data.uptime).toBe('number')
+      expect(data.mcpServers).toBeDefined()
+      expect(typeof data.toolCount).toBe('number')
+      expect(data.sessions).toBeDefined()
+      expect(data.security).toBeDefined()
+      expect(data.halt).toBeDefined()
+
+      log(`Status: ${data.status}, uptime: ${data.uptime}ms, tools: ${data.toolCount}`, 'success')
+    })
   })
 
   describe('Error Handling', () => {
