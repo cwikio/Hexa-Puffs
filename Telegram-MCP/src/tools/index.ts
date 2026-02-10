@@ -84,20 +84,7 @@ export {
   subscribeChatSchema,
 };
 
-// Input types
-export type { SendMessageInput } from "./messages/send-message.js";
-export type { GetMessagesInput } from "./messages/get-messages.js";
-export type { SearchMessagesInput } from "./messages/search-messages.js";
-export type { DeleteMessagesInput } from "./messages/delete-message.js";
-export type { ListChatsInput } from "./chats/list-chats.js";
-export type { GetChatInput } from "./chats/get-chat.js";
-export type { CreateGroupInput } from "./chats/create-group.js";
-export type { AddContactInput } from "./contacts/add-contact.js";
-export type { SearchUsersInput } from "./contacts/search-contacts.js";
-export type { SendMediaInput } from "./media/send-media.js";
-export type { DownloadMediaInput } from "./media/download-media.js";
-export type { MarkReadInput } from "./utility/mark-read.js";
-
+import type { z } from "zod";
 import type { ToolHandler } from "@mcp/shared/Types/tools.js";
 
 interface ToolEntry {
@@ -115,33 +102,38 @@ interface ToolEntry {
 
 function createToolEntry<T>(
   tool: ToolEntry["tool"],
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   handler: (input: T) => Promise<unknown>
 ): ToolEntry {
-  // Safe: Telegram handlers validate internally via safeParse
-  return { tool, handler: handler as ToolHandler };
+  return {
+    tool,
+    handler(input: unknown): Promise<unknown> {
+      return handler(schema.parse(input));
+    }
+  };
 }
 
 export const allTools: ToolEntry[] = [
   // Messages
-  createToolEntry(sendMessageTool, handleSendMessage),
-  createToolEntry(getMessagesTool, handleGetMessages),
-  createToolEntry(searchMessagesTool, handleSearchMessages),
-  createToolEntry(deleteMessagesTool, handleDeleteMessages),
+  createToolEntry(sendMessageTool, sendMessageSchema, handleSendMessage),
+  createToolEntry(getMessagesTool, getMessagesSchema, handleGetMessages),
+  createToolEntry(searchMessagesTool, searchMessagesSchema, handleSearchMessages),
+  createToolEntry(deleteMessagesTool, deleteMessagesSchema, handleDeleteMessages),
   // Chats
-  createToolEntry(listChatsTool, handleListChats),
-  createToolEntry(getChatTool, handleGetChat),
-  createToolEntry(createGroupTool, handleCreateGroup),
+  createToolEntry(listChatsTool, listChatsSchema, handleListChats),
+  createToolEntry(getChatTool, getChatSchema, handleGetChat),
+  createToolEntry(createGroupTool, createGroupSchema, handleCreateGroup),
   // Contacts
-  createToolEntry(listContactsTool, handleListContacts),
-  createToolEntry(addContactTool, handleAddContact),
-  createToolEntry(searchUsersTool, handleSearchUsers),
+  createToolEntry(listContactsTool, listContactsSchema, handleListContacts),
+  createToolEntry(addContactTool, addContactSchema, handleAddContact),
+  createToolEntry(searchUsersTool, searchUsersSchema, handleSearchUsers),
   // Media
-  createToolEntry(sendMediaTool, handleSendMedia),
-  createToolEntry(downloadMediaTool, handleDownloadMedia),
+  createToolEntry(sendMediaTool, sendMediaSchema, handleSendMedia),
+  createToolEntry(downloadMediaTool, downloadMediaSchema, handleDownloadMedia),
   // Utility
-  createToolEntry(getMeTool, handleGetMe),
-  createToolEntry(markReadTool, handleMarkRead),
+  createToolEntry(getMeTool, getMeSchema, handleGetMe),
+  createToolEntry(markReadTool, markReadSchema, handleMarkRead),
   // Realtime
-  createToolEntry(getNewMessagesTool, handleGetNewMessages),
-  createToolEntry(subscribeChatTool, handleSubscribeChat),
+  createToolEntry(getNewMessagesTool, getNewMessagesSchema, handleGetNewMessages),
+  createToolEntry(subscribeChatTool, subscribeChatSchema, handleSubscribeChat),
 ];

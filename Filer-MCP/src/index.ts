@@ -18,7 +18,7 @@ import { initializeWorkspace } from "./utils/workspace.js";
 import { getConfig } from "./utils/config.js";
 import { cleanupTempFiles } from "./services/cleanup.js";
 import { Logger } from "@mcp/shared/Utils/logger.js";
-import { toolEntry, type ToolMapEntry } from "@mcp/shared/Types/tools.js";
+import { toolEntry, type ToolMapEntry, ValidationError } from "@mcp/shared/Types/tools.js";
 import {
   createFileSchema,
   handleCreateFile,
@@ -181,29 +181,9 @@ async function main() {
               return;
             }
 
-            // Validate arguments with Zod schema (use empty object if undefined)
+            // call() validates via safeParse then invokes handler — type-safe, no casts
             const safeArgs = args === undefined ? {} : args;
-            const parseResult = tool.schema.safeParse(safeArgs);
-            if (!parseResult.success) {
-              res.writeHead(400, { "Content-Type": "application/json" });
-              res.end(
-                JSON.stringify({
-                  content: [
-                    {
-                      type: "text",
-                      text: JSON.stringify({
-                        error: `Invalid parameters: ${parseResult.error.message}`,
-                        success: false,
-                      }),
-                    },
-                  ],
-                })
-              );
-              return;
-            }
-
-            // Call handler with validated data
-            const result = await tool.handler(parseResult.data);
+            const result = await tool.call(safeArgs);
 
             // Return MCP-compatible format
             res.writeHead(200, { "Content-Type": "application/json" });
@@ -213,6 +193,23 @@ async function main() {
               })
             );
           } catch (error) {
+            if (error instanceof ValidationError) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify({
+                        error: error.message,
+                        success: false,
+                      }),
+                    },
+                  ],
+                })
+              );
+              return;
+            }
             res.writeHead(500, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({
