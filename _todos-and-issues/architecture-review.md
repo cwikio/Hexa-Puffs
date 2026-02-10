@@ -123,17 +123,11 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 - **Short-term:** Auto-include new MCPs' tools in a "default" group
 - **Long-term:** Embedding-based classifier (nomic-embed already available via Ollama)
 
-### 8. Tighten HTTP Transport Security (High Impact, Low Effort)
-
-**Status:** Not started
+### ~~8. Tighten HTTP Transport Security~~ ✅ DONE
 
 **Problem:** `dual-transport.ts` sets `Access-Control-Allow-Origin: *`, binds `0.0.0.0` (all interfaces), and has no auth on any endpoint. Exposes `/tools/call`, `/sse`, `/message` to anyone on the network.
 
-**Proposal:**
-
-- Bind to `127.0.0.1` explicitly
-- Add shared secret token (`X-Annabelle-Token` header), generated per-session
-- Restrict CORS to `localhost` origins
+**Resolved:** All HTTP servers (dual-transport, Searcher, Orchestrator, Inngest) bind `127.0.0.1`. CORS restricted to `localhost`/`127.0.0.1` origins. `start-all.sh` generates a per-session `ANNABELLE_TOKEN` (saved to `~/.annabelle/annabelle.token`), passed to all services. Non-`/health` requests require `X-Annabelle-Token` header. Orchestrator's `BaseMCPClient` sends the token on all outgoing HTTP calls. `test.sh` reads the token from file.
 
 ### 9. Standardize Logging (Low-Medium Impact, Low Effort)
 
@@ -208,11 +202,11 @@ Hub-and-spoke system: **Orchestrator** (8010) auto-discovers and manages **9 MCP
 | ~~C~~ | ~~Add error propagation to start-all.sh~~| Low  | Medium | ✅ |
 | ~~D~~ | ~~Remove legacy port cleanup in start-all~~| Low | Low   | ✅ |
 
-### Tier 2: Security
+### ~~Tier 2: Security~~ ✅ ALL DONE
 
-| #   | Improvement                              | Effort | Impact |
-| --- | ---------------------------------------- | ------ | ------ |
-| 8   | HTTP transport security (CORS, bind, auth) | Low  | High   |
+| #   | Improvement                              | Effort | Impact | Status |
+| --- | ---------------------------------------- | ------ | ------ | ------ |
+| ~~8~~ | ~~HTTP transport security (CORS, bind, auth)~~ | Low  | High   | ✅ |
 
 ### Tier 3: Test gaps
 
