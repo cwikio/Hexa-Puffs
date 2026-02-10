@@ -21,6 +21,7 @@ const configSchema = z.object({
   logDir: z.string().default('~/.annabelle/codexec/logs'),
   sessionIdleTimeoutMs: z.coerce.number().int().positive().default(900_000), // 15 min
   maxSessions: z.coerce.number().int().positive().default(5),
+  scriptsDir: z.string().default('~/.annabelle/scripts'),
 });
 
 export type CodeExecConfig = z.infer<typeof configSchema>;
@@ -51,6 +52,7 @@ export function getConfig(): CodeExecConfig {
     logDir: process.env.CODEXEC_LOG_DIR,
     sessionIdleTimeoutMs: process.env.CODEXEC_SESSION_IDLE_TIMEOUT_MS,
     maxSessions: process.env.CODEXEC_MAX_SESSIONS,
+    scriptsDir: process.env.CODEXEC_SCRIPTS_DIR,
   };
 
   // Strip undefined keys so Zod defaults kick in
@@ -67,6 +69,7 @@ export function getConfig(): CodeExecConfig {
   const config = result.data;
   config.sandboxDir = resolve(expandHome(config.sandboxDir));
   config.logDir = resolve(expandHome(config.logDir));
+  config.scriptsDir = resolve(expandHome(config.scriptsDir));
 
   cached = config;
   return config;

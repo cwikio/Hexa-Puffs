@@ -26,13 +26,15 @@ import { mkdir } from 'node:fs/promises';
 async function main() {
   const config = getConfig();
 
-  // Ensure sandbox and log directories exist
+  // Ensure sandbox, log, and scripts directories exist
   await mkdir(config.sandboxDir, { recursive: true });
   await mkdir(config.logDir, { recursive: true });
+  await mkdir(config.scriptsDir, { recursive: true });
 
   console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] Starting CodeExec MCP {"transport":"stdio"}`);
   console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] Sandbox: ${config.sandboxDir}`);
   console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] Logs: ${config.logDir}`);
+  console.error(`[${new Date().toISOString()}] [INFO] [codexec-mcp] Scripts: ${config.scriptsDir}`);
 
   const { server, sessionManager } = createServer();
   const transport = new StdioServerTransport();

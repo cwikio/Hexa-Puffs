@@ -31,7 +31,28 @@ import {
   handleInstallPackage,
   type InstallPackageInput,
 } from './tools/packages.js';
+import {
+  saveScriptSchema,
+  handleSaveScript,
+  type SaveScriptInput,
+  getScriptSchema,
+  handleGetScript,
+  type GetScriptInput,
+  listScriptsSchema,
+  handleListScripts,
+  type ListScriptsInput,
+  searchScriptsSchema,
+  handleSearchScripts,
+  type SearchScriptsInput,
+  runScriptSchema,
+  handleRunScript,
+  type RunScriptInput,
+  deleteScriptSchema,
+  handleDeleteScript,
+  type DeleteScriptInput,
+} from './tools/scripts.js';
 import { SessionManager } from './sessions/manager.js';
+import { ScriptLibrary } from './scripts/library.js';
 
 export function createServer(): { server: McpServer; sessionManager: SessionManager } {
   const server = new McpServer({
@@ -171,6 +192,139 @@ export function createServer(): { server: McpServer; sessionManager: SessionMana
     },
     handler: async (params) => {
       const result = await handleInstallPackage(sessionManager)(params as InstallPackageInput);
+      return createSuccess(result);
+    },
+  });
+
+  // ── Script Library ────────────────────────────────────────────────────
+
+  const scriptLibrary = new ScriptLibrary();
+
+  registerTool(server, {
+    name: 'save_script',
+    description:
+      'Save code as a reusable named script. If a script with the same name exists, it is overwritten.\n\n' +
+      'Args:\n' +
+      '  - name (string): Script name (slugified for storage)\n' +
+      '  - description (string): What the script does\n' +
+      '  - language ("python" | "node" | "bash"): Programming language\n' +
+      '  - code (string): The script code\n' +
+      '  - tags (string[], optional): Tags for categorization\n' +
+      '  - packages (string[], optional): Required pip/npm packages\n\n' +
+      'Returns: { name, language, created }',
+    inputSchema: saveScriptSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (params) => {
+      const result = await handleSaveScript(scriptLibrary)(params as SaveScriptInput);
+      return createSuccess(result);
+    },
+  });
+
+  registerTool(server, {
+    name: 'get_script',
+    description:
+      'Retrieve a saved script by name. Returns the code and metadata.\n\n' +
+      'Args:\n' +
+      '  - name (string): Script name\n\n' +
+      'Returns: { code, metadata }',
+    inputSchema: getScriptSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (params) => {
+      const result = await handleGetScript(scriptLibrary)(params as GetScriptInput);
+      return createSuccess(result);
+    },
+  });
+
+  registerTool(server, {
+    name: 'list_scripts',
+    description:
+      'List all saved scripts. Optionally filter by language or tag.\n\n' +
+      'Args:\n' +
+      '  - language ("python" | "node" | "bash", optional): Filter by language\n' +
+      '  - tag (string, optional): Filter by tag\n\n' +
+      'Returns: { scripts: [{ name, description, language, tags, packages, run_count, last_run_at }] }',
+    inputSchema: listScriptsSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (params) => {
+      const result = await handleListScripts(scriptLibrary)(params as ListScriptsInput);
+      return createSuccess(result);
+    },
+  });
+
+  registerTool(server, {
+    name: 'search_scripts',
+    description:
+      'Search saved scripts by keyword. Matches against name, description, and tags.\n\n' +
+      'Args:\n' +
+      '  - query (string): Search query\n\n' +
+      'Returns: { scripts: [...] }',
+    inputSchema: searchScriptsSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (params) => {
+      const result = await handleSearchScripts(scriptLibrary)(params as SearchScriptsInput);
+      return createSuccess(result);
+    },
+  });
+
+  registerTool(server, {
+    name: 'run_script',
+    description:
+      'Execute a saved script. Runs in a one-shot sandbox with optional arguments.\n\n' +
+      'Args:\n' +
+      '  - name (string): Script name to run\n' +
+      '  - args (string[], optional): Arguments passed to the script\n' +
+      '  - timeout_ms (number, optional): Timeout in ms\n' +
+      '  - working_dir (string, optional): Working directory\n\n' +
+      'Returns: { name, execution_id, language, stdout, stderr, exit_code, duration_ms, timed_out, truncated }',
+    inputSchema: runScriptSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (params) => {
+      const result = await handleRunScript(scriptLibrary)(params as RunScriptInput);
+      return createSuccess(result);
+    },
+  });
+
+  registerTool(server, {
+    name: 'delete_script',
+    description:
+      'Delete a saved script from the library.\n\n' +
+      'Args:\n' +
+      '  - name (string): Script name to delete\n\n' +
+      'Returns: { name, deleted }',
+    inputSchema: deleteScriptSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (params) => {
+      const result = await handleDeleteScript(scriptLibrary)(params as DeleteScriptInput);
       return createSuccess(result);
     },
   });
