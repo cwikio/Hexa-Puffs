@@ -45,6 +45,7 @@ export class OrchestratorClient {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Agent-Id': this.agentId,
+      ...(process.env.ANNABELLE_TOKEN ? { 'X-Annabelle-Token': process.env.ANNABELLE_TOKEN } : {}),
       ...(trace ? createTraceHeaders(trace) : {}),
     };
 

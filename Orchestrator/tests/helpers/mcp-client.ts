@@ -19,7 +19,18 @@ export {
   extractData,
 } from '@mcp/shared/Testing/test-utils.js';
 
-import { MCPTestClient } from '@mcp/shared/Testing/mcp-test-client.js';
+import { MCPTestClient, resolveToken } from '@mcp/shared/Testing/mcp-test-client.js';
+
+/**
+ * Authenticated fetch — wraps native fetch with the Annabelle auth token header.
+ * Use this for raw HTTP calls that bypass MCPTestClient (e.g. /tools/list, /status).
+ */
+export function authFetch(url: string | URL, init?: RequestInit): Promise<Response> {
+  const token = resolveToken();
+  const headers = new Headers(init?.headers);
+  if (token) headers.set('X-Annabelle-Token', token);
+  return fetch(url, { ...init, headers });
+}
 
 // URL configuration
 export const MCP_URLS = {
