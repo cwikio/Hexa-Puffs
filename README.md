@@ -413,7 +413,7 @@ Passive AI reasoning engine that receives messages from Orchestrator via HTTP an
 - **Passive runtime** - Receives messages via `POST /process-message` from Orchestrator, returns responses (does not poll or send directly)
 - **LLM abstraction** - Supports Groq (cloud), LM Studio (local), Ollama (local), configurable per agent
 - **ReAct agent loop** - Multi-step reasoning with tool use via Vercel AI SDK (`maxSteps: 8`)
-- **Dynamic tool selection** - Keyword-based routing selects only relevant tool groups per message
+- **Embedding-based tool selection** - Cosine similarity over tool description embeddings selects relevant tools per message, with persistent cache across restarts and hot-reload when tools change at runtime
 - **Playbook seeding** - 8 default playbooks seeded on first startup (email triage, research, daily briefing, etc.)
 - **Config-driven personality** - System prompt loaded from file path provided by Orchestrator at spawn
 - **Context management** - Loads persona and facts from Memory MCP via Orchestrator's tool API
@@ -719,7 +719,8 @@ Layer 7: LLM Cost Controls
 │       └── instructions.md
 ├── data/
 │   ├── memory.db          ← SQLite database
-│   └── grants.db          ← File access permissions
+│   ├── grants.db          ← File access permissions
+│   └── embedding-cache.json ← Thinker tool embedding cache
 ├── logs/
 │   ├── orchestrator.log
 │   ├── security.log
@@ -844,7 +845,8 @@ Layer 7: LLM Cost Controls
 | -------------------- | ----------------------------- | -------------------------------------- |
 | Orchestrator         | Orchestrator/README.md        | Agent routing, tool policies, jobs     |
 | Guardian security    | Guardian/README.md            | Multi-provider scanning, pass-through  |
-| Thinker architecture | Thinker/ARCHITECTURE.md       | Agent loop, LLM providers, cost safety |
+| Thinker architecture | Thinker/README.md             | Agent loop, LLM providers, tool selection, cost safety |
+| Shared library       | Shared/README.md              | Types, utilities, embeddings, testing  |
 | Telegram commands    | command-list.md               | Slash commands reference               |
 | Memory system        | Memorizer-MCP/README.md       | Facts, conversations, profiles         |
 | File operations      | Filer-MCP/README.md           | Workspace, grants, audit log           |

@@ -26,9 +26,9 @@
 
 ## HIGH
 
-### 4. Missing tests — 1Password MCP
-- No test files, no test script in package.json.
-- **Fix:** Add at least basic integration tests for `op` CLI wrapper.
+### ~~4. Missing tests — 1Password MCP~~ ✅
+- ~~No test files, no test script in package.json.~~
+- ~~**Fix:** Add at least basic integration tests for `op` CLI wrapper.~~
 
 ### 5. Inconsistent dotenv handling
 - Only CodeExec and Guardian check `existsSync()` before loading dotenv. All others load unconditionally — dotenv v17 writes debug messages to stdout, corrupting stdio transport.
@@ -43,18 +43,18 @@
 - No client-side rate limiting. Under heavy Thinker multi-step loops, API keys could get rate-limited with no backoff.
 - **Fix:** Add rate limiter (e.g., token bucket or simple delay).
 
-### 8. Duplicate `StandardResponse` definitions
-- Searcher and Filer both have local `types/shared.ts` with their own `StandardResponse` instead of importing from `@mcp/shared`.
-- **Fix:** Remove local copies, import from shared package.
+### ~~8. Duplicate `StandardResponse` definitions~~ ✅
+- ~~Searcher and Filer both have local `types/shared.ts` with their own `StandardResponse` instead of importing from `@mcp/shared`.~~
+- ~~**Fix:** Remove local copies, import from shared package.~~
 
 ---
 
 ## MEDIUM
 
-### 9. `register-tool` type safety gap (Shared)
-- **File:** `Shared/Utils/register-tool.ts`
-- Handler signature is `Record<string, unknown>` — every MCP handler must cast with `as FooInput`. No compile-time safety for tool inputs.
-- **Fix:** Investigate generic type parameter on `registerTool` to propagate input type.
+### ~~9. `register-tool` type safety gap (Shared)~~ ✅
+- ~~**File:** `Shared/Utils/register-tool.ts`~~
+- ~~Handler signature is `Record<string, unknown>` — every MCP handler must cast with `as FooInput`. No compile-time safety for tool inputs.~~
+- ~~**Fix:** Investigate generic type parameter on `registerTool` to propagate input type.~~
 
 ### 10. Shared dual-transport signal handler stacking
 - **File:** `Shared/Utils/dual-transport.ts`
@@ -105,9 +105,9 @@
 - Searcher, Filer, and Telegram toolHandler maps use `any` with eslint-disable.
 - **Fix:** Replace with proper generics or `unknown` + type guards.
 
-### 20. No unified logging strategy
-- Some MCPs use shared logger, others use raw `console.error`, Telegram kills `console.log`. No consistent approach.
-- **Fix:** Migrate all MCPs to shared logger.
+### ~~20. No unified logging strategy~~ ✅
+- ~~Some MCPs use shared logger, others use raw `console.error`, Telegram kills `console.log`. No consistent approach.~~
+- ~~**Fix:** Migrate all MCPs to shared logger.~~
 
 ### 21. Health check inconsistency
 - Guardian validates provider connection; most others return static `{ status: "healthy" }`.
@@ -117,21 +117,21 @@
 - After compaction, `toolsUsed` and exact token counts from older turns are lost.
 - **Fix:** Preserve metadata summary in compaction output.
 
-### 23. Thinker fact extraction — no semantic dedup
-- Deduplication is string comparison only. "Tomasz likes coffee" and "User enjoys coffee" would both be stored.
-- **Fix:** Use embedding similarity for dedup.
+### ~~23. Thinker fact extraction — no semantic dedup~~ ✅
+- ~~Deduplication is string comparison only. "Tomasz likes coffee" and "User enjoys coffee" would both be stored.~~
+- ~~**Fix:** Use embedding similarity for dedup.~~ *(Now uses LLM-based dedup — passes known facts to extraction prompt to prevent duplicates.)*
 
 ### 24. Thinker trace logs grow unbounded
 - JSONL append-only logs in `~/.annabelle/logs/` have no rotation or archival.
 - **Fix:** Add log rotation (e.g., daily files, max retention).
 
-### 25. Gmail — large monolithic `server.ts`
-- 301-line `createServer` function with all tool definitions inline.
-- **Fix:** Split into per-tool modules.
+### ~~25. Gmail — large monolithic `server.ts`~~ ✅
+- ~~301-line `createServer` function with all tool definitions inline.~~
+- ~~**Fix:** Split into per-tool modules.~~ *(Tools now in `/tools/` subdirectory with separate modules.)*
 
-### 26. 1Password — incomplete SSE endpoint
-- `/messages` POST just returns `{status: "ok"}` without handling the message. Dead stub code.
-- **Fix:** Remove or implement.
+### ~~26. 1Password — incomplete SSE endpoint~~ ✅
+- ~~`/messages` POST just returns `{status: "ok"}` without handling the message. Dead stub code.~~
+- ~~**Fix:** Remove or implement.~~ *(Now implemented — reads request body and returns proper response.)*
 
 ---
 
@@ -140,8 +140,8 @@
 | Pattern | Good examples | Bad examples |
 |---|---|---|
 | dotenv safety | CodeExec, Guardian | Searcher, Filer, Telegram, Gmail |
-| StandardResponse | Guardian, Memorizer | Searcher (local dupe), Filer (local dupe) |
-| Test coverage | Memorizer, CodeExec, Gmail | 1Password (none), Telegram (minimal) |
+| StandardResponse | Guardian, Memorizer, Searcher, Filer | ~~Searcher (local dupe), Filer (local dupe)~~ |
+| Test coverage | Memorizer, CodeExec, Gmail, 1Password | ~~1Password (none)~~, Telegram (minimal) |
 | Health validation | Guardian | 1Password, Searcher, Filer |
 
 ---
@@ -149,6 +149,6 @@
 ## Summary
 
 - **3 critical** issues (Telegram logging, Filer security x2)
-- **5 high** issues (missing tests, dotenv, token validation, rate limiting, type dupes)
-- **10 medium** issues (type safety, race conditions, silent failures, cost tracking)
-- **8 low** issues (tech debt, logging, consistency)
+- ~~5~~ **3 high** issues remaining (dotenv, token validation, rate limiting) — ✅ 2 fixed (1Password tests, StandardResponse dupes)
+- ~~10~~ **9 medium** issues remaining — ✅ 1 fixed (register-tool generics)
+- ~~8~~ **5 low** issues remaining — ✅ 3 fixed (unified logging, fact dedup, Gmail split, 1Password SSE)

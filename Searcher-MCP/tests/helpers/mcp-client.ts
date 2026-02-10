@@ -3,13 +3,20 @@
  * Uses shared base client, adds Searcher-specific convenience methods.
  */
 
-import { MCPTestClient, type MCPToolCallResult } from '@mcp/shared/Testing/mcp-test-client.js';
+import { MCPTestClient, resolveToken, type MCPToolCallResult } from '@mcp/shared/Testing/mcp-test-client.js';
 export { log, logSection } from '@mcp/shared/Testing/test-utils.js';
 export { type MCPToolCallResult } from '@mcp/shared/Testing/mcp-test-client.js';
 
 export const SEARCHER_URL = process.env.SEARCHER_URL || "http://localhost:8007";
 
 const client = new MCPTestClient('Searcher', SEARCHER_URL);
+
+/** Auth headers for raw fetch calls that bypass MCPTestClient */
+function authHeaders(): Record<string, string> {
+  const token = resolveToken();
+  if (token) return { 'X-Annabelle-Token': token };
+  return {};
+}
 
 export function logInfo(message: string): void {
   const ts = new Date().toISOString().split("T")[1].slice(0, 12);
@@ -44,7 +51,7 @@ export async function getHealthData(): Promise<{
   port: number;
 } | null> {
   try {
-    const response = await fetch(`${SEARCHER_URL}/health`);
+    const response = await fetch(`${SEARCHER_URL}/health`, { headers: authHeaders() });
     if (response.ok) {
       return response.json();
     }
@@ -62,7 +69,7 @@ export async function listTools(): Promise<{
   }>;
 } | null> {
   try {
-    const response = await fetch(`${SEARCHER_URL}/tools/list`);
+    const response = await fetch(`${SEARCHER_URL}/tools/list`, { headers: authHeaders() });
     if (response.ok) {
       return response.json();
     }

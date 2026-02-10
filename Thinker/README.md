@@ -12,7 +12,7 @@ Thinker is a passive AI reasoning engine that receives messages from Orchestrato
 - **Env-based LLM switching** (Groq/LM Studio/Ollama)
 - **Centralized tracing** with trace_id in Shared library
 - **Persona stored in Memorizer** profiles
-- **Dynamic tool selection** - keyword-based routing selects relevant tool groups per message
+- **Embedding-based tool selection** - cosine similarity selects relevant tools per message, with regex fallback, persistent cache across restarts, and hot-reload when tools change
 - **Playbook seeding** - 12 default playbooks seeded on first startup
 - **Port 8006** for default agent; **port 0** for subagents (OS-assigned dynamic port)
 - **Lazy-spawn** - Orchestrator registers agents at startup, spawns only on first message
@@ -160,6 +160,12 @@ TELEGRAM_POLL_INTERVAL_MS=30000          # 30 seconds (reduced from 10s for cost
 # Agent
 THINKER_AGENT_ID=thinker                 # Agent ID for Memory MCP profile
 
+# Embedding-based tool selection
+EMBEDDING_PROVIDER=ollama                # ollama | lmstudio (for tool embeddings)
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text  # Model for embeddings (Ollama)
+LMSTUDIO_EMBEDDING_MODEL=               # Model for embeddings (LM Studio)
+EMBEDDING_CACHE_DIR=~/.annabelle/data    # Directory for embedding cache file
+
 # Logging
 LOG_LEVEL=info
 TRACE_LOG_PATH=~/.annabelle/logs/traces.jsonl
@@ -243,14 +249,48 @@ interface MessageSource {
 **On startup:**
 1. GET `{ORCHESTRATOR_URL}/tools` → list of all tools
 2. Convert to LLM function definitions
-3. Cache for runtime use
+3. Embed tool descriptions for semantic selection (cached to disk)
+4. Cache for runtime use (hot-reloaded when tool set changes)
 
 **On tool call:**
 1. POST `{ORCHESTRATOR_URL}/execute` with tool name and params
 2. Include `X-Trace-Id` header
 3. Return result to LLM or handle error
 
-### 4. Context Manager
+### 4. Embedding-Based Tool Selection
+
+Thinker uses **cosine similarity** over tool description embeddings to select the most relevant tools for each message. This replaces the original keyword-only approach with a semantic understanding of tool capabilities.
+
+**How it works:**
+
+1. On startup, all tool descriptions are embedded via the configured provider (Ollama or LM Studio)
+2. Embeddings are cached to `~/.annabelle/data/embedding-cache.json` — subsequent startups skip re-embedding unchanged tools
+3. Per message, the user text is embedded and compared against all tool embeddings via cosine similarity
+4. Tools scoring above a dynamic threshold are selected, plus "core" always-included tools
+5. If the embedding selector is unavailable, a regex-based fallback handles tool selection
+
+**Hot-reload:** Before each message, the agent checks whether the Orchestrator's tool set has changed (via a 10-minute TTL cache). If tools were added or removed, the embedding index is incrementally updated — only new tools need embedding thanks to the persistent cache.
+
+**Observability:** Tool selection logs include:
+- Method used (embedding vs regex fallback)
+- Number of tools selected vs total available
+- Top score and cutoff threshold
+- Debug-level: top 5 tool scores, regex overlap comparison
+
+**Cache file format:**
+
+The cache stores base64-encoded `Float32Array` embeddings keyed by `"toolName: description"`, with provider/model metadata for invalidation when the embedding model changes.
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `EMBEDDING_PROVIDER` | `ollama` | Provider for tool embeddings (`ollama` or `lmstudio`) |
+| `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text` | Ollama embedding model |
+| `LMSTUDIO_EMBEDDING_MODEL` | (auto) | LM Studio embedding model |
+| `EMBEDDING_CACHE_DIR` | `~/.annabelle/data` | Directory for cache file |
+
+### 5. Context Manager
 
 **Loads from Memory MCP:**
 - Profile for `agent_id: "thinker"` (contains persona)
@@ -275,7 +315,7 @@ Available Tools:
 {tool_descriptions}
 ```
 
-### 5. Agent Loop (Vercel AI SDK with maxSteps)
+### 6. Agent Loop (Vercel AI SDK with maxSteps)
 
 **No manual loop needed!** Vercel AI SDK handles ReAct automatically:
 
@@ -353,7 +393,7 @@ async function processMessage(
 4. Loop continues until LLM returns text without tools OR maxSteps reached
 5. Final `result.text` contains the response to send
 
-### 6. Trace Logger (Shared Library)
+### 7. Trace Logger (Shared Library)
 
 **Lives in:** `Shared/Tracing/` - reusable across ALL MCPs
 
@@ -496,8 +536,11 @@ Thinker/
 │   │   └── index.ts             # Barrel export
 │   │
 │   ├── agent/
-│   │   ├── loop.ts              # ReAct agent loop + DEFAULT_SYSTEM_PROMPT
-│   │   ├── tool-selector.ts     # Dynamic tool group selection by keywords
+│   │   ├── loop.ts              # ReAct agent loop + DEFAULT_SYSTEM_PROMPT + hot-reload
+│   │   ├── embedding-tool-selector.ts  # Embedding-based tool selection with cache persistence
+│   │   ├── embedding-config.ts  # Embedding provider configuration (Ollama/LM Studio)
+│   │   ├── tool-selection.ts    # selectToolsWithFallback() — embedding → regex fallback
+│   │   ├── tool-selector.ts     # Regex-based tool group selection (fallback)
 │   │   ├── skill-loader.ts      # Inngest skill loader (proactive tasks)
 │   │   ├── fact-extractor.ts    # Extract facts from conversation for memory
 │   │   ├── playbook-seed.ts     # 12 default playbooks seeded on first startup
@@ -554,8 +597,9 @@ Shared/
 
 2. Thinker receives message:
    └─→ /health returns 503 until agentRef is set (init gate)
+   └─→ Hot-reload check: refresh tools if Orchestrator tool set changed
    └─→ Create trace_id
-   └─→ Select relevant tool groups (tool-selector.ts)
+   └─→ Select relevant tools (embedding cosine similarity → regex fallback)
    └─→ Load persona from session or persona file
    └─→ Retrieve relevant facts
    └─→ Build conversation context

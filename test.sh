@@ -43,6 +43,7 @@ MCP_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOKEN_FILE="$HOME/.annabelle/annabelle.token"
 if [ -f "$TOKEN_FILE" ]; then
   ANNABELLE_TOKEN=$(cat "$TOKEN_FILE")
+  export ANNABELLE_TOKEN
   TOKEN_HEADER=(-H "X-Annabelle-Token: $ANNABELLE_TOKEN")
 else
   ANNABELLE_TOKEN=""

@@ -3,6 +3,10 @@
  * Shared across all packages to avoid duplication.
  */
 
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
+
 export interface MCPToolCallResult<T = unknown> {
   success: boolean;
   data?: T;
@@ -22,6 +26,19 @@ export interface MCPTestClientOptions {
   toolPrefix?: string;
   /** Request timeout in ms (default: 10000) */
   timeout?: number;
+  /** Auth token override. If omitted, auto-detects from env / token file. */
+  token?: string;
+}
+
+/** Read the Annabelle auth token from env or ~/.annabelle/annabelle.token */
+export function resolveToken(explicit?: string): string | undefined {
+  if (explicit) return explicit;
+  if (process.env.ANNABELLE_TOKEN) return process.env.ANNABELLE_TOKEN;
+  try {
+    return readFileSync(join(homedir(), '.annabelle', 'annabelle.token'), 'utf-8').trim();
+  } catch {
+    return undefined;
+  }
 }
 
 export class MCPTestClient {
@@ -29,18 +46,27 @@ export class MCPTestClient {
   private name: string;
   private timeout: number;
   private toolPrefix: string;
+  private token: string | undefined;
 
   constructor(name: string, baseUrl: string, options?: MCPTestClientOptions) {
     this.name = name;
     this.baseUrl = baseUrl;
     this.timeout = options?.timeout ?? 10_000;
     this.toolPrefix = options?.toolPrefix ?? '';
+    this.token = resolveToken(options?.token);
+  }
+
+  /** Build common headers including auth token when available */
+  private authHeaders(): Record<string, string> {
+    if (this.token) return { 'X-Annabelle-Token': this.token };
+    return {};
   }
 
   async healthCheck(): Promise<MCPHealthResult> {
     const start = Date.now();
     try {
       const response = await fetch(`${this.baseUrl}/health`, {
+        headers: this.authHeaders(),
         signal: AbortSignal.timeout(this.timeout),
       });
 
@@ -69,7 +95,7 @@ export class MCPTestClient {
       const prefixedName = this.toolPrefix ? `${this.toolPrefix}${toolName}` : toolName;
       const response = await fetch(`${this.baseUrl}/tools/call`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
         body: JSON.stringify({ name: prefixedName, arguments: args }),
         signal: AbortSignal.timeout(this.timeout),
       });
@@ -127,6 +153,10 @@ export class MCPTestClient {
 
   getBaseUrl(): string {
     return this.baseUrl;
+  }
+
+  getToken(): string | undefined {
+    return this.token;
   }
 }
 

@@ -1,4 +1,3 @@
-import { Agent } from 'http';
 import { type MCPServerConfig } from '../config/index.js';
 import { MCPClientError, MCPUnavailableError } from '../utils/errors.js';
 import { Logger, logger } from '@mcp/shared/Utils/logger.js';
@@ -11,9 +10,6 @@ import type {
 
 // Re-export types for backwards compatibility
 export type { MCPToolCall, MCPToolDefinition, ToolCallResult } from './types.js';
-
-/** HTTP keep-alive agent shared across all BaseMCPClient instances */
-const keepAliveAgent = new Agent({ keepAlive: true, maxSockets: 10, keepAliveMsecs: 30_000 });
 
 /** Check if an error is transient and worth retrying */
 function isTransientError(error: unknown): boolean {
@@ -126,8 +122,6 @@ export abstract class BaseMCPClient implements IMCPClient {
           headers: this.getHeaders(),
           body: body ? JSON.stringify(body) : undefined,
           signal: AbortSignal.timeout(this.config.timeout),
-          // @ts-expect-error -- Node.js fetch supports dispatcher/agent via undici
-          dispatcher: keepAliveAgent,
         });
 
         if (!response.ok) {

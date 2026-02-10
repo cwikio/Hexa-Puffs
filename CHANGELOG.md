@@ -27,6 +27,9 @@ First versioned release. Establishes baseline after completing architecture revi
 
 ### Thinker
 - Bound to `127.0.0.1` (S2), tool cache TTL (P4), embedding-based tool selection
+- Embedding cache persistence — tool embeddings cached to `~/.annabelle/data/embedding-cache.json`, base64-encoded Float32Array with provider/model invalidation. Eliminates ~13s cold start on restart (N6)
+- Tool hot-reload — `refreshToolsIfNeeded()` detects Orchestrator tool set changes before each message, incrementally re-embeds only new tools (N1)
+- Embedding selector observability — `ToolSelectionStats` with method, scores, threshold, top tools; exposed via `/health` endpoint and WARN/DEBUG logs (N2)
 
 ### Memorizer-MCP
 - Added SQLite `busy_timeout` (P3)

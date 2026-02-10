@@ -42,7 +42,7 @@ class LMStudioEmbeddingWrapper extends BaseEmbeddingProvider {
  * Memorizer-specific provider factory.
  * Delegates to Shared's factory but adds `lmstudio` via extraProviders.
  */
-function createMemorizerEmbeddingProvider(config: EmbeddingConfig): EmbeddingProvider | null {
+export function createEmbeddingProvider(config: EmbeddingConfig): EmbeddingProvider | null {
   return sharedCreateProvider(config, {
     lmstudio: (cfg) => new LMStudioEmbeddingWrapper(cfg),
   });
@@ -58,7 +58,7 @@ let providerInstance: EmbeddingProvider | null | undefined;
 export function getEmbeddingProvider(): EmbeddingProvider | null {
   if (providerInstance === undefined) {
     const config = getConfig();
-    providerInstance = createMemorizerEmbeddingProvider(config.embedding);
+    providerInstance = createEmbeddingProvider(config.embedding);
   }
   return providerInstance;
 }

@@ -5,9 +5,9 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock logger
-vi.mock('@mcp/shared/Utils/logger.js', () => ({
-  logger: {
+// Mock logger — factory must be self-contained because vi.mock is hoisted
+vi.mock('@mcp/shared/Utils/logger.js', () => {
+  const instance = {
     info: vi.fn(),
     debug: vi.fn(),
     warn: vi.fn(),
@@ -18,8 +18,9 @@ vi.mock('@mcp/shared/Utils/logger.js', () => ({
       warn: vi.fn(),
       error: vi.fn(),
     })),
-  },
-}));
+  };
+  return { Logger: vi.fn(() => instance), logger: instance };
+});
 
 // Mock config
 vi.mock('../../src/config/index.js', () => ({
