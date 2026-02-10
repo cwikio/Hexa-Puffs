@@ -38,6 +38,7 @@ agents.json
 
 # Claude IDE settings
 .claude/
+_claude-agents
 
 # Misc
 .cache/
