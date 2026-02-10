@@ -181,7 +181,9 @@ async function main() {
             );
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            logger.error(`Tool call failed`, { tool: JSON.parse(body).name, error: errorMessage });
+            let toolName = "unknown";
+            try { toolName = JSON.parse(body).name ?? "unknown"; } catch { /* body was not valid JSON */ }
+            logger.error(`Tool call failed`, { tool: toolName, error: errorMessage });
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({

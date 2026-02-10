@@ -39,9 +39,9 @@
 - ~~Missing/expired OAuth token only logs a warning. MCP continues accepting tool calls that will fail.~~
 - ~~**Fix:** Fail fast or report unhealthy on missing token.~~ *(Health endpoint now returns `status: 'degraded'` when token missing. Tool calls fail early with clear auth error. Startup logs at error level.)*
 
-### 7. Searcher — no Brave API rate limiting
-- No client-side rate limiting. Under heavy Thinker multi-step loops, API keys could get rate-limited with no backoff.
-- **Fix:** Add rate limiter (e.g., token bucket or simple delay).
+### ~~7. Searcher — no Brave API rate limiting~~ ✅
+- ~~No client-side rate limiting. Under heavy Thinker multi-step loops, API keys could get rate-limited with no backoff.~~
+- ~~**Fix:** Add rate limiter (e.g., token bucket or simple delay).~~ *(1 req/sec delay gate in `Searcher-MCP/src/services/brave.ts`.)*
 
 ### ~~8. Duplicate `StandardResponse` definitions~~ ✅
 - ~~Searcher and Filer both have local `types/shared.ts` with their own `StandardResponse` instead of importing from `@mcp/shared`.~~
