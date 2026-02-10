@@ -18,7 +18,9 @@ import type { IncomingMessage, ProcessingResult, AgentContext, AgentState } from
 import { PlaybookCache } from './playbook-cache.js';
 import { classifyMessage } from './playbook-classifier.js';
 import { seedPlaybooks } from './playbook-seed.js';
-import { selectToolsForMessage } from './tool-selector.js';
+import { selectToolsWithFallback } from './tool-selection.js';
+import { EmbeddingToolSelector } from './embedding-tool-selector.js';
+import { createEmbeddingProviderFromEnv } from './embedding-config.js';
 import { extractFactsFromConversation } from './fact-extractor.js';
 import { detectLeakedToolCall, recoverLeakedToolCall } from '../utils/recover-tool-call.js';
 import { Logger } from '@mcp/shared/Utils/logger.js';
@@ -152,6 +154,9 @@ export class Agent {
   // Session persistence
   private sessionStore: SessionStore;
 
+  // Embedding-based tool selector (null = disabled, use regex fallback)
+  private embeddingSelector: EmbeddingToolSelector | null = null;
+
   // Post-conversation fact extraction idle timers (per chatId)
   private extractionTimers: Map<string, NodeJS.Timeout> = new Map();
 
@@ -237,6 +242,22 @@ export class Agent {
     this.tools = { ...dynamicTools, ...essentialTools };
 
     logger.info(`Total tools available: ${Object.keys(this.tools).length}`);
+
+    // Initialize embedding-based tool selector (non-fatal if it fails)
+    try {
+      const provider = createEmbeddingProviderFromEnv();
+      if (provider) {
+        this.embeddingSelector = new EmbeddingToolSelector(provider, {
+          similarityThreshold: Number(process.env.TOOL_SELECTOR_THRESHOLD) || 0.3,
+          topK: Number(process.env.TOOL_SELECTOR_TOP_K) || 15,
+          minTools: Number(process.env.TOOL_SELECTOR_MIN_TOOLS) || 5,
+        });
+        await this.embeddingSelector.initialize(this.tools);
+      }
+    } catch (error) {
+      logger.warn('Failed to initialize embedding tool selector (non-fatal):', error);
+      this.embeddingSelector = null;
+    }
 
     // Seed default playbooks (idempotent) and initialize cache
     try {
@@ -443,7 +464,7 @@ export class Agent {
       // Generate response using ReAct pattern (no retries to prevent runaway costs)
       // 90s timeout leaves buffer within ThinkerClient's 120s limit
       const agentAbort = AbortSignal.timeout(90_000);
-      const selectedTools = selectToolsForMessage(message.text, this.tools);
+      const selectedTools = await selectToolsWithFallback(message.text, this.tools, this.embeddingSelector);
       let result;
       let usedTextOnlyFallback = false;
 
@@ -926,7 +947,7 @@ Complete the task step by step, using your available tools. When done, provide a
       }
 
       // Run the LLM with task instructions as the "user message"
-      const selectedTools = noTools ? undefined : selectToolsForMessage(taskInstructions, this.tools);
+      const selectedTools = noTools ? undefined : await selectToolsWithFallback(taskInstructions, this.tools, this.embeddingSelector);
       const result = await generateText({
         model: this.modelFactory.getModel(),
         system: systemPromptWithContext,

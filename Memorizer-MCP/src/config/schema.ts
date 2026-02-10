@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EmbeddingConfigSchema } from '@mcp/shared/Embeddings/config.js';
 
 export const AIProviderConfigSchema = z.object({
   provider: z.enum(['groq', 'lmstudio']).default('groq'),
@@ -27,26 +28,9 @@ export const ExtractionConfigSchema = z.object({
 
 export type ExtractionConfig = z.infer<typeof ExtractionConfigSchema>;
 
-export const EmbeddingConfigSchema = z.object({
-  provider: z.enum(['ollama', 'lmstudio', 'none']).default('none'),
-
-  // Ollama settings
-  ollamaBaseUrl: z.string().default('http://localhost:11434'),
-  ollamaModel: z.string().default('nomic-embed-text'),
-
-  // LM Studio settings
-  lmstudioBaseUrl: z.string().default('http://localhost:1234/v1'),
-  lmstudioModel: z.string().default('text-embedding-nomic-embed-text-v1.5'),
-
-  // Dimensions must match the model used (768 for nomic-embed-text)
-  dimensions: z.number().positive().default(768),
-
-  // Hybrid search weights (60/40 — balanced for short fact strings)
-  vectorWeight: z.number().min(0).max(1).default(0.6),
-  textWeight: z.number().min(0).max(1).default(0.4),
-});
-
-export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
+// Re-export from Shared for backward compat
+export { EmbeddingConfigSchema };
+export type { EmbeddingConfig } from '@mcp/shared/Embeddings/config.js';
 
 export const ConfigSchema = z.object({
   transport: z.enum(['stdio', 'sse']).default('stdio'),

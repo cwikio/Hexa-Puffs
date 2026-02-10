@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
-import { type EmbeddingConfig } from '../config/schema.js';
-import { BaseEmbeddingProvider } from './provider.js';
+import { type EmbeddingConfig } from '@mcp/shared/Embeddings/config.js';
+import { BaseEmbeddingProvider } from '@mcp/shared/Embeddings/provider.js';
 
 export class LMStudioEmbeddingProvider extends BaseEmbeddingProvider {
   private client: OpenAI;

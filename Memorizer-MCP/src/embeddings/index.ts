@@ -1,41 +1,15 @@
-import { type EmbeddingProvider, BaseEmbeddingProvider } from './provider.js';
-import { type EmbeddingConfig } from '../config/schema.js';
+import {
+  type EmbeddingProvider,
+  type EmbeddingConfig,
+  BaseEmbeddingProvider,
+  createEmbeddingProvider as sharedCreateProvider,
+} from '@mcp/shared/Embeddings/index.js';
 import { getConfig } from '../config/index.js';
-import { logger } from '@mcp/shared/Utils/logger.js';
 
-export type { EmbeddingProvider } from './provider.js';
-export { BaseEmbeddingProvider } from './provider.js';
+export type { EmbeddingProvider } from '@mcp/shared/Embeddings/index.js';
+export { BaseEmbeddingProvider } from '@mcp/shared/Embeddings/index.js';
 
-// Lazy wrapper for Ollama provider (mirrors ai-provider.ts pattern)
-class OllamaProviderWrapper extends BaseEmbeddingProvider {
-  private config: EmbeddingConfig;
-  private provider: EmbeddingProvider | null = null;
-
-  constructor(config: EmbeddingConfig) {
-    super('ollama-embedding');
-    this.config = config;
-  }
-
-  private async getProvider(): Promise<EmbeddingProvider> {
-    if (!this.provider) {
-      const { OllamaEmbeddingProvider } = await import('./ollama-provider.js');
-      this.provider = new OllamaEmbeddingProvider(this.config);
-    }
-    return this.provider;
-  }
-
-  async embed(text: string): Promise<Float32Array> {
-    const provider = await this.getProvider();
-    return provider.embed(text);
-  }
-
-  async embedBatch(texts: string[]): Promise<Float32Array[]> {
-    const provider = await this.getProvider();
-    return provider.embedBatch(texts);
-  }
-}
-
-// Lazy wrapper for LM Studio provider
+// Lazy wrapper for LM Studio provider (stays local — needs `openai` SDK)
 class LMStudioEmbeddingWrapper extends BaseEmbeddingProvider {
   private config: EmbeddingConfig;
   private provider: EmbeddingProvider | null = null;
@@ -64,19 +38,14 @@ class LMStudioEmbeddingWrapper extends BaseEmbeddingProvider {
   }
 }
 
-export function createEmbeddingProvider(config: EmbeddingConfig): EmbeddingProvider | null {
-  switch (config.provider) {
-    case 'ollama':
-      return new OllamaProviderWrapper(config);
-    case 'lmstudio':
-      return new LMStudioEmbeddingWrapper(config);
-    case 'none':
-      logger.info('Embedding provider disabled — keyword-only search');
-      return null;
-    default:
-      logger.warn('Unknown embedding provider, disabling vector search', { provider: config.provider });
-      return null;
-  }
+/**
+ * Memorizer-specific provider factory.
+ * Delegates to Shared's factory but adds `lmstudio` via extraProviders.
+ */
+function createMemorizerEmbeddingProvider(config: EmbeddingConfig): EmbeddingProvider | null {
+  return sharedCreateProvider(config, {
+    lmstudio: (cfg) => new LMStudioEmbeddingWrapper(cfg),
+  });
 }
 
 // Singleton — undefined means not yet initialized, null means disabled
@@ -89,7 +58,7 @@ let providerInstance: EmbeddingProvider | null | undefined;
 export function getEmbeddingProvider(): EmbeddingProvider | null {
   if (providerInstance === undefined) {
     const config = getConfig();
-    providerInstance = createEmbeddingProvider(config.embedding);
+    providerInstance = createMemorizerEmbeddingProvider(config.embedding);
   }
   return providerInstance;
 }
