@@ -15,7 +15,7 @@ const TOOLS: Record<string, CoreTool> = {
 };
 
 describe('selectToolsWithFallback', () => {
-  it('uses embedding selector when initialized', async () => {
+  it('uses embedding selector and merges regex results when initialized', async () => {
     const mockResult = { send_telegram: TOOLS.send_telegram };
     const selector = {
       isInitialized: () => true,
@@ -33,7 +33,12 @@ describe('selectToolsWithFallback', () => {
     } as unknown as EmbeddingToolSelector;
 
     const result = await selectToolsWithFallback('hello', TOOLS, selector);
-    expect(result).toBe(mockResult);
+    // Embedding result should be included
+    expect(result.send_telegram).toBe(TOOLS.send_telegram);
+    // Regex results should be merged in (keyword "hello" doesn't match any
+    // specific route so DEFAULT_GROUPS = ['search', 'memory'] are activated,
+    // which adds searcher_web_search from the 'search' group)
+    expect(result.searcher_web_search).toBe(TOOLS.searcher_web_search);
     expect(selector.selectTools).toHaveBeenCalledOnce();
   });
 

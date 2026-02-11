@@ -29,27 +29,29 @@ export async function selectToolsWithFallback(
 ): Promise<Record<string, CoreTool>> {
   if (embeddingSelector?.isInitialized()) {
     try {
-      const result = await embeddingSelector.selectTools(message, allTools, CORE_TOOL_NAMES);
+      const embeddingResult = await embeddingSelector.selectTools(message, allTools, CORE_TOOL_NAMES);
+
+      // Always merge regex keyword-matched tools — they encode curated domain
+      // knowledge (e.g. image requests need both search AND telegram groups)
+      // that pure semantic similarity can miss.
+      const regexResult = selectToolsForMessage(message, allTools);
+      const merged = { ...embeddingResult };
+      let regexAdded = 0;
+      for (const [name, tool] of Object.entries(regexResult)) {
+        if (!(name in merged)) {
+          merged[name] = tool;
+          regexAdded++;
+        }
+      }
 
       const stats = embeddingSelector.getLastSelectionStats();
       if (stats) {
         logger.info(
-          `Tool selection: method=embedding, selected=${stats.selectedCount}/${stats.totalTools}, topScore=${stats.topScore.toFixed(3)}`
+          `Tool selection: method=embedding+regex, embedding=${stats.selectedCount}, regex added=${regexAdded}, total=${Object.keys(merged).length}/${stats.totalTools}, topScore=${stats.topScore.toFixed(3)}`
         );
-
-        // Debug: compare with regex selector
-        if (logger.getLevel() === 'debug') {
-          const regexResult = selectToolsForMessage(message, allTools);
-          const regexNames = new Set(Object.keys(regexResult));
-          const embeddingNames = new Set(Object.keys(result));
-          const overlap = [...embeddingNames].filter(n => regexNames.has(n)).length;
-          logger.debug(
-            `Regex comparison: would select ${regexNames.size}, overlap: ${overlap}/${embeddingNames.size}`
-          );
-        }
       }
 
-      return result;
+      return merged;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logger.warn(`Embedding tool selection failed, falling back to regex: ${msg}`);
