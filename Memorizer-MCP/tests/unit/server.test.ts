@@ -8,13 +8,17 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
-// Mock the database before importing server
-vi.mock('../../src/db/index.js', () => ({
-  getDatabase: vi.fn(),
-  generateId: vi.fn(() => 'test-id'),
-  FACT_CATEGORIES: ['preference', 'background', 'contact', 'project', 'decision', 'pattern'] as const,
-  TRIGGER_TYPES: ['cron', 'manual', 'event'] as const,
-}));
+// Mock the database before importing server — use importOriginal to keep
+// all constant exports (FACT_CATEGORIES, TRIGGER_TYPES, CONTACT_TYPES, etc.)
+// in sync with the real module, only overriding runtime functions.
+vi.mock('../../src/db/index.js', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    getDatabase: vi.fn(),
+    generateId: vi.fn(() => 'test-id'),
+  };
+});
 
 // Mock the fact extractor
 vi.mock('../../src/services/fact-extractor.js', () => ({
@@ -84,6 +88,12 @@ const EXPECTED_TOOLS = [
   'backfill_extract_facts',
   'synthesize_facts',
   'backfill_embeddings',
+  'create_contact',
+  'list_contacts',
+  'update_contact',
+  'create_project',
+  'list_projects',
+  'update_project',
 ];
 
 const READ_ONLY_TOOLS = [
@@ -95,6 +105,8 @@ const READ_ONLY_TOOLS = [
   'export_memory',
   'list_skills',
   'get_skill',
+  'list_contacts',
+  'list_projects',
 ];
 
 const DESTRUCTIVE_TOOLS = [
@@ -125,8 +137,8 @@ describe('Memorizer MCP Server Registration', () => {
     await client.close();
   });
 
-  it('should register all 20 tools', () => {
-    expect(tools).toHaveLength(20);
+  it('should register all 26 tools', () => {
+    expect(tools).toHaveLength(26);
   });
 
   it('should register tools with correct names', () => {

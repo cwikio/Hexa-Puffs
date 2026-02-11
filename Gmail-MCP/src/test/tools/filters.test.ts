@@ -29,49 +29,56 @@ import {
 import { MOCK_FILTERS, MOCK_FILTER } from "../fixtures/gmail.js";
 
 // ---------------------------------------------------------------------------
-// Tests
+// Tests — handlers return StandardResponse { success, data?, error? }
 // ---------------------------------------------------------------------------
 
 describe("handleListFilters", () => {
-  it("success returns { filters: [...] }", async () => {
+  it("success returns StandardResponse with filters", async () => {
     mockListFilters.mockResolvedValueOnce(MOCK_FILTERS);
 
     const result = await handleListFilters();
 
-    expect(result).toEqual({ filters: MOCK_FILTERS });
+    expect(result).toEqual({ success: true, data: { filters: MOCK_FILTERS } });
     expect(mockListFilters).toHaveBeenCalledOnce();
   });
 
-  it("propagates API errors", async () => {
+  it("returns error response on API failure", async () => {
     mockListFilters.mockRejectedValueOnce(new Error("API unavailable"));
 
-    await expect(handleListFilters()).rejects.toThrow("API unavailable");
+    const result = await handleListFilters();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("API unavailable");
   });
 });
 
 describe("handleGetFilter", () => {
-  it("success returns { filter: {...} }", async () => {
+  it("success returns StandardResponse with filter", async () => {
     mockGetFilter.mockResolvedValueOnce(MOCK_FILTER);
 
     const result = await handleGetFilter({ filter_id: "ANe1Bmj5Kz8Xp3wR" });
 
-    expect(result).toEqual({ filter: MOCK_FILTER });
+    expect(result).toEqual({ success: true, data: { filter: MOCK_FILTER } });
     expect(mockGetFilter).toHaveBeenCalledWith("ANe1Bmj5Kz8Xp3wR");
   });
 
-  it('throws "filter_id is required" when filter_id is missing', async () => {
-    await expect(handleGetFilter({})).rejects.toThrow("filter_id is required");
+  it("returns error when filter_id is missing", async () => {
+    const result = await handleGetFilter({});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 
-  it('throws "filter_id is required" when filter_id is not a string', async () => {
-    await expect(handleGetFilter({ filter_id: 42 })).rejects.toThrow(
-      "filter_id is required"
-    );
+  it("returns error when filter_id is not a string", async () => {
+    const result = await handleGetFilter({ filter_id: 42 });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 });
 
 describe("handleCreateFilter", () => {
-  it("success returns { filter: {...} } with criteria and action mapped", async () => {
+  it("success returns StandardResponse with filter", async () => {
     mockCreateFilter.mockResolvedValueOnce(MOCK_FILTER);
 
     const result = await handleCreateFilter({
@@ -79,7 +86,7 @@ describe("handleCreateFilter", () => {
       action: { add_label_ids: ["Label_42"], remove_label_ids: ["INBOX"] },
     });
 
-    expect(result).toEqual({ filter: MOCK_FILTER });
+    expect(result).toEqual({ success: true, data: { filter: MOCK_FILTER } });
     expect(mockCreateFilter).toHaveBeenCalledWith(
       {
         from: "notifications@github.com",
@@ -98,32 +105,41 @@ describe("handleCreateFilter", () => {
     );
   });
 
-  it('throws "Both criteria and action are required" when criteria missing', async () => {
-    await expect(
-      handleCreateFilter({ action: { add_label_ids: ["Label_1"] } })
-    ).rejects.toThrow("Both criteria and action are required");
+  it("returns error when criteria missing", async () => {
+    const result = await handleCreateFilter({
+      action: { add_label_ids: ["Label_1"] },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 
-  it('throws "Both criteria and action are required" when action missing', async () => {
-    await expect(
-      handleCreateFilter({ criteria: { from: "test@example.com" } })
-    ).rejects.toThrow("Both criteria and action are required");
+  it("returns error when action missing", async () => {
+    const result = await handleCreateFilter({
+      criteria: { from: "test@example.com" },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 });
 
 describe("handleDeleteFilter", () => {
-  it("success returns { deleted: true }", async () => {
+  it("success returns StandardResponse with deleted flag", async () => {
     mockDeleteFilter.mockResolvedValueOnce(undefined);
 
-    const result = await handleDeleteFilter({ filter_id: "ANe1Bmj5Kz8Xp3wR" });
+    const result = await handleDeleteFilter({
+      filter_id: "ANe1Bmj5Kz8Xp3wR",
+    });
 
-    expect(result).toEqual({ deleted: true });
+    expect(result).toEqual({ success: true, data: { deleted: true } });
     expect(mockDeleteFilter).toHaveBeenCalledWith("ANe1Bmj5Kz8Xp3wR");
   });
 
-  it('throws "filter_id is required" when filter_id missing', async () => {
-    await expect(handleDeleteFilter({})).rejects.toThrow(
-      "filter_id is required"
-    );
+  it("returns error when filter_id missing", async () => {
+    const result = await handleDeleteFilter({});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 });

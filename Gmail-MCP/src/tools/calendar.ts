@@ -98,7 +98,7 @@ export const ListEventsInputSchema = z.object({
   time_min: z.string().optional(),
   time_max: z.string().optional(),
   query: z.string().optional(),
-  max_results: z.number().min(1).max(250).optional(),
+  max_results: z.coerce.number().min(1).max(250).optional(),
   page_token: z.string().optional(),
 });
 
@@ -280,7 +280,7 @@ export const CreateEventInputSchema = z.object({
     .array(
       z.object({
         method: z.enum(["email", "popup"]),
-        minutes: z.number().min(0),
+        minutes: z.coerce.number().min(0),
       })
     )
     .optional(),

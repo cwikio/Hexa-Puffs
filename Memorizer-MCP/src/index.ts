@@ -24,6 +24,12 @@ import {
   handleGetSkill,
   handleUpdateSkill,
   handleDeleteSkill,
+  handleCreateContact,
+  handleListContacts,
+  handleUpdateContact,
+  handleCreateProject,
+  handleListProjects,
+  handleUpdateProject,
 } from './tools/index.js';
 
 // Tool handlers map for /tools/call endpoint
@@ -45,6 +51,12 @@ const toolHandlers: Record<string, (input: unknown) => Promise<StandardResponse<
   get_skill: handleGetSkill,
   update_skill: handleUpdateSkill,
   delete_skill: handleDeleteSkill,
+  create_contact: handleCreateContact,
+  list_contacts: handleListContacts,
+  update_contact: handleUpdateContact,
+  create_project: handleCreateProject,
+  list_projects: handleListProjects,
+  update_project: handleUpdateProject,
 };
 
 async function main(): Promise<void> {

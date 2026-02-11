@@ -8,7 +8,12 @@ const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 120;  // 120 requests per minute per IP
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
+const LOOPBACK_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
 function isRateLimited(ip: string): boolean {
+  // Loopback traffic is already protected by auth token — no rate limit
+  if (LOOPBACK_IPS.has(ip)) return false;
+
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
 

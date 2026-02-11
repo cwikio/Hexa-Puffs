@@ -149,7 +149,7 @@ export const CreateFilterInputSchema = z.object({
     subject: z.string().optional(),
     query: z.string().optional(),
     has_attachment: z.boolean().optional(),
-    size: z.number().optional(),
+    size: z.coerce.number().optional(),
     size_comparison: z.enum(["larger", "smaller"]).optional(),
   }),
   action: z.object({

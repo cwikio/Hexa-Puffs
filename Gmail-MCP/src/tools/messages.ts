@@ -51,7 +51,7 @@ export const listEmailsTool = {
 
 export const ListEmailsInputSchema = z.object({
   query: z.string().optional(),
-  max_results: z.number().min(1).max(100).optional(),
+  max_results: z.coerce.number().min(1).max(100).optional(),
   label_ids: z.array(z.string()).optional(),
   page_token: z.string().optional(),
 });

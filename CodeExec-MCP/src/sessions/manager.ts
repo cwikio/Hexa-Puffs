@@ -73,8 +73,8 @@ export class SessionManager {
     const maxFileBlocks = Math.floor(config.maxFileSizeBytes / 512);
     const limits = `ulimit -u ${config.maxProcesses} -f ${maxFileBlocks}`;
     const innerCmd = opts.language === 'python'
-      ? `exec python3 -u ${wrapperPath}`
-      : `exec node ${wrapperPath}`;
+      ? `exec python3 -u "${wrapperPath}"`
+      : `exec node "${wrapperPath}"`;
 
     const child = spawn('bash', ['-c', `${limits} && ${innerCmd}`], {
       cwd: workingDir,

@@ -722,7 +722,36 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
                 toolResponse = data.response;
               }
             }
-            responseText = leak.preamble || toolResponse || 'Done.';
+
+            if (leak.preamble) {
+              responseText = leak.preamble;
+            } else if (toolResponse) {
+              responseText = toolResponse;
+            } else {
+              // No preamble or extractable text — ask LLM to summarize the tool result
+              try {
+                const resultJson = JSON.stringify(recovery.result);
+                const truncated = resultJson.length > 2000 ? resultJson.substring(0, 2000) + '...(truncated)' : resultJson;
+                const summary = await generateText({
+                  model: this.modelFactory.getModel(),
+                  system: 'You are a helpful assistant. The user asked a question and a tool was called to get data. Summarize the tool result into a concise, natural response for the user. Do NOT mention tools or technical details — just answer naturally.',
+                  messages: [
+                    { role: 'user', content: message.text },
+                    { role: 'user', content: `Here is the result from ${leak.toolName}:\n\n${truncated}` },
+                  ],
+                  temperature: this.config.temperature,
+                });
+                this.costMonitor?.recordUsage(
+                  summary.usage?.promptTokens || 0,
+                  summary.usage?.completionTokens || 0,
+                );
+                responseText = summary.text ? sanitizeResponseText(summary.text) : 'Done.';
+              } catch (summaryError) {
+                logger.warn('[tool-recovery] Summarization failed, using fallback:', summaryError);
+                responseText = 'Done.';
+              }
+            }
+
             recoveredTools = [leak.toolName];
             logger.info(`[tool-recovery] Recovery successful, response: "${responseText.substring(0, 80)}"`);
           } else {

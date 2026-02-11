@@ -183,3 +183,61 @@ export interface DeleteSkillData {
   deleted_skill: string;
 }
 
+// ============================================================================
+// Contacts Tool Response Types
+// ============================================================================
+
+export interface CreateContactData {
+  contact_id: number;
+  created_at: string;
+}
+
+export interface ListContactsData {
+  contacts: Array<{
+    id: number;
+    name: string;
+    email: string;
+    company: string | null;
+    role: string | null;
+    type: string;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+  }>;
+  total_count: number;
+}
+
+export interface UpdateContactData {
+  updated_fields: string[];
+}
+
+// ============================================================================
+// Projects Tool Response Types
+// ============================================================================
+
+export interface CreateProjectData {
+  project_id: number;
+  created_at: string;
+}
+
+export interface ListProjectsData {
+  projects: Array<{
+    id: number;
+    name: string;
+    status: string;
+    type: string;
+    description: string | null;
+    primary_contact_id: number | null;
+    participants: number[] | null;
+    company: string | null;
+    priority: string | null;
+    created_at: string;
+    updated_at: string;
+  }>;
+  total_count: number;
+}
+
+export interface UpdateProjectData {
+  updated_fields: string[];
+}
+
