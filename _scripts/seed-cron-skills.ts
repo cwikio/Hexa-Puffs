@@ -45,46 +45,40 @@ const skills: CronSkill[] = [
     name: 'Email Processor',
     description: 'Pull new emails, classify by priority, enrich with contact/project context, and send a smart summary.',
     trigger_config: { interval_minutes: 30 },
-    instructions: `You are running the Email Processor skill. Check for new emails, identify unknown senders, and produce an intelligent summary.
+    instructions: `You are running the Email Processor skill.
 
-Steps:
-1. Call gmail_get_new_emails to get unprocessed emails.
-2. If no new emails, respond with "No new emails since last check." and stop.
-3. For each email:
-   a. Extract the sender's email address and display name.
-   b. Look up the sender via memory_list_contacts (filter by email).
-   c. If found with type "ignored" → skip this email silently, do not include in summary.
-   d. If not found by email, extract the domain (@domain.com) and look up via memory_list_contacts (filter by email: "@domain.com").
-      If found with type "ignored" → skip silently.
-   e. If the sender is a known contact (type "work" or "personal"), note their name, company, and role.
-   f. If the sender is NOT in contacts at all → flag as UNKNOWN SENDER.
-      Also extract the company name from the email domain: take the part between @ and the last dot
-      (e.g., john@acmecorp.com → "Acmecorp", jane@big-company.co.uk → "Big-Company").
-      Capitalize the first letter. This is the PRESUMED COMPANY NAME.
-   g. If the sender matches a project's primary_contact or company, note the project context via memory_list_projects.
-   h. For unknown senders: look up the presumed company name via memory_list_projects (filter by company).
-      If no matching project exists → flag as NEW COMPANY.
-   i. Classify: urgent (needs action today), important (this week), informational (FYI), low-priority (newsletters/automated).
-4. Group emails by classification.
-5. Format summary:
-   - Count: "X new emails (Y urgent, Z important)"
-   - URGENT emails first with sender, subject, one-line summary
-   - IMPORTANT emails next
-   - Brief mention of informational/low-priority count
-   - If any emails need a reply, note "Pending reply" with suggestion
-6. If there are UNKNOWN SENDERS, add a section at the end:
-   "📇 New senders I don't know:
-   - [Name] ([email]) — subject: [subject line]
-   Who are they? Tell me their role and context — or say 'ignore [name]' to never ask again.
-   You can also say 'ignore @domain.com' to ignore all emails from that domain."
-7. If there are NEW COMPANIES, add a section:
-   "🏢 New companies:
-   - [Presumed Company Name] (from [sender name]'s email: [email])
-   Is this related to a project? Should I track it? Is the company name correct?"
-   The company name is derived from the email domain (between @ and last dot, capitalized).
-   The user may confirm, correct the name, or provide project context.
+Step 1: Call gmail_get_new_emails to get unprocessed emails. If none, respond "No new emails since last check." and stop.
 
-Keep the summary concise — Telegram-friendly format.`,
+Step 2: Call memory_list_contacts (no filters) to get ALL known contacts.
+
+Step 3: Call memory_list_projects with status "active" to get all active projects.
+
+Step 4: Now process the emails using the data you already have. For each email:
+- Match the sender email against your contacts list.
+- If the contact has type "ignored", or if any contact has email matching "@" + the sender's domain with type "ignored" → skip silently.
+- If the sender is a known contact (type "work"/"personal"), note their name/company/role.
+- If the sender is NOT in contacts → mark as UNKNOWN. Extract company name from email domain (part between @ and last dot, capitalize first letter, e.g. john@acmecorp.com → "Acmecorp").
+- For unknown senders, check if their presumed company matches any active project. If not → mark as NEW COMPANY.
+- Classify each email: urgent (action today), important (this week), informational (FYI), low-priority (newsletters/automated).
+
+Step 5: Format summary grouped by priority:
+- "X new emails (Y urgent, Z important)"
+- URGENT first with sender, subject, one-line summary
+- IMPORTANT next
+- Brief count of informational/low-priority
+- Note any emails needing a reply
+
+Step 6: If there are UNKNOWN senders, append:
+"📇 New senders I don't know:
+- [Name] ([email]) — subject: [subject]
+Who are they? Say 'ignore [name]' or 'ignore @domain.com' to skip them permanently."
+
+Step 7: If there are NEW COMPANIES, append:
+"🏢 New companies:
+- [Company Name] (from [sender]'s email)
+Is this a project? Should I track it? Is the name correct?"
+
+Keep it concise for Telegram.`,
     required_tools: ['gmail_get_new_emails', 'memory_list_contacts', 'memory_list_projects'],
     max_steps: 15,
   },
