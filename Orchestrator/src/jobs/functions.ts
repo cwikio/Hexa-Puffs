@@ -343,9 +343,6 @@ export const skillSchedulerFunction = inngest.createFunction(
       return { checked: 0, executed: 0, halted: true };
     }
 
-    const config = getConfig();
-    const thinkerUrl = config.thinkerUrl;
-
     // 0. Auto-enable disabled cron skills whose required_tools are now available
     await step.run('auto-enable-skills', async () => {
       try {
@@ -362,10 +359,11 @@ export const skillSchedulerFunction = inngest.createFunction(
 
         if (!disabledResult.success) return;
 
-        const content = disabledResult.content;
-        const data = typeof content === 'string' ? JSON.parse(content) : content;
-        const parsed = (data?.data || data || { skills: [] }) as { skills?: unknown[] };
-        const disabledSkills = parsed.skills || [];
+        const mcpResponse = disabledResult.content as { content?: Array<{ type: string; text?: string }> };
+        const rawText = mcpResponse?.content?.[0]?.text;
+        if (!rawText) return;
+        const data = JSON.parse(rawText);
+        const disabledSkills = (data?.data?.skills || data?.skills || []) as unknown[];
 
         for (const rawSkill of disabledSkills) {
           const skill = rawSkill as { id: number; name: string; required_tools?: string[] | string };
@@ -416,12 +414,12 @@ export const skillSchedulerFunction = inngest.createFunction(
           logger.warn('Failed to list skills', { error: result.error });
           return { skills: [] };
         }
-        // Parse the response - it comes as stringified JSON in content
-        const content = result.content;
-        const data = typeof content === 'string' ? JSON.parse(content) : content;
-        const parsed = data as Record<string, unknown> | null;
-        const inner = (parsed?.data || parsed || { skills: [] }) as { skills?: unknown[] };
-        return { skills: inner.skills || [] };
+        // Parse the response — unwrap MCP content[0].text
+        const mcpResponse = result.content as { content?: Array<{ type: string; text?: string }> };
+        const rawText = mcpResponse?.content?.[0]?.text;
+        if (!rawText) return { skills: [] };
+        const data = JSON.parse(rawText);
+        return { skills: data?.data?.skills || data?.skills || [] };
       } catch (error) {
         logger.error('Failed to list skills from Memory MCP', { error });
         return { skills: [] };
@@ -547,34 +545,61 @@ export const skillSchedulerFunction = inngest.createFunction(
         }
       }
 
-      // Execute the skill via Thinker
+      // Execute the skill via Thinker (discovered through AgentManager)
       await step.run(`execute-skill-${skill.id}`, async () => {
         try {
           logger.info('Executing skill via Thinker', { skillId: skill.id, name: skill.name });
 
-          const response = await fetch(`${thinkerUrl}/execute-skill`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              skillId: skill.id,
-              instructions: skill.instructions,
-              maxSteps: skill.max_steps || 10,
-              notifyOnCompletion: skill.notify_on_completion,
-            }),
-          });
+          const { getOrchestrator } = await import('../core/orchestrator.js');
+          const orchestrator = await getOrchestrator();
+          const agentManager = orchestrator.getAgentManager();
+          if (!agentManager) {
+            throw new Error('AgentManager not initialized');
+          }
 
-          const result = await response.json();
+          // Discover and ensure agent is running
+          const agentId = agentManager.getDefaultAgentId();
+          if (!agentId) {
+            throw new Error('No agent registered in AgentManager');
+          }
+
+          const isRunning = await agentManager.ensureRunning(agentId);
+          if (!isRunning) {
+            throw new Error(`Agent "${agentId}" failed to start`);
+          }
+
+          const client = agentManager.getClient(agentId);
+          if (!client) {
+            throw new Error(`Agent "${agentId}" client not available after ensureRunning`);
+          }
+
+          // Auto-detect notification chat from channel manager
+          let notifyChatId: string | undefined;
+          if (skill.notify_on_completion) {
+            const channelManager = orchestrator.getChannelManager();
+            const telegramAdapter = channelManager?.getAdapter('telegram');
+            const chatIds = telegramAdapter?.getMonitoredChatIds() ?? [];
+            if (chatIds.length > 0) {
+              notifyChatId = chatIds[0];
+            }
+          }
+
+          const result = await client.executeSkill(
+            skill.instructions,
+            skill.max_steps || 10,
+            skill.notify_on_completion ?? false,
+            false,
+            notifyChatId,
+          );
 
           // Update skill's last_run fields via Memory MCP
           try {
-            const { getOrchestrator } = await import('../core/orchestrator.js');
-            const orchestrator = await getOrchestrator();
             const toolRouter = orchestrator.getToolRouter();
             await toolRouter.routeToolCall('memory_update_skill', {
               skill_id: skill.id,
               last_run_at: new Date().toISOString(),
               last_run_status: result.success ? 'success' : 'error',
-              last_run_summary: result.summary || result.error || 'No summary',
+              last_run_summary: result.response || result.error || 'No summary',
             });
           } catch (updateError) {
             logger.error('Failed to update skill status', { skillId: skill.id, error: updateError });

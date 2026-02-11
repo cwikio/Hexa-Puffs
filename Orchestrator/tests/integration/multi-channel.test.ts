@@ -52,6 +52,7 @@ function makeMockAdapter(channel: string, messages: IncomingAgentMessage[] = [])
     initialize: vi.fn().mockResolvedValue(undefined),
     poll: vi.fn().mockResolvedValue(messages),
     sendMessage: vi.fn().mockResolvedValue(undefined),
+    getMonitoredChatIds: vi.fn().mockReturnValue([]),
     shutdown: vi.fn().mockResolvedValue(undefined),
   };
 }

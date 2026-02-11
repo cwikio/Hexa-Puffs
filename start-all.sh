@@ -129,7 +129,7 @@ echo ""
 # ─── Inngest Dev Server ──────────────────────────────────────────────────────
 echo -e "${BOLD}Starting Inngest Dev Server (port 8288)...${RESET}"
 cd "$SCRIPT_DIR/Orchestrator"
-npx inngest-cli@latest dev --no-discovery > ~/.annabelle/logs/inngest.log 2>&1 &
+npx inngest-cli@latest dev --no-discovery >> ~/.annabelle/logs/inngest.log 2>&1 &
 INNGEST_PID=$!
 echo "$INNGEST_PID" >> "$PID_FILE"
 echo -e "${GREEN}✓ Inngest Dev Server started (PID: $INNGEST_PID)${RESET}"
@@ -160,7 +160,7 @@ while IFS='|' read -r name port dir; do
   log_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
   echo -e "\n${BOLD}Starting ${name} MCP (HTTP on port ${port})...${RESET}"
   cd "$dir"
-  TRANSPORT=http PORT=$port ANNABELLE_TOKEN="$ANNABELLE_TOKEN" npm start > ~/.annabelle/logs/${log_name}.log 2>&1 &
+  TRANSPORT=http PORT=$port ANNABELLE_TOKEN="$ANNABELLE_TOKEN" npm start >> ~/.annabelle/logs/${log_name}.log 2>&1 &
   pid=$!
   echo -e "${GREEN}✓ ${name} MCP started (PID: $pid)${RESET}"
 
@@ -196,7 +196,7 @@ if ! command -v ollama &> /dev/null; then
   echo -e "${YELLOW}⚠ Ollama not installed — Guardian scanning will be unavailable${RESET}"
 elif ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
   echo -e "${BLUE}Starting Ollama...${RESET}"
-  ollama serve > ~/.annabelle/logs/ollama.log 2>&1 &
+  ollama serve >> ~/.annabelle/logs/ollama.log 2>&1 &
   OLLAMA_PID=$!
   for i in {1..10}; do
     if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
@@ -243,7 +243,7 @@ TRANSPORT=http PORT=8010 MCP_CONNECTION_MODE=stdio \
   ORCHESTRATOR_URL=http://localhost:8010 \
   TELEGRAM_DIRECT_URL=http://localhost:8002 \
   ANNABELLE_TOKEN="$ANNABELLE_TOKEN" \
-  npm start > ~/.annabelle/logs/orchestrator.log 2>&1 &
+  npm start >> ~/.annabelle/logs/orchestrator.log 2>&1 &
 ORCHESTRATOR_PID=$!
 echo "$ORCHESTRATOR_PID" >> "$PID_FILE"
 echo -e "${GREEN}✓ Orchestrator started (PID: $ORCHESTRATOR_PID)${RESET}"
@@ -271,7 +271,7 @@ fi
 echo -e "\n${BOLD}Seeding cron skills...${RESET}"
 SEED_SCRIPT="$SCRIPT_DIR/_scripts/seed-cron-skills.ts"
 if [ -f "$SEED_SCRIPT" ]; then
-  ORCHESTRATOR_URL=http://localhost:8010 npx tsx "$SEED_SCRIPT" > ~/.annabelle/logs/seed-skills.log 2>&1 &
+  ORCHESTRATOR_URL=http://localhost:8010 npx tsx "$SEED_SCRIPT" >> ~/.annabelle/logs/seed-skills.log 2>&1 &
   SEED_PID=$!
   echo -e "${GREEN}✓ Skill seeding started in background (PID: $SEED_PID)${RESET}"
   echo -e "  ${BLUE}Check progress: cat ~/.annabelle/logs/seed-skills.log${RESET}"

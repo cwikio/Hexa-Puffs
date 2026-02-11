@@ -182,6 +182,10 @@ export class GenericChannelAdapter implements ChannelAdapter {
     }
   }
 
+  getMonitoredChatIds(): string[] {
+    return [...this.monitoredChatIds];
+  }
+
   async shutdown(): Promise<void> {
     this.processedMessageIds.clear();
     this.monitoredChatIds = [];

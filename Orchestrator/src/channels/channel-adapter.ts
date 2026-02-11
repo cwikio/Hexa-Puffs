@@ -38,6 +38,9 @@ export interface ChannelAdapter {
   /** Send a text response back to a specific chat on this channel. */
   sendMessage(chatId: string, message: string): Promise<void>;
 
+  /** Get the list of monitored chat IDs for this channel. */
+  getMonitoredChatIds(): string[];
+
   /** Clean up resources on shutdown. */
   shutdown(): Promise<void>;
 }

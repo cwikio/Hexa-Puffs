@@ -62,10 +62,9 @@ Steps:
    - Then important emails
    - Then a brief mention of informational/low-priority count
 6. If any email seems to need a reply, note it as "Pending reply" with a suggestion.
-7. Call gmail_clear_new_emails to mark them as processed.
 
 Keep the summary concise — aim for a Telegram-friendly format.`,
-    required_tools: ['gmail_get_new_emails', 'gmail_clear_new_emails', 'memory_list_contacts', 'memory_list_projects'],
+    required_tools: ['gmail_get_new_emails', 'memory_list_contacts', 'memory_list_projects'],
     max_steps: 15,
   },
   {
@@ -76,7 +75,7 @@ Keep the summary concise — aim for a Telegram-friendly format.`,
 
 Steps:
 1. Get today's date and format it nicely.
-2. Call gmail_list_calendar_events for today's events across all accounts.
+2. Call gmail_list_events for today's events across all accounts.
 3. Call gmail_get_new_emails to check for unprocessed overnight emails.
 4. Call memory_list_projects with status "active" to see current projects.
 5. Call memory_list_facts to check for any pending action items or reminders.
@@ -90,7 +89,7 @@ Format the briefing:
 - HEADS UP: Anything notable (back-to-back meetings, conflicts, heavy schedule).
 
 Keep it actionable and scannable.`,
-    required_tools: ['gmail_list_calendar_events', 'gmail_get_new_emails', 'memory_list_projects', 'memory_list_facts'],
+    required_tools: ['gmail_list_events', 'gmail_get_new_emails', 'memory_list_projects', 'memory_list_facts'],
     max_steps: 15,
   },
   {
@@ -101,9 +100,9 @@ Keep it actionable and scannable.`,
 
 Steps:
 1. Get today's date.
-2. Call gmail_list_calendar_events for today to see what meetings happened.
-3. Call gmail_list_calendar_events for tomorrow to preview.
-4. Call gmail_search_emails for today's sent emails to track what was done.
+2. Call gmail_list_events for today to see what meetings happened.
+3. Call gmail_list_events for tomorrow to preview.
+4. Call gmail_list_emails with query "in:sent" for today's sent emails to track what was done.
 5. Call memory_list_facts for any pending items or follow-ups.
 
 Format the recap:
@@ -114,7 +113,7 @@ Format the recap:
 - SUGGESTIONS: "Consider replying to X before tomorrow's meeting" or similar actionable tips.
 
 Keep it brief — this is a wind-down summary, not a full report.`,
-    required_tools: ['gmail_list_calendar_events', 'gmail_search_emails', 'memory_list_facts'],
+    required_tools: ['gmail_list_events', 'gmail_list_emails', 'memory_list_facts'],
     max_steps: 12,
   },
   {
@@ -125,10 +124,10 @@ Keep it brief — this is a wind-down summary, not a full report.`,
 
 Steps:
 1. Calculate this week's date range (Monday to Sunday).
-2. Call gmail_list_calendar_events for the past week to see all meetings.
-3. Call gmail_search_emails with "after:[monday] before:[sunday]" to get email volume.
+2. Call gmail_list_events for the past week to see all meetings.
+3. Call gmail_list_emails with query "after:[monday] before:[sunday]" to get email volume.
 4. Call memory_list_projects with status "active" for project updates.
-5. Call gmail_list_calendar_events for next week to preview.
+5. Call gmail_list_events for next week to preview.
 
 Format the digest:
 - "Weekly digest: [date range]"
@@ -138,7 +137,7 @@ Format the digest:
 - FOLLOW-UPS: Any items that carried over and need attention next week.
 
 This is the big-picture view — focus on patterns and priorities, not individual emails.`,
-    required_tools: ['gmail_list_calendar_events', 'gmail_search_emails', 'memory_list_projects'],
+    required_tools: ['gmail_list_events', 'gmail_list_emails', 'memory_list_projects'],
     max_steps: 15,
   },
   {
@@ -149,7 +148,7 @@ This is the big-picture view — focus on patterns and priorities, not individua
 
 Steps:
 1. Calculate the date 48 hours ago.
-2. Call gmail_search_emails with query "in:sent after:[4 days ago] before:[2 days ago]" to find sent emails in the 48h+ window.
+2. Call gmail_list_emails with query "in:sent after:[4 days ago] before:[2 days ago]" to find sent emails in the 48h+ window.
 3. For each sent email found:
    a. Check if there's a reply by searching for the thread or subject.
    b. Look up the recipient via memory_list_contacts to add context.
@@ -163,7 +162,7 @@ Format the report:
   - Suggest: "Draft a follow-up?" for each.
 
 Focus on work emails — skip newsletters, automated notifications, etc.`,
-    required_tools: ['gmail_search_emails', 'memory_list_contacts', 'memory_list_projects'],
+    required_tools: ['gmail_list_emails', 'memory_list_contacts', 'memory_list_projects'],
     max_steps: 10,
   },
   {
@@ -173,14 +172,14 @@ Focus on work emails — skip newsletters, automated notifications, etc.`,
     instructions: `You are running the Pre-meeting Prep skill. Check for meetings starting soon and prepare context.
 
 Steps:
-1. Call gmail_list_calendar_events for today.
+1. Call gmail_list_events for today.
 2. Filter to events starting in the next 30 minutes that haven't started yet.
 3. If no upcoming meetings, respond with "No meetings in the next 30 minutes." and stop.
 4. For each upcoming meeting:
    a. Extract attendee emails from the event.
    b. Look up each attendee via memory_list_contacts.
    c. Find related projects via memory_list_projects (by contact_id or company).
-   d. Search recent emails with attendees via gmail_search_emails (last 7 days).
+   d. Search recent emails with attendees via gmail_list_emails (last 7 days).
    e. Check for relevant facts via memory_list_facts.
    f. Check if the event description contains a video call link (Zoom, Google Meet, Teams).
 
@@ -192,7 +191,7 @@ Format the prep:
 - JOIN LINK: Video call link if found in event description.
 
 Keep each briefing focused and actionable.`,
-    required_tools: ['gmail_list_calendar_events', 'memory_list_contacts', 'memory_list_projects', 'gmail_search_emails', 'memory_list_facts'],
+    required_tools: ['gmail_list_events', 'memory_list_contacts', 'memory_list_projects', 'gmail_list_emails', 'memory_list_facts'],
     max_steps: 10,
   },
   {
@@ -202,7 +201,7 @@ Keep each briefing focused and actionable.`,
     instructions: `You are running the Meeting Overload Warning skill. Check if tomorrow's schedule is too heavy.
 
 Steps:
-1. Call gmail_list_calendar_events for tomorrow.
+1. Call gmail_list_events for tomorrow.
 2. Count the total number of meetings and total meeting hours.
 3. Check for:
    - More than 5 meetings in a day
@@ -219,7 +218,7 @@ Format:
   - Suggest: "Consider rescheduling [meeting] to free up a break?"
 
 Only notify if there's actually something to warn about.`,
-    required_tools: ['gmail_list_calendar_events'],
+    required_tools: ['gmail_list_events'],
     max_steps: 6,
   },
 ];

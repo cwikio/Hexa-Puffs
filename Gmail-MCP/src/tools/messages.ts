@@ -417,7 +417,7 @@ export const getNewEmailsTool = {
 };
 
 export const GetNewEmailsInputSchema = z.object({
-  clear: z.boolean().optional(),
+  clear: z.union([z.boolean(), z.string()]).optional(),
 });
 
 export async function handleGetNewEmails(
@@ -432,7 +432,8 @@ export async function handleGetNewEmails(
   const emails = getNewEmails();
   const count = emails.length;
 
-  if (parseResult.data.clear) {
+  const clear = parseResult.data.clear === true || parseResult.data.clear === 'true';
+  if (clear) {
     clearNewEmails();
   }
 
