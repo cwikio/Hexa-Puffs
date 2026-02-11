@@ -121,7 +121,7 @@ async function main() {
               {
                 name: "web_fetch",
                 description:
-                  "Fetch a URL and extract its content as clean markdown. Uses Readability to extract article content (strips nav, ads, sidebars). For JavaScript-heavy sites, use browser tools instead.",
+                  "Fetch a URL and extract its content as clean markdown. PREFERRED over browser tools for reading webpage content — much faster and more reliable. Uses Readability to extract article content (strips nav, ads, sidebars). Only fall back to browser tools if you need to interact with the page (click, scroll, fill forms, login) or if this tool returns empty/unusable content.",
                 inputSchema: zodToJsonSchema(webFetchSchema),
               },
             ],
