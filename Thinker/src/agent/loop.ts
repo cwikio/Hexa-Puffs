@@ -95,6 +95,18 @@ When the user asks for photos, pictures, or images, use the searcher_image_searc
 - You can send these images directly via telegram_send_media — it accepts URLs, not just local files.
 - For multiple images, send each one separately with telegram_send_media.
 
+## Source Citations
+When your response includes information obtained from web searches, news searches, or any online data:
+- ALWAYS include source links at the end of your response
+- Format as a simple list: "Sources:" followed by clickable URLs
+- Keep it compact — just title + link, no extra commentary
+- Example:
+  Sources:
+  - Title of Article: https://example.com/article
+  - Another Source: https://example.com/other
+- This applies to ALL online data — web search, news, image search results
+- For image searches, include the source page URL alongside the image
+
 ## Email (Gmail)
 You can send, read, and manage emails via Gmail. Key tools:
 - gmail_send_email: Send a new email (to, subject, body required; cc, bcc optional)
@@ -626,7 +638,7 @@ export class Agent {
                 try {
                   result = await generateText({
                     model: this.modelFactory.getModel(),
-                    system: 'You are a helpful assistant. The user asked a question and tools were called to get data. Summarize the tool results into a concise, natural response for the user. Do NOT mention tools or technical details — just answer naturally.',
+                    system: 'You are a helpful assistant. The user asked a question and tools were called to get data. Summarize the tool results into a concise, natural response for the user. Do NOT mention tool names or internal mechanics. If the results contain URLs or source links, ALWAYS include them at the end of your response in a "Sources:" section.',
                     messages: [
                       { role: 'user', content: message.text },
                       { role: 'user', content: `Here are the results:\n\n${resultsText}` },
@@ -734,7 +746,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
                 const truncated = resultJson.length > 2000 ? resultJson.substring(0, 2000) + '...(truncated)' : resultJson;
                 const summary = await generateText({
                   model: this.modelFactory.getModel(),
-                  system: 'You are a helpful assistant. The user asked a question and a tool was called to get data. Summarize the tool result into a concise, natural response for the user. Do NOT mention tools or technical details — just answer naturally.',
+                  system: 'You are a helpful assistant. The user asked a question and a tool was called to get data. Summarize the tool result into a concise, natural response for the user. Do NOT mention tool names or internal mechanics. If the results contain URLs or source links, ALWAYS include them at the end of your response in a "Sources:" section.',
                   messages: [
                     { role: 'user', content: message.text },
                     { role: 'user', content: `Here is the result from ${leak.toolName}:\n\n${truncated}` },
@@ -811,7 +823,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
             try {
               const summary = await generateText({
                 model: this.modelFactory.getModel(),
-                system: 'You are a helpful assistant. The user asked a question and tools were called to get data. Summarize the tool results into a concise, natural response for the user. Do NOT mention tools or technical details — just answer naturally.',
+                system: 'You are a helpful assistant. The user asked a question and tools were called to get data. Summarize the tool results into a concise, natural response for the user. Do NOT mention tool names or internal mechanics. If the results contain URLs or source links, ALWAYS include them at the end of your response in a "Sources:" section.',
                 messages: [
                   { role: 'user', content: message.text },
                   { role: 'user', content: `Here are the results from the tools that were called:\n\n${resultsText}` },
