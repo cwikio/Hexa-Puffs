@@ -1128,7 +1128,11 @@ Complete the task step by step, using your available tools. When done, provide a
       }
 
       // Run the LLM with task instructions as the "user message"
+      // For proactive tasks, exclude send_telegram — notifications are handled post-completion via notifyChatId
       const selectedTools = noTools ? undefined : await selectToolsWithFallback(taskInstructions, this.tools, this.embeddingSelector);
+      if (selectedTools) {
+        delete selectedTools['send_telegram'];
+      }
       const result = await generateText({
         model: this.modelFactory.getModel(),
         system: systemPromptWithContext,
@@ -1205,13 +1209,26 @@ Complete the task step by step, using your available tools. When done, provide a
       }
 
       // Optionally notify via Telegram (always via Orchestrator)
-      if (notifyChatId) {
+      // Skip notification for trivial "nothing to report" results
+      const trivialPatterns = [
+        /no new emails/i,
+        /no meetings in the next/i,
+        /no upcoming meetings/i,
+        /no pending follow/i,
+        /all caught up/i,
+        /schedule looks manageable/i,
+      ];
+      const isTrivial = trivialPatterns.some(p => p.test(responseText));
+
+      if (notifyChatId && !isTrivial) {
         try {
           const notificationText = `📋 Skill completed:\n\n${responseText}`;
           await this.orchestrator.sendTelegramMessage(notifyChatId, notificationText, undefined, trace);
         } catch (notifyError) {
           logger.error('Failed to send skill completion notification:', notifyError);
         }
+      } else if (notifyChatId && isTrivial) {
+        logger.info('Skipping notification for trivial skill result', { preview: responseText.substring(0, 80) });
       }
 
       return {
