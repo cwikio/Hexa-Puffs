@@ -23,6 +23,7 @@ import { EmbeddingToolSelector } from './embedding-tool-selector.js';
 import { createEmbeddingProviderFromEnv } from './embedding-config.js';
 import { extractFactsFromConversation } from './fact-extractor.js';
 import { detectLeakedToolCall, recoverLeakedToolCall } from '../utils/recover-tool-call.js';
+import { repairConversationHistory } from './history-repair.js';
 import { Logger } from '@mcp/shared/Utils/logger.js';
 
 const logger = new Logger('thinker:agent');
@@ -456,7 +457,7 @@ export class Agent {
 
     return {
       systemPrompt,
-      conversationHistory: state.messages.slice(-50), // Keep last 50 messages (~10-15 tool-using turns)
+      conversationHistory: repairConversationHistory(state.messages.slice(-50)),
       facts: memories.facts.map((f) => ({ fact: f.fact, category: f.category })),
       profile: profile?.profile_data?.persona
         ? {
