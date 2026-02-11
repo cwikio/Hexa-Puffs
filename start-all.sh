@@ -267,6 +267,18 @@ else
   echo -e "  ${YELLOW}Check logs: tail -f ~/.annabelle/logs/orchestrator.log${RESET}"
 fi
 
+# ─── Seed Cron Skills (idempotent) ───────────────────────────────────────────
+echo -e "\n${BOLD}Seeding cron skills...${RESET}"
+SEED_SCRIPT="$SCRIPT_DIR/_scripts/seed-cron-skills.ts"
+if [ -f "$SEED_SCRIPT" ]; then
+  ORCHESTRATOR_URL=http://localhost:8010 npx tsx "$SEED_SCRIPT" > ~/.annabelle/logs/seed-skills.log 2>&1 &
+  SEED_PID=$!
+  echo -e "${GREEN}✓ Skill seeding started in background (PID: $SEED_PID)${RESET}"
+  echo -e "  ${BLUE}Check progress: cat ~/.annabelle/logs/seed-skills.log${RESET}"
+else
+  echo -e "${YELLOW}⚠ Seed script not found at $SEED_SCRIPT — skipping${RESET}"
+fi
+
 # ─── Inngest Registration ────────────────────────────────────────────────────
 echo -e "\n${BOLD}Registering app with Inngest...${RESET}"
 REGISTER_RESULT=$(curl -s http://localhost:8288/v0/gql -X POST -H "Content-Type: application/json" -d '{"query":"mutation { createApp(input: { url: \"http://localhost:3000/api/inngest\" }) { name functionCount } }"}' 2>/dev/null)
