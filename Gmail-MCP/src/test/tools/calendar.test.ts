@@ -371,6 +371,83 @@ describe("handleUpdateEvent", () => {
     expectValidationError(response);
     expect(mockUpdateEvent).not.toHaveBeenCalled();
   });
+
+  it("should pass response_status for RSVP accept", async () => {
+    mockUpdateEvent.mockResolvedValueOnce(MOCK_TIMED_EVENT);
+
+    const response = await handleUpdateEvent({
+      event_id: "evt_abc123def456",
+      response_status: "accepted",
+    });
+
+    const data = expectSuccess(response);
+    expect(data).toEqual(MOCK_TIMED_EVENT);
+    expect(mockUpdateEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "evt_abc123def456",
+        responseStatus: "accepted",
+      })
+    );
+  });
+
+  it("should pass response_status for RSVP decline", async () => {
+    mockUpdateEvent.mockResolvedValueOnce(MOCK_TIMED_EVENT);
+
+    const response = await handleUpdateEvent({
+      event_id: "evt_abc123def456",
+      response_status: "declined",
+    });
+
+    expectSuccess(response);
+    expect(mockUpdateEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "evt_abc123def456",
+        responseStatus: "declined",
+      })
+    );
+  });
+
+  it("should pass response_status for RSVP tentative", async () => {
+    mockUpdateEvent.mockResolvedValueOnce(MOCK_TIMED_EVENT);
+
+    const response = await handleUpdateEvent({
+      event_id: "evt_abc123def456",
+      response_status: "tentative",
+    });
+
+    expectSuccess(response);
+    expect(mockUpdateEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "evt_abc123def456",
+        responseStatus: "tentative",
+      })
+    );
+  });
+
+  it("should reject invalid response_status value", async () => {
+    const response = await handleUpdateEvent({
+      event_id: "evt_abc123def456",
+      response_status: "maybe",
+    });
+
+    expectValidationError(response);
+    expect(mockUpdateEvent).not.toHaveBeenCalled();
+  });
+
+  it("should propagate RSVP error (not an attendee)", async () => {
+    mockUpdateEvent.mockRejectedValueOnce(
+      new Error("Cannot RSVP: you are not an attendee of this event")
+    );
+
+    const response = await handleUpdateEvent({
+      event_id: "evt_abc123def456",
+      response_status: "accepted",
+    });
+
+    const error = expectError(response);
+    expect(error).toContain("Cannot RSVP");
+    expect(error).toContain("not an attendee");
+  });
 });
 
 // ===========================================================================

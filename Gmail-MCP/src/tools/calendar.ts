@@ -341,7 +341,7 @@ export async function handleCreateEvent(
 export const updateEventTool = {
   name: "update_event",
   description:
-    "Update an existing calendar event. Only provide fields you want to change.",
+    "Update an existing calendar event. Only provide fields you want to change. Use response_status to accept, decline, or tentatively accept an invite.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -388,6 +388,12 @@ export const updateEventTool = {
         description:
           "Updated list of attendee email addresses (replaces existing list)",
       },
+      response_status: {
+        type: "string",
+        enum: ["accepted", "declined", "tentative"],
+        description:
+          "RSVP to a calendar invite: accept, decline, or tentatively accept",
+      },
       calendar_id: {
         type: "string",
         description:
@@ -409,6 +415,7 @@ export const UpdateEventInputSchema = z.object({
   end_date: z.string().optional(),
   time_zone: z.string().optional(),
   attendees: z.array(z.string()).optional(),
+  response_status: z.enum(["accepted", "declined", "tentative"]).optional(),
   calendar_id: z.string().optional(),
 });
 
@@ -442,6 +449,7 @@ export async function handleUpdateEvent(
       endDate: data.end_date,
       timeZone: data.time_zone,
       attendees: data.attendees,
+      responseStatus: data.response_status,
     });
 
     return createSuccess(event);

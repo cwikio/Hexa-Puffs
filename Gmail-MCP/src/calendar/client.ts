@@ -314,6 +314,21 @@ export async function updateEvent(
     resource.attendees = options.attendees.map((email) => ({ email }));
   }
 
+  // RSVP: update the authenticated user's responseStatus on the event
+  if (options.responseStatus) {
+    // Fetch the current event to get the attendees list
+    const existing = await calendar.events.get({ calendarId, eventId: options.eventId });
+    const attendees = existing.data.attendees ?? [];
+    const selfAttendee = attendees.find((a) => a.self);
+    if (selfAttendee) {
+      selfAttendee.responseStatus = options.responseStatus;
+    } else {
+      // If no self entry found, we can't RSVP — the user may not be an attendee
+      throw new Error("Cannot RSVP: you are not an attendee of this event");
+    }
+    resource.attendees = attendees;
+  }
+
   const response = await calendar.events.patch({
     calendarId,
     eventId: options.eventId,

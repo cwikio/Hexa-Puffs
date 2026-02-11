@@ -118,6 +118,7 @@ export interface UpdateEventOptions {
   endDate?: string;
   timeZone?: string;
   attendees?: string[];
+  responseStatus?: "accepted" | "declined" | "tentative";
 }
 
 export interface FreeBusyResult {
