@@ -573,10 +573,23 @@ export const skillSchedulerFunction = inngest.createFunction(
             throw new Error(`Agent "${agentId}" client not available after ensureRunning`);
           }
 
+          // Auto-detect notification chat from channel manager
+          let notifyChatId: string | undefined;
+          if (skill.notify_on_completion) {
+            const channelManager = orchestrator.getChannelManager();
+            const telegramAdapter = channelManager?.getAdapter('telegram');
+            const chatIds = telegramAdapter?.getMonitoredChatIds() ?? [];
+            if (chatIds.length > 0) {
+              notifyChatId = chatIds[0];
+            }
+          }
+
           const result = await client.executeSkill(
             skill.instructions,
             skill.max_steps || 10,
             skill.notify_on_completion ?? false,
+            false,
+            notifyChatId,
           );
 
           // Update skill's last_run fields via Memory MCP
