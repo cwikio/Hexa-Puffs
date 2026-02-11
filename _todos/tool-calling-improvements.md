@@ -8,7 +8,7 @@ Groq/Llama models hallucinate actions (claim they did something without calling 
 
 ---
 
-## Suggestion 1: Conversation History Validation (HIGH IMPACT)
+## ~~Suggestion 1: Conversation History Validation (HIGH IMPACT)~~ ✅
 
 **The problem**: When a tool call fails mid-execution (timeout, crash, API error), the conversation history ends up with an orphaned tool call (assistant message with `tool_calls`) but no matching tool result. When the LLM sees this broken sequence in its next turn, it learns "tools are broken" and switches to text-only mode.
 
