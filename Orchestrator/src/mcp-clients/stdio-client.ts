@@ -75,7 +75,19 @@ export class StdioMCPClient implements IMCPClient {
           TRANSPORT: 'stdio',
         },
         cwd: this.config.cwd,
+        stderr: 'pipe',
       });
+
+      // Pipe child stderr through orchestrator logger with MCP name context
+      const stderrStream = this.transport.stderr;
+      if (stderrStream) {
+        stderrStream.on('data', (chunk: Buffer) => {
+          const lines = chunk.toString().split('\n').filter(Boolean);
+          for (const line of lines) {
+            this.logger.info(line);
+          }
+        });
+      }
 
       // Create MCP client
       this.client = new Client(
