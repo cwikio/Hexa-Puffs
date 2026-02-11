@@ -14,12 +14,6 @@ export const ConfigSchema = z.object({
     intervalMs: z.number().positive().default(60000),
   }),
 
-  notifications: z.object({
-    telegram: z.boolean().default(false),
-    telegramChatId: z.string().optional(),
-    orchestratorUrl: z.string().optional(),
-  }),
-
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 

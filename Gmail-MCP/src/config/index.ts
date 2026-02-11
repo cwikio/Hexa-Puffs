@@ -31,12 +31,6 @@ export function loadConfig(): Config {
       intervalMs: getEnvNumber("GMAIL_POLLING_INTERVAL_MS", 60000),
     },
 
-    notifications: {
-      telegram: getEnvBoolean("GMAIL_NOTIFY_TELEGRAM", false),
-      telegramChatId: getEnvString("GMAIL_TELEGRAM_CHAT_ID"),
-      orchestratorUrl: getEnvString("ORCHESTRATOR_URL", "http://localhost:8010"),
-    },
-
     logLevel: getEnvString("LOG_LEVEL", "info"),
   };
 

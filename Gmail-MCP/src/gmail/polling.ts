@@ -1,7 +1,5 @@
 import { logger } from "../utils/logger.js";
-import { getConfig } from "../config/index.js";
 import { getProfile, getHistory, getEmail } from "./client.js";
-import { sendTelegramNotification } from "./notifications.js";
 import type { EmailMessage } from "../types/gmail.js";
 
 const pollingLogger = logger.child("polling");
@@ -74,18 +72,14 @@ async function poll(): Promise<void> {
     pollingLogger.info("Found new messages", { count: history.messages.length });
 
     // Fetch full details for new messages
-    const config = getConfig();
-    const newMessages: EmailMessage[] = [];
-
     for (const msg of history.messages) {
       if (msg.action === "added") {
         try {
           const email = await getEmail(msg.id);
 
-          // Only notify for inbox messages (not sent by us)
+          // Queue inbox messages for retrieval via get_new_emails
           if (email.labelIds.includes("INBOX")) {
             addToQueue(email);
-            newMessages.push(email);
           }
         } catch (error) {
           pollingLogger.warn("Failed to fetch message details", {
@@ -96,16 +90,9 @@ async function poll(): Promise<void> {
       }
     }
 
-    // Send Telegram notifications if enabled
-    if (config.notifications.telegram && newMessages.length > 0) {
-      for (const email of newMessages) {
-        await sendTelegramNotification(email);
-      }
-    }
-
     lastHistoryId = history.historyId;
     pollingLogger.debug("Poll completed", {
-      newMessages: newMessages.length,
+      queueSize: newEmailQueue.length,
       historyId: lastHistoryId,
     });
   } catch (error) {

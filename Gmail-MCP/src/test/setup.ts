@@ -23,7 +23,6 @@ vi.mock("../config/index.js", () => ({
       tokenPath: "/fake/token.json",
     },
     polling: { enabled: false, intervalMs: 60000 },
-    notifications: { telegram: false },
     logLevel: "error",
   }),
   loadConfig: vi.fn(),
