@@ -45,25 +45,46 @@ const skills: CronSkill[] = [
     name: 'Email Processor',
     description: 'Pull new emails, classify by priority, enrich with contact/project context, and send a smart summary.',
     trigger_config: { interval_minutes: 30 },
-    instructions: `You are running the Email Processor skill. Your job is to check for new emails and produce an intelligent summary.
+    instructions: `You are running the Email Processor skill. Check for new emails, identify unknown senders, and produce an intelligent summary.
 
 Steps:
 1. Call gmail_get_new_emails to get unprocessed emails.
 2. If no new emails, respond with "No new emails since last check." and stop.
 3. For each email:
-   a. Look up the sender via memory_list_contacts (filter by email).
-   b. If the sender is a known contact, note their name, company, and role.
-   c. If the sender matches a project's primary_contact_id or company, note the project context via memory_list_projects.
-   d. Classify the email: urgent (needs action today), important (needs action this week), informational (FYI), or low-priority (newsletters, automated).
+   a. Extract the sender's email address and display name.
+   b. Look up the sender via memory_list_contacts (filter by email).
+   c. If found with type "ignored" → skip this email silently, do not include in summary.
+   d. If not found by email, extract the domain (@domain.com) and look up via memory_list_contacts (filter by email: "@domain.com").
+      If found with type "ignored" → skip silently.
+   e. If the sender is a known contact (type "work" or "personal"), note their name, company, and role.
+   f. If the sender is NOT in contacts at all → flag as UNKNOWN SENDER.
+      Also extract the company name from the email domain: take the part between @ and the last dot
+      (e.g., john@acmecorp.com → "Acmecorp", jane@big-company.co.uk → "Big-Company").
+      Capitalize the first letter. This is the PRESUMED COMPANY NAME.
+   g. If the sender matches a project's primary_contact or company, note the project context via memory_list_projects.
+   h. For unknown senders: look up the presumed company name via memory_list_projects (filter by company).
+      If no matching project exists → flag as NEW COMPANY.
+   i. Classify: urgent (needs action today), important (this week), informational (FYI), low-priority (newsletters/automated).
 4. Group emails by classification.
-5. Format a summary:
-   - Start with a count: "X new emails (Y urgent, Z important)"
-   - List urgent emails first with sender, subject, and one-line summary
-   - Then important emails
-   - Then a brief mention of informational/low-priority count
-6. If any email seems to need a reply, note it as "Pending reply" with a suggestion.
+5. Format summary:
+   - Count: "X new emails (Y urgent, Z important)"
+   - URGENT emails first with sender, subject, one-line summary
+   - IMPORTANT emails next
+   - Brief mention of informational/low-priority count
+   - If any emails need a reply, note "Pending reply" with suggestion
+6. If there are UNKNOWN SENDERS, add a section at the end:
+   "📇 New senders I don't know:
+   - [Name] ([email]) — subject: [subject line]
+   Who are they? Tell me their role and context — or say 'ignore [name]' to never ask again.
+   You can also say 'ignore @domain.com' to ignore all emails from that domain."
+7. If there are NEW COMPANIES, add a section:
+   "🏢 New companies:
+   - [Presumed Company Name] (from [sender name]'s email: [email])
+   Is this related to a project? Should I track it? Is the company name correct?"
+   The company name is derived from the email domain (between @ and last dot, capitalized).
+   The user may confirm, correct the name, or provide project context.
 
-Keep the summary concise — aim for a Telegram-friendly format.`,
+Keep the summary concise — Telegram-friendly format.`,
     required_tools: ['gmail_get_new_emails', 'memory_list_contacts', 'memory_list_projects'],
     max_steps: 15,
   },
@@ -223,23 +244,9 @@ Only notify if there's actually something to warn about.`,
   },
 ];
 
-async function seedSkill(skill: CronSkill): Promise<{ success: boolean; id?: number; error?: string }> {
-  const body = {
-    name: 'memory_store_skill',
-    arguments: {
-      agent_id: 'thinker',
-      name: skill.name,
-      description: skill.description,
-      trigger_type: 'cron',
-      trigger_config: skill.trigger_config,
-      instructions: skill.instructions,
-      required_tools: skill.required_tools,
-      max_steps: skill.max_steps,
-      notify_on_completion: true,
-      enabled: false,
-    },
-  };
+const UPDATE_MODE = process.argv.includes('--update');
 
+async function callOrchestrator(toolName: string, args: Record<string, unknown>): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (ANNABELLE_TOKEN) {
     headers['X-Annabelle-Token'] = ANNABELLE_TOKEN;
@@ -248,7 +255,7 @@ async function seedSkill(skill: CronSkill): Promise<{ success: boolean; id?: num
   const response = await fetch(`${ORCHESTRATOR_URL}/tools/call`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(body),
+    body: JSON.stringify({ name: toolName, arguments: args }),
   });
 
   if (!response.ok) {
@@ -256,48 +263,127 @@ async function seedSkill(skill: CronSkill): Promise<{ success: boolean; id?: num
   }
 
   const result = await response.json();
-
-  // Parse the nested response
   const content = result.content;
   if (Array.isArray(content)) {
     const textBlock = content.find((b: { type: string }) => b.type === 'text');
     if (textBlock) {
       const parsed = JSON.parse(textBlock.text);
       if (parsed.success) {
-        return { success: true, id: parsed.data?.skill_id };
+        return { success: true, data: parsed.data };
       }
       return { success: false, error: parsed.error || 'Unknown error' };
     }
   }
-
   return { success: false, error: 'Unexpected response format' };
 }
 
+async function findSkillIdByName(name: string): Promise<number | null> {
+  const result = await callOrchestrator('memory_list_skills', {
+    agent_id: 'thinker',
+    trigger_type: 'cron',
+  });
+  if (!result.success || !result.data) return null;
+
+  const skills = (result.data.skills || []) as Array<{ id: number; name: string }>;
+  const match = skills.find((s) => s.name === name);
+  return match?.id ?? null;
+}
+
+async function updateSkill(skillId: number, skill: CronSkill): Promise<{ success: boolean; error?: string }> {
+  return callOrchestrator('memory_update_skill', {
+    skill_id: skillId,
+    description: skill.description,
+    instructions: skill.instructions,
+    required_tools: skill.required_tools,
+    max_steps: skill.max_steps,
+    trigger_config: skill.trigger_config,
+  });
+}
+
+async function seedSkill(skill: CronSkill): Promise<{ success: boolean; id?: number; error?: string }> {
+  const result = await callOrchestrator('memory_store_skill', {
+    agent_id: 'thinker',
+    name: skill.name,
+    description: skill.description,
+    trigger_type: 'cron',
+    trigger_config: skill.trigger_config,
+    instructions: skill.instructions,
+    required_tools: skill.required_tools,
+    max_steps: skill.max_steps,
+    notify_on_completion: true,
+    enabled: false,
+  });
+
+  if (result.success) {
+    return { success: true, id: result.data?.skill_id as number | undefined };
+  }
+  return { success: false, error: result.error };
+}
+
 async function main() {
-  console.log(`Seeding ${skills.length} cron skills to ${ORCHESTRATOR_URL}...\n`);
+  if (UPDATE_MODE) {
+    console.log(`Updating ${skills.length} cron skills in ${ORCHESTRATOR_URL}...\n`);
+  } else {
+    console.log(`Seeding ${skills.length} cron skills to ${ORCHESTRATOR_URL}...\n`);
+  }
 
   let created = 0;
+  let updated = 0;
   let skipped = 0;
   let failed = 0;
 
   for (const skill of skills) {
     process.stdout.write(`  ${skill.name}... `);
-    const result = await seedSkill(skill);
 
-    if (result.success) {
-      console.log(`created (id: ${result.id})`);
-      created++;
-    } else if (result.error?.includes('already exists')) {
-      console.log('skipped (already exists)');
-      skipped++;
+    if (UPDATE_MODE) {
+      // Find existing skill by name and update it
+      const skillId = await findSkillIdByName(skill.name);
+      if (skillId) {
+        const result = await updateSkill(skillId, skill);
+        if (result.success) {
+          console.log(`updated (id: ${skillId})`);
+          updated++;
+        } else {
+          console.log(`FAILED to update: ${result.error}`);
+          failed++;
+        }
+      } else {
+        // Doesn't exist yet — create it
+        const result = await seedSkill(skill);
+        if (result.success) {
+          console.log(`created (id: ${result.id})`);
+          created++;
+        } else {
+          console.log(`FAILED: ${result.error}`);
+          failed++;
+        }
+      }
     } else {
-      console.log(`FAILED: ${result.error}`);
-      failed++;
+      // Default: idempotent seed (skip existing)
+      const result = await seedSkill(skill);
+      if (result.success) {
+        console.log(`created (id: ${result.id})`);
+        created++;
+      } else if (result.error?.includes('already exists')) {
+        console.log('skipped (already exists)');
+        skipped++;
+      } else {
+        console.log(`FAILED: ${result.error}`);
+        failed++;
+      }
     }
   }
 
-  console.log(`\nDone: ${created} created, ${skipped} skipped, ${failed} failed`);
-  console.log('All skills seeded as disabled. They will auto-enable when required tools become available.');
+  const parts: string[] = [];
+  if (created > 0) parts.push(`${created} created`);
+  if (updated > 0) parts.push(`${updated} updated`);
+  if (skipped > 0) parts.push(`${skipped} skipped`);
+  if (failed > 0) parts.push(`${failed} failed`);
+  console.log(`\nDone: ${parts.join(', ')}`);
+
+  if (!UPDATE_MODE) {
+    console.log('All new skills seeded as disabled. They will auto-enable when required tools become available.');
+  }
 
   if (failed > 0) {
     process.exit(1);

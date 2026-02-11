@@ -200,7 +200,7 @@ export interface SkillRow {
 }
 
 // Contact types
-export const CONTACT_TYPES = ['work', 'personal'] as const;
+export const CONTACT_TYPES = ['work', 'personal', 'ignored'] as const;
 export type ContactType = typeof CONTACT_TYPES[number];
 
 export interface ContactRow {
