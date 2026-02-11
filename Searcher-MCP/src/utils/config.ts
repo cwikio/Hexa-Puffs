@@ -4,6 +4,7 @@
 
 export interface Config {
   braveApiKey: string;
+  braveRateLimitMs: number;
   transport: "stdio" | "http" | "sse";
   port: number;
 }
@@ -18,6 +19,7 @@ export function loadConfig(): Config {
     throw new Error("BRAVE_API_KEY environment variable is required");
   }
 
+  const braveRateLimitMs = parseInt(process.env.BRAVE_RATE_LIMIT_MS || "1100", 10);
   const transport = (process.env.TRANSPORT || "stdio") as
     | "stdio"
     | "http"
@@ -26,6 +28,7 @@ export function loadConfig(): Config {
 
   return {
     braveApiKey,
+    braveRateLimitMs,
     transport,
     port,
   };
