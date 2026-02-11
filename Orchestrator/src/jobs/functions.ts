@@ -346,6 +346,61 @@ export const skillSchedulerFunction = inngest.createFunction(
     const config = getConfig();
     const thinkerUrl = config.thinkerUrl;
 
+    // 0. Auto-enable disabled cron skills whose required_tools are now available
+    await step.run('auto-enable-skills', async () => {
+      try {
+        const { getOrchestrator } = await import('../core/orchestrator.js');
+        const orchestrator = await getOrchestrator();
+        const toolRouter = orchestrator.getToolRouter();
+
+        // List disabled cron skills
+        const disabledResult = await toolRouter.routeToolCall('memory_list_skills', {
+          agent_id: 'thinker',
+          enabled: false,
+          trigger_type: 'cron',
+        });
+
+        if (!disabledResult.success) return;
+
+        const content = disabledResult.content;
+        const data = typeof content === 'string' ? JSON.parse(content) : content;
+        const parsed = (data?.data || data || { skills: [] }) as { skills?: unknown[] };
+        const disabledSkills = parsed.skills || [];
+
+        for (const rawSkill of disabledSkills) {
+          const skill = rawSkill as { id: number; name: string; required_tools?: string[] | string };
+          let requiredTools: string[] = [];
+
+          if (typeof skill.required_tools === 'string') {
+            try { requiredTools = JSON.parse(skill.required_tools); } catch { /* ignore */ }
+          } else if (Array.isArray(skill.required_tools)) {
+            requiredTools = skill.required_tools;
+          }
+
+          // Skip skills with no required tools — they can be enabled manually
+          if (requiredTools.length === 0) continue;
+
+          // Check if ALL required tools are available in the ToolRouter
+          const allAvailable = requiredTools.every(tool => toolRouter.hasRoute(tool));
+
+          if (allAvailable) {
+            await toolRouter.routeToolCall('memory_update_skill', {
+              skill_id: skill.id,
+              enabled: true,
+            });
+            logger.info('Auto-enabled skill — all required tools available', {
+              skillId: skill.id,
+              name: skill.name,
+              requiredTools,
+            });
+          }
+        }
+      } catch (error) {
+        // Non-fatal — just log and continue with the normal scheduler
+        logger.warn('Auto-enable check failed', { error });
+      }
+    });
+
     // 1. List enabled cron skills from Memory MCP
     const skillsResult = await step.run('list-skills', async (): Promise<{ skills: unknown[] }> => {
       try {

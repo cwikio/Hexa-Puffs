@@ -209,6 +209,52 @@ export class McpClient {
   async deleteSkill(skillId: number): Promise<ToolCallResult> {
     return this.callTool('delete_skill', { skill_id: skillId });
   }
+
+  // Contact convenience methods
+
+  async createContact(
+    name: string,
+    email: string,
+    agentId = 'test-agent',
+    opts: Record<string, unknown> = {}
+  ): Promise<ToolCallResult> {
+    return this.callTool('create_contact', {
+      agent_id: agentId,
+      name,
+      email,
+      ...opts,
+    });
+  }
+
+  async listContacts(agentId = 'test-agent', opts: Record<string, unknown> = {}): Promise<ToolCallResult> {
+    return this.callTool('list_contacts', { agent_id: agentId, ...opts });
+  }
+
+  async updateContact(contactId: number, updates: Record<string, unknown>): Promise<ToolCallResult> {
+    return this.callTool('update_contact', { contact_id: contactId, ...updates });
+  }
+
+  // Project convenience methods
+
+  async createProject(
+    name: string,
+    agentId = 'test-agent',
+    opts: Record<string, unknown> = {}
+  ): Promise<ToolCallResult> {
+    return this.callTool('create_project', {
+      agent_id: agentId,
+      name,
+      ...opts,
+    });
+  }
+
+  async listProjects(agentId = 'test-agent', opts: Record<string, unknown> = {}): Promise<ToolCallResult> {
+    return this.callTool('list_projects', { agent_id: agentId, ...opts });
+  }
+
+  async updateProject(projectId: number, updates: Record<string, unknown>): Promise<ToolCallResult> {
+    return this.callTool('update_project', { project_id: projectId, ...updates });
+  }
 }
 
 // Create a shared instance for tests

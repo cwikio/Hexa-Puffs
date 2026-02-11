@@ -71,11 +71,14 @@ async function callTool(name: string, args: Record<string, unknown> = {}): Promi
 
     const result = await response.json() as ToolCallResult
 
-    // Parse MCP content wrapper
+    // Parse MCP content wrapper + unwrap StandardResponse
     if (result.content && result.content.length > 0 && result.content[0].text) {
       try {
-        const parsed = JSON.parse(result.content[0].text)
-        return { success: true, data: parsed }
+        const parsed = JSON.parse(result.content[0].text) as Record<string, unknown>
+        // StandardResponse: { success, data?, error? } — unwrap .data
+        const success = parsed.success !== false
+        const innerData = (parsed.data ?? parsed) as unknown
+        return { success, data: innerData, error: parsed.error as string | undefined }
       } catch {
         return { success: true, data: result.content[0].text }
       }

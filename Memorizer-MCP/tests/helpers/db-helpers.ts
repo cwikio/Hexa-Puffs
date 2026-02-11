@@ -171,8 +171,30 @@ export class DbHelper {
     return result.changes;
   }
 
+  // Contacts operations
+  getContactsByAgent(agentId: string): unknown[] {
+    return this.getDb().prepare('SELECT * FROM contacts WHERE agent_id = ?').all(agentId);
+  }
+
+  deleteContactsByAgent(agentId: string): number {
+    const result = this.getDb().prepare('DELETE FROM contacts WHERE agent_id = ?').run(agentId);
+    return result.changes;
+  }
+
+  // Projects operations
+  getProjectsByAgent(agentId: string): unknown[] {
+    return this.getDb().prepare('SELECT * FROM projects WHERE agent_id = ?').all(agentId);
+  }
+
+  deleteProjectsByAgent(agentId: string): number {
+    const result = this.getDb().prepare('DELETE FROM projects WHERE agent_id = ?').run(agentId);
+    return result.changes;
+  }
+
   // Cleanup operations
   cleanupAgent(agentId: string): void {
+    this.deleteProjectsByAgent(agentId);
+    this.deleteContactsByAgent(agentId);
     this.deleteFactsByAgent(agentId);
     this.deleteConversationsByAgent(agentId);
     this.deleteProfileHistory(agentId);
@@ -186,6 +208,8 @@ export class DbHelper {
     this.getDb().prepare("DELETE FROM conversations WHERE agent_id LIKE 'test-%'").run();
     this.getDb().prepare("DELETE FROM profile_history WHERE agent_id LIKE 'test-%'").run();
     this.getDb().prepare("DELETE FROM profiles WHERE agent_id LIKE 'test-%'").run();
+    this.getDb().prepare("DELETE FROM projects WHERE agent_id LIKE 'test-%'").run();
+    this.getDb().prepare("DELETE FROM contacts WHERE agent_id LIKE 'test-%'").run();
     this.getDb().prepare("DELETE FROM skills WHERE agent_id LIKE 'test-%'").run();
   }
 

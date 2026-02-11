@@ -90,6 +90,11 @@ export const storeSkillToolDefinition = {
         description: 'Send a Telegram notification when skill finishes (default: true)',
         default: true,
       },
+      enabled: {
+        type: 'boolean',
+        description: 'Whether the skill is enabled (default: true). Set to false to seed skills that auto-enable later.',
+        default: true,
+      },
     },
     required: ['name', 'trigger_type', 'instructions'],
   },
@@ -190,6 +195,7 @@ export const StoreSkillInputSchema = z.object({
   required_tools: z.array(z.string()).optional(),
   max_steps: z.number().positive().default(10),
   notify_on_completion: z.boolean().default(true),
+  enabled: z.boolean().default(true),
 });
 
 export const ListSkillsInputSchema = z.object({
@@ -235,7 +241,7 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
 
   const {
     agent_id, name, description, trigger_type, trigger_config,
-    instructions, required_tools, max_steps, notify_on_completion,
+    instructions, required_tools, max_steps, notify_on_completion, enabled,
   } = parseResult.data;
 
   try {
@@ -252,8 +258,8 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
 
     const result = db
       .prepare(
-        `INSERT INTO skills (agent_id, name, description, trigger_type, trigger_config, instructions, required_tools, max_steps, notify_on_completion)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO skills (agent_id, name, description, trigger_type, trigger_config, instructions, required_tools, max_steps, notify_on_completion, enabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         agent_id,
@@ -265,6 +271,7 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
         required_tools ? JSON.stringify(required_tools) : null,
         max_steps,
         notify_on_completion ? 1 : 0,
+        enabled ? 1 : 0,
       );
 
     logger.info('Skill stored', { skill_id: result.lastInsertRowid, name });
