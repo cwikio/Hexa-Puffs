@@ -2,6 +2,8 @@
  * Session persistence types for JSONL-based conversation storage
  */
 
+import type { CoreMessage } from 'ai';
+
 /**
  * First line of every session JSONL file — identifies the session
  */
@@ -23,6 +25,9 @@ export interface SessionTurn {
   timestamp: string;
   toolsUsed: string[];
   tokens: { prompt: number; completion: number };
+  /** Full structured messages for this turn (user + assistant tool-call/result chain).
+   *  Present when tools were used. Older sessions without this field fall back to flat user/assistant text. */
+  messages?: CoreMessage[];
 }
 
 /**
@@ -57,7 +62,7 @@ export interface SessionConfig {
  * Result of loading a session from disk
  */
 export interface LoadedSession {
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: CoreMessage[];
   compactionSummary?: string;
   turnCount: number;
 }

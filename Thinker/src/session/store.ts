@@ -13,7 +13,7 @@ import { appendFile, readFile, writeFile, rename, readdir, stat, unlink, mkdir }
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
-import { generateText, type LanguageModelV1 } from 'ai';
+import { generateText, type LanguageModelV1, type CoreMessage } from 'ai';
 import { Logger } from '@mcp/shared/Utils/logger.js';
 
 const logger = new Logger('thinker:session');
@@ -105,7 +105,7 @@ export class SessionStore {
       const content = await readFile(filePath, 'utf-8');
       const lines = content.trim().split('\n').filter(Boolean);
 
-      const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+      const messages: CoreMessage[] = [];
       let compactionSummary: string | undefined;
       let turnCount = 0;
       let totalChars = 0;
@@ -117,8 +117,14 @@ export class SessionStore {
           if (entry.type === 'compaction') {
             compactionSummary = entry.summary;
           } else if (entry.type === 'turn') {
-            messages.push({ role: 'user', content: entry.user });
-            messages.push({ role: 'assistant', content: entry.assistant });
+            // Use structured messages when available (preserves tool-call/result chain),
+            // fall back to flat user/assistant text for older sessions
+            if (entry.messages && entry.messages.length > 0) {
+              messages.push(...entry.messages);
+            } else {
+              messages.push({ role: 'user', content: entry.user });
+              messages.push({ role: 'assistant', content: entry.assistant });
+            }
             turnCount++;
             totalChars += entry.user.length + entry.assistant.length;
           }
@@ -153,7 +159,8 @@ export class SessionStore {
     userText: string,
     assistantText: string,
     toolsUsed: string[],
-    tokens: { prompt: number; completion: number }
+    tokens: { prompt: number; completion: number },
+    structuredMessages?: CoreMessage[]
   ): Promise<void> {
     const filePath = this.getSessionPath(chatId);
 
@@ -177,6 +184,9 @@ export class SessionStore {
       timestamp: new Date().toISOString(),
       toolsUsed,
       tokens,
+      ...(structuredMessages && structuredMessages.length > 0
+        ? { messages: structuredMessages }
+        : {}),
     };
     await this.appendEntry(chatId, turn);
 

@@ -346,7 +346,7 @@ export class Agent {
     }
 
     // Try loading from disk
-    let messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    let messages: CoreMessage[] = [];
     let compactionSummary: string | undefined;
 
     if (this.config.sessionConfig.enabled) {
@@ -941,13 +941,20 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       // Persist turn to session JSONL
       if (this.config.sessionConfig.enabled) {
         try {
+          // Build the full structured message sequence for this turn when tools were used.
+          // This preserves tool-call/result structure across Thinker restarts.
+          const turnMessages: CoreMessage[] | undefined = hasStructuredResponse
+            ? [{ role: 'user' as const, content: message.text }, ...result.response.messages]
+            : undefined;
+
           await this.sessionStore.saveTurn(
             message.chatId,
             message.text,
             responseText,
             result.steps
               .flatMap((step) => step.toolCalls?.map((tc) => tc.toolName) || []),
-            { prompt: promptTokens, completion: completionTokens }
+            { prompt: promptTokens, completion: completionTokens },
+            turnMessages
           );
 
           // Run compaction if needed
