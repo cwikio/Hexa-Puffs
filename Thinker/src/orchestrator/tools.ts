@@ -87,7 +87,9 @@ export function createToolsFromOrchestrator(
           }
 
           if (!result.success) {
-            throw new Error(result.error || 'Tool execution failed');
+            // Return error as a tool result so the LLM can see it and adapt
+            // (e.g. retry with correct parameters, or explain to the user)
+            return { error: result.error || 'Tool execution failed', success: false };
           }
 
           return result.result;

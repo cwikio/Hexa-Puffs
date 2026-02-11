@@ -440,7 +440,7 @@ export class Agent {
 
     return {
       systemPrompt,
-      conversationHistory: state.messages.slice(-30), // Keep last 30 messages (~15 exchanges)
+      conversationHistory: state.messages.slice(-50), // Keep last 50 messages (~10-15 tool-using turns)
       facts: memories.facts.map((f) => ({ fact: f.fact, category: f.category })),
       profile: profile?.profile_data?.persona
         ? {
@@ -841,10 +841,22 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       }
 
       // Add assistant response to conversation
-      state.messages.push({
-        role: 'assistant',
-        content: responseText,
-      });
+      // When tools were used via the normal generateText flow, preserve the full
+      // responseMessages (including tool_calls + tool_results) so subsequent turns
+      // can reference IDs, data, etc. from previous tool results.
+      // For recovery/fallback paths, just store the text response.
+      const hasStructuredResponse = !usedTextOnlyFallback &&
+        recoveredTools.length === 0 &&
+        result?.response?.messages?.length > 0;
+
+      if (hasStructuredResponse) {
+        state.messages.push(...result.response.messages);
+      } else {
+        state.messages.push({
+          role: 'assistant',
+          content: responseText,
+        });
+      }
       state.lastActivity = Date.now();
 
       // Persist turn to session JSONL
