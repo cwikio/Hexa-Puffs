@@ -70,6 +70,24 @@ import {
   backfillEmbeddingsToolDefinition,
   BackfillEmbeddingsInputSchema,
   handleBackfillEmbeddings,
+  createContactToolDefinition,
+  listContactsToolDefinition,
+  updateContactToolDefinition,
+  CreateContactInputSchema,
+  ListContactsInputSchema,
+  UpdateContactInputSchema,
+  handleCreateContact,
+  handleListContacts,
+  handleUpdateContact,
+  createProjectToolDefinition,
+  listProjectsToolDefinition,
+  updateProjectToolDefinition,
+  CreateProjectInputSchema,
+  ListProjectsInputSchema,
+  UpdateProjectInputSchema,
+  handleCreateProject,
+  handleListProjects,
+  handleUpdateProject,
 } from './tools/index.js';
 
 export function createServer(): McpServer {
@@ -245,6 +263,56 @@ export function createServer(): McpServer {
     inputSchema: BackfillEmbeddingsInputSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     handler: async (params) => handleBackfillEmbeddings(params),
+  });
+
+  // Contacts
+  registerTool(server, {
+    name: 'create_contact',
+    description: createContactToolDefinition.description,
+    inputSchema: CreateContactInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleCreateContact(params),
+  });
+
+  registerTool(server, {
+    name: 'list_contacts',
+    description: listContactsToolDefinition.description,
+    inputSchema: ListContactsInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleListContacts(params),
+  });
+
+  registerTool(server, {
+    name: 'update_contact',
+    description: updateContactToolDefinition.description,
+    inputSchema: UpdateContactInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleUpdateContact(params),
+  });
+
+  // Projects
+  registerTool(server, {
+    name: 'create_project',
+    description: createProjectToolDefinition.description,
+    inputSchema: CreateProjectInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleCreateProject(params),
+  });
+
+  registerTool(server, {
+    name: 'list_projects',
+    description: listProjectsToolDefinition.description,
+    inputSchema: ListProjectsInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleListProjects(params),
+  });
+
+  registerTool(server, {
+    name: 'update_project',
+    description: updateProjectToolDefinition.description,
+    inputSchema: UpdateProjectInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleUpdateProject(params),
   });
 
   return server;

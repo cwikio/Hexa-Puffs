@@ -75,6 +75,45 @@ CREATE TABLE IF NOT EXISTS skills (
 
 CREATE INDEX IF NOT EXISTS idx_skills_agent ON skills(agent_id);
 CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(agent_id, enabled);
+
+-- Contacts table: people the user works with
+CREATE TABLE IF NOT EXISTS contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL DEFAULT 'main',
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    company TEXT,
+    role TEXT,
+    type TEXT NOT NULL DEFAULT 'work',
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_contacts_agent ON contacts(agent_id);
+CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(agent_id, email);
+CREATE INDEX IF NOT EXISTS idx_contacts_company ON contacts(agent_id, company);
+
+-- Projects table: things the user works on
+CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL DEFAULT 'main',
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    type TEXT NOT NULL DEFAULT 'work',
+    description TEXT,
+    primary_contact_id INTEGER,
+    participants TEXT,
+    company TEXT,
+    priority TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (primary_contact_id) REFERENCES contacts(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_projects_agent ON projects(agent_id);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(agent_id, status);
+CREATE INDEX IF NOT EXISTS idx_projects_contact ON projects(primary_contact_id);
 `;
 
 // Fact categories as defined in the spec
@@ -156,6 +195,48 @@ export interface SkillRow {
   last_run_at: string | null;
   last_run_status: string | null;
   last_run_summary: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Contact types
+export const CONTACT_TYPES = ['work', 'personal'] as const;
+export type ContactType = typeof CONTACT_TYPES[number];
+
+export interface ContactRow {
+  id: number;
+  agent_id: string;
+  name: string;
+  email: string;
+  company: string | null;
+  role: string | null;
+  type: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Project types
+export const PROJECT_STATUSES = ['active', 'paused', 'completed'] as const;
+export type ProjectStatus = typeof PROJECT_STATUSES[number];
+
+export const PROJECT_TYPES = ['work', 'personal'] as const;
+export type ProjectType = typeof PROJECT_TYPES[number];
+
+export const PROJECT_PRIORITIES = ['high', 'medium', 'low'] as const;
+export type ProjectPriority = typeof PROJECT_PRIORITIES[number];
+
+export interface ProjectRow {
+  id: number;
+  agent_id: string;
+  name: string;
+  status: string;
+  type: string;
+  description: string | null;
+  primary_contact_id: number | null;
+  participants: string | null;
+  company: string | null;
+  priority: string | null;
   created_at: string;
   updated_at: string;
 }

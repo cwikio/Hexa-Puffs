@@ -89,6 +89,30 @@ export {
   handleBackfillEmbeddings,
 } from './backfill-embeddings.js';
 
+export {
+  createContactToolDefinition,
+  listContactsToolDefinition,
+  updateContactToolDefinition,
+  CreateContactInputSchema,
+  ListContactsInputSchema,
+  UpdateContactInputSchema,
+  handleCreateContact,
+  handleListContacts,
+  handleUpdateContact,
+} from './contacts.js';
+
+export {
+  createProjectToolDefinition,
+  listProjectsToolDefinition,
+  updateProjectToolDefinition,
+  CreateProjectInputSchema,
+  ListProjectsInputSchema,
+  UpdateProjectInputSchema,
+  handleCreateProject,
+  handleListProjects,
+  handleUpdateProject,
+} from './projects.js';
+
 // Import all definitions for convenience
 import { storeFactToolDefinition, listFactsToolDefinition, deleteFactToolDefinition, updateFactToolDefinition } from './facts.js';
 import { storeConversationToolDefinition, searchConversationsToolDefinition } from './conversations.js';
@@ -106,6 +130,8 @@ import {
 import { backfillExtractFactsToolDefinition } from './backfill.js';
 import { synthesizeFactsToolDefinition } from './synthesis.js';
 import { backfillEmbeddingsToolDefinition } from './backfill-embeddings.js';
+import { createContactToolDefinition, listContactsToolDefinition, updateContactToolDefinition } from './contacts.js';
+import { createProjectToolDefinition, listProjectsToolDefinition, updateProjectToolDefinition } from './projects.js';
 
 export const allToolDefinitions = [
   // Facts
@@ -137,4 +163,12 @@ export const allToolDefinitions = [
   synthesizeFactsToolDefinition,
   // Embeddings
   backfillEmbeddingsToolDefinition,
+  // Contacts
+  createContactToolDefinition,
+  listContactsToolDefinition,
+  updateContactToolDefinition,
+  // Projects
+  createProjectToolDefinition,
+  listProjectsToolDefinition,
+  updateProjectToolDefinition,
 ];
