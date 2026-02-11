@@ -7,16 +7,18 @@ import type { TraceContext } from '../tracing/types.js';
 import { getTraceLogger } from '../tracing/logger.js';
 
 /**
- * Relax numeric types in JSON Schema to accept both numbers and strings.
- * Smaller LLMs (e.g. Llama on Groq) often stringify numbers in tool calls
- * (e.g. `"count": "5"` instead of `"count": 5`). The downstream MCP tools
- * handle coercion via `z.coerce.number()`, so this is safe.
+ * Relax numeric and boolean types in JSON Schema to also accept strings.
+ * Smaller LLMs (e.g. Llama on Groq) often stringify primitives in tool calls
+ * (e.g. `"count": "5"` instead of `"count": 5`, `"clear": "true"` instead of
+ * `"clear": true`). The downstream MCP tools handle numeric coercion via
+ * `z.coerce.number()`. Boolean coercion is handled by `coerceStringBooleans()`
+ * in the execute callback before args are sent to the Orchestrator.
  */
-function relaxNumericTypes(schema: Record<string, unknown>): Record<string, unknown> {
+function relaxSchemaTypes(schema: Record<string, unknown>): Record<string, unknown> {
   const relaxed = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
 
   function walk(obj: Record<string, unknown>) {
-    if (obj.type === 'number' || obj.type === 'integer') {
+    if (obj.type === 'number' || obj.type === 'integer' || obj.type === 'boolean') {
       obj.type = [obj.type as string, 'string'];
     }
     if (obj.properties && typeof obj.properties === 'object') {
@@ -31,6 +33,19 @@ function relaxNumericTypes(schema: Record<string, unknown>): Record<string, unkn
 
   walk(relaxed);
   return relaxed;
+}
+
+/**
+ * Coerce string booleans ("true"/"false") to actual booleans in tool call args.
+ * Needed because Groq/Llama often sends `"true"` instead of `true` for boolean params.
+ * Mutates the args object in-place.
+ */
+function coerceStringBooleans(args: Record<string, unknown>): Record<string, unknown> {
+  for (const [key, value] of Object.entries(args)) {
+    if (value === 'true') args[key] = true;
+    else if (value === 'false') args[key] = false;
+  }
+  return args;
 }
 
 /**
@@ -58,14 +73,15 @@ export function createToolsFromOrchestrator(
 
     // Pass the MCP's original JSON Schema directly — no lossy Zod conversion
     // Relax numeric types so smaller LLMs can pass "5" instead of 5
-    const schema = jsonSchema(relaxNumericTypes(orchTool.inputSchema));
+    const schema = jsonSchema(relaxSchemaTypes(orchTool.inputSchema));
 
     const wrappedTool = tool({
       description: orchTool.description,
       parameters: schema,
       execute: async (args) => {
         // Normalize null/undefined args to empty object (for tools with no parameters)
-        const normalizedArgs = (args ?? {}) as Record<string, unknown>;
+        // Coerce string booleans from Groq/Llama ("true"→true, "false"→false)
+        const normalizedArgs = coerceStringBooleans((args ?? {}) as Record<string, unknown>);
         const trace = getTrace();
         const startTime = Date.now();
 

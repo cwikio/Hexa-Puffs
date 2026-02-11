@@ -154,6 +154,31 @@ export async function handleCreateJob(args: unknown): Promise<StandardResponse> 
 
     const data = parsed.data;
 
+    // Dedup: if a job with the same name was created in the last 60s, return it instead
+    // This prevents Groq/Llama retry loops from creating duplicate jobs
+    const existingJobs = await storage.listJobs();
+    const recentDuplicate = existingJobs.find((j) => {
+      if (j.name !== data.name || !j.enabled) return false;
+      const createdAt = new Date(j.createdAt).getTime();
+      return Date.now() - createdAt < 60_000;
+    });
+    if (recentDuplicate) {
+      logger.info('Job dedup: returning existing job', { jobId: recentDuplicate.id, name: recentDuplicate.name });
+      return {
+        success: true,
+        data: {
+          jobId: recentDuplicate.id,
+          name: recentDuplicate.name,
+          type: recentDuplicate.type,
+          enabled: recentDuplicate.enabled,
+          maxRuns: recentDuplicate.maxRuns,
+          expiresAt: recentDuplicate.expiresAt,
+          nextRunAt: recentDuplicate.type === 'scheduled' ? recentDuplicate.scheduledAt : 'Based on cron expression',
+          message: 'Job already exists (created within last 60s)',
+        },
+      };
+    }
+
     // Validate cron expression if type is cron
     if (data.type === 'cron' && !data.cronExpression) {
       return {
