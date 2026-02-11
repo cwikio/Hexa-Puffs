@@ -81,6 +81,7 @@ Never explain the tools you're using, the parameters you're passing, or the inte
 - Do NOT call tools that aren't in your available tools list.
 - When a tool IS needed, use it without asking for permission (unless destructive).
 - CRITICAL: Always use the structured function calling API to invoke tools. NEVER write tool calls as JSON text in your response (e.g. {"name": "tool", "parameters": {...}}). If you want to call a tool, call it — don't describe the call.
+- CRITICAL: You CANNOT perform real-world actions (create events, send emails, search the web, manage files, store memories) without calling tools. If you respond with text claiming you did something but did not call a tool, that action DID NOT HAPPEN — you would be lying to the user. When the user asks you to DO something, you MUST call the appropriate tool. A text response alone is NEVER sufficient for actions.
 
 ## Web Search Tool
 When you need current information (weather, sports scores, news, real-time data), use the searcher_web_search tool:
@@ -533,6 +534,12 @@ export class Agent {
       let result;
       let usedTextOnlyFallback = false;
 
+      // Lower temperature when tool selector strongly matches — improves tool calling reliability
+      const selectionStats = this.embeddingSelector?.getLastSelectionStats();
+      const effectiveTemperature = (selectionStats?.topScore ?? 0) > 0.6
+        ? Math.min(this.config.temperature, 0.3)
+        : this.config.temperature;
+
       // Capture completed steps via onStepFinish so we can recover tool results
       // if generateText() fails mid-loop (e.g., tools execute but the follow-up LLM call errors)
       interface CapturedStep {
@@ -551,7 +558,7 @@ export class Agent {
           tools: selectedTools,
           toolChoice: 'auto',
           maxSteps: 8,
-          temperature: this.config.temperature,
+          temperature: effectiveTemperature,
           abortSignal: agentAbort,
           onStepFinish,
         });
@@ -778,6 +785,52 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       } else {
         // Normal path: sanitize any leaked syntax
         responseText = sanitizeResponseText(result.text || '');
+      }
+
+      // ─── Hallucination Guard ────────────────────────────────────────
+      // If the model claims it performed an action but called no tools,
+      // it hallucinated. Retry with toolChoice: 'required' to force actual tool use.
+      const noToolsUsed =
+        result.steps.every((step) => !step.toolCalls?.length) &&
+        recoveredTools.length === 0;
+
+      if (noToolsUsed && responseText) {
+        const actionClaimedPattern =
+          /I('ve| have) (created|sent|scheduled|deleted|updated|added|removed|set up|stored|saved|found)|has been (created|sent|scheduled|deleted|updated|added|removed|stored|saved)|Event details:|Email sent|event .* (created|scheduled)|calendar .* (updated|created)/i;
+
+        if (actionClaimedPattern.test(responseText)) {
+          logger.warn(`[hallucination-guard] Model claimed action without tool calls, retrying with toolChoice: required`);
+          try {
+            const retryResult = await generateText({
+              model: this.modelFactory.getModel(),
+              system: context.systemPrompt,
+              messages: [...context.conversationHistory, { role: 'user', content: message.text }],
+              tools: selectedTools,
+              toolChoice: 'required' as const,
+              maxSteps: 8,
+              temperature: Math.min(this.config.temperature, 0.3),
+              abortSignal: agentAbort,
+              onStepFinish,
+            });
+            const retryPromptTokens = retryResult.usage?.promptTokens || 0;
+            const retryCompletionTokens = retryResult.usage?.completionTokens || 0;
+            this.costMonitor?.recordUsage(retryPromptTokens, retryCompletionTokens);
+
+            // Only accept the retry if it actually called tools
+            const retryUsedTools = retryResult.steps.some((step) => step.toolCalls?.length > 0);
+            if (retryUsedTools) {
+              result = retryResult;
+              responseText = sanitizeResponseText(result.text || '');
+              logger.info(`[hallucination-guard] Retry successful — tools were called`);
+            } else {
+              logger.warn(`[hallucination-guard] Retry still did not call tools, using original response with disclaimer`);
+              responseText = "I wasn't able to complete this action. Please try again.";
+            }
+          } catch (retryError) {
+            logger.warn(`[hallucination-guard] Retry failed:`, retryError);
+            responseText = "I wasn't able to complete this action. Please try again.";
+          }
+        }
       }
 
       // If no text response but we have tool results, extract text from steps
