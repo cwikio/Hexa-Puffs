@@ -9,7 +9,7 @@ const logger = new Logger('thinker:tool-selector');
  */
 const TOOL_GROUPS: Record<string, string[]> = {
   core: ['send_telegram', 'store_fact', 'search_memories', 'get_status', 'spawn_subagent'],
-  search: ['searcher_web_search', 'searcher_news_search', 'searcher_image_search'],
+  search: ['searcher_web_search', 'searcher_news_search', 'searcher_image_search', 'searcher_web_fetch'],
   memory: ['memory_*'],
   email: [
     'gmail_list_emails', 'gmail_get_email', 'gmail_send_email', 'gmail_reply_email',

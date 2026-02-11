@@ -78,6 +78,14 @@ export const invalidInputs = {
   },
 };
 
+// URLs for web_fetch testing
+export const fetchUrls = {
+  simple: "https://example.com",
+  httpError404: "https://httpstat.us/404",
+  httpError500: "https://httpstat.us/500",
+  nonExistent: "https://this-domain-definitely-does-not-exist-xyz.com",
+};
+
 // Expected response structure for validation
 export const expectedResponseStructure = {
   webSearch: {
@@ -89,6 +97,9 @@ export const expectedResponseStructure = {
     requiredFields: ["results", "total_count", "query"],
     resultFields: ["title", "url", "description", "source", "age"],
     optionalResultFields: ["thumbnail", "breaking"],
+  },
+  webFetch: {
+    requiredFields: ["url", "title", "content", "contentLength", "truncated"],
   },
 };
 

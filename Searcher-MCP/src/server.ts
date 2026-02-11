@@ -13,6 +13,8 @@ import {
   handleNewsSearch,
   imageSearchSchema,
   handleImageSearch,
+  webFetchSchema,
+  handleWebFetch,
 } from "./tools/index.js";
 
 export function createServer(): McpServer {
@@ -68,6 +70,23 @@ export function createServer(): McpServer {
     },
     handler: async (params) => {
       const result = await handleImageSearch(params);
+      return createSuccess(result);
+    },
+  });
+
+  registerTool(server, {
+    name: "web_fetch",
+    description:
+      "Fetch a URL and extract its content as clean markdown. Uses Readability to extract article content (strips nav, ads, sidebars). Use this to read the content of a specific webpage. For JavaScript-heavy sites (SPAs), use browser tools instead.\n\nArgs:\n  - url (string): The URL to fetch\n  - maxLength (number, optional): Max chars to return (default: 20000)\n  - includeLinks (boolean, optional): Preserve hyperlinks in markdown (default: true)\n  - timeout (number, optional): Fetch timeout in ms (default: 10000)\n\nReturns: { url, title, content, contentLength, truncated }",
+    inputSchema: webFetchSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (params) => {
+      const result = await handleWebFetch(params);
       return createSuccess(result);
     },
   });
