@@ -39,7 +39,7 @@ const TOOL_GROUPS: Record<string, string[]> = {
 
 /** Keyword patterns → tool groups to activate */
 const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
-  { pattern: /weather|forecast|temperature|news|score|search|look\s?up|find out|who is|what is|current/i,
+  { pattern: /weather|forecast|temperature|news|score|search|look\s?up|find out|who is|what is|current|fetch.*url|read.*article|read.*page|extract.*content|what does.*say/i,
     groups: ['search'] },
   { pattern: /email|e-mail|mail|inbox|send.*to|draft|compose/i,
     groups: ['email'] },
@@ -54,7 +54,7 @@ const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
   { pattern: /telegram|message|chat|contact|group/i,
     groups: ['telegram'] },
   { pattern: /browse|website|navigate|webpage|screenshot|login.*site|fill.*form|open.*page|scrape|web.*page|visit.*site|www\.\w|https?:\/\/|go\s+to\s+\S+\.\S/i,
-    groups: ['browser'] },
+    groups: ['browser', 'search'] },
   { pattern: /\bcode\b|script|execute|python|node\.?js|bash|calculate|compute|program/i,
     groups: ['codexec'] },
   { pattern: /cron|remind me|recurring|every\s+(day|hour|week|minute|morning|evening|\d)|daily at|weekly|hourly|schedule.*(task|job|remind)|per\s+(minute|hour|day|week)|for\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(minute|hour|day|week)|\d+\s*times|once\s+a\s+(day|week|hour|minute)|repeat/i,
