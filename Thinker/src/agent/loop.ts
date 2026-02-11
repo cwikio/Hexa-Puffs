@@ -541,6 +541,16 @@ export class Agent {
         ? Math.min(this.config.temperature, 0.3)
         : this.config.temperature;
 
+      // Pre-emptive tool enforcement: use 'required' when message clearly needs tools
+      // (high embedding match or action verbs detected) instead of waiting for hallucination retry
+      const ACTION_VERB_PATTERN = /^(send|create|search|find|check|delete|remove|schedule|update|add|set|browse|open|navigate|look\s?up|forward|reply|draft|compose)/i;
+      const embeddingScore = selectionStats?.topScore ?? 0;
+      const needsTools = embeddingScore > 0.7 || ACTION_VERB_PATTERN.test(message.text.trim());
+      const effectiveToolChoice = needsTools ? 'required' as const : 'auto' as const;
+      if (needsTools) {
+        logger.info(`[tool-enforcement] Pre-emptive toolChoice=required (embeddingScore=${embeddingScore.toFixed(3)}, actionVerb=${ACTION_VERB_PATTERN.test(message.text.trim())})`);
+      }
+
       // Capture completed steps via onStepFinish so we can recover tool results
       // if generateText() fails mid-loop (e.g., tools execute but the follow-up LLM call errors)
       interface CapturedStep {
@@ -557,7 +567,7 @@ export class Agent {
           system: context.systemPrompt,
           messages: [...context.conversationHistory, { role: 'user', content: message.text }],
           tools: selectedTools,
-          toolChoice: 'auto',
+          toolChoice: effectiveToolChoice,
           maxSteps: 8,
           temperature: effectiveTemperature,
           abortSignal: agentAbort,
@@ -797,7 +807,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
 
       if (noToolsUsed && responseText) {
         const actionClaimedPattern =
-          /I('ve| have) (created|sent|scheduled|deleted|updated|added|removed|set up|stored|saved|found)|has been (created|sent|scheduled|deleted|updated|added|removed|stored|saved)|Event details:|Email sent|event .* (created|scheduled)|calendar .* (updated|created)/i;
+          /I('ve| have) (created|sent|scheduled|deleted|updated|added|removed|set up|stored|saved|found|searched|looked up|checked|gone ahead)|has been (created|sent|scheduled|deleted|updated|added|removed|stored|saved)|Event details:|Email sent|event .* (created|scheduled)|calendar .* (updated|created)|Here's the email I sent|I've gone ahead and|I searched for|I looked up|I checked your|The results show|I found the following/i;
 
         if (actionClaimedPattern.test(responseText)) {
           logger.warn(`[hallucination-guard] Model claimed action without tool calls, retrying with toolChoice: required`);

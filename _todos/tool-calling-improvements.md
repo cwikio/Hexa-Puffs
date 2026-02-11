@@ -73,7 +73,7 @@ Also at `loop.ts:919-926` — when pushing `result.response.messages` to state, 
 
 ---
 
-## Suggestion 4: Hallucination Guard Improvements (MEDIUM IMPACT)
+## ~~Suggestion 4: Hallucination Guard Improvements (MEDIUM IMPACT)~~ ✅
 
 **Current state**: `loop.ts:790-834` has a regex that catches "I've created/sent/scheduled..." without tool calls and retries with `toolChoice: 'required'`.
 
