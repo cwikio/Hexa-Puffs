@@ -256,7 +256,7 @@ async function callOrchestrator(toolName: string, args: Record<string, unknown>)
     return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
   }
 
-  const result = await response.json();
+  const result = await response.json() as { content?: unknown };
   const content = result.content;
   if (Array.isArray(content)) {
     const textBlock = content.find((b: { type: string }) => b.type === 'text');
