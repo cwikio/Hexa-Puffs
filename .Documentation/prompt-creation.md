@@ -106,9 +106,10 @@ Priority 1 ─── Custom file prompt (THINKER_SYSTEM_PROMPT_PATH env var)
     │                       Configurable via THINKER_PERSONA_DIR env var
     │
     ├── If not found ──▶ Priority 3 ─── Built-in DEFAULT_SYSTEM_PROMPT
-    │                       ~150 lines hardcoded in loop.ts (lines 34-150)
+    │                       ~160 lines hardcoded in loop.ts (lines 34-157)
     │                       Defines the "Annabelle" persona: memory usage,
     │                       proactive learning, email/calendar/search,
+    │                       external service tool guidance (discover-then-act),
     │                       action-first rule, response format rules
     │
     └── Profile Override ─── After selecting the base, if the user's Memorizer
@@ -315,6 +316,12 @@ Tools are **not listed in the system prompt text**. They are passed as structure
 
 For complete tool selection details (embedding-based, regex-based, required_tools, merging, caps), see [tools.md](tools.md).
 
+### Tool choice strategy
+
+The `toolChoice` parameter is always set to `'auto'`. Previously, the system tried conditional `'required'` enforcement (based on embedding scores > 0.7 or action verb detection), but this caused crashes with Groq/Llama on multi-step calls — `'required'` forces tool calls on **every** step, which fails when the model needs to summarize results with text on step 2+. The playbook instructions, system prompt, and embedding-selected tools provide sufficient guidance for the model to call tools voluntarily.
+
+Temperature is dynamically lowered to `min(config.temperature, 0.3)` when the embedding tool selector has a top score > 0.6 — this improves tool calling reliability for high-confidence matches.
+
 ### Interactive message tool flow
 
 ```
@@ -336,7 +343,8 @@ buildContext()                     processMessage()
                                         │
                                         ▼
                                generateText({
-                                 tools: selectedTools
+                                 tools: selectedTools,
+                                 toolChoice: 'auto'
                                })
 ```
 
@@ -543,6 +551,28 @@ truncateHistoryToolResults(msg, 2)   ← reduce token waste
         ▼
 Passed as `messages` to generateText()
 ```
+
+### Retry Context Preservation
+
+When a tool call fails mid-loop (e.g., a tool executes successfully but the follow-up LLM call errors), the system retries with context from captured steps. Each step's tool calls and tool results are recorded via an `onStepFinish` callback. On retry, `buildRetryMessages()` reconstructs the message array including:
+
+1. The original conversation history
+2. The user message
+3. For each captured step: an `assistant` message with tool-call content + a `tool` message with tool-result content
+
+This means the retry LLM call sees what already happened and can continue from where it left off rather than re-executing the same tool calls from scratch.
+
+```text
+First attempt:
+  history + user msg → LLM → tool call A ✓ → tool call B ✗ (error)
+                                   │
+                        captured: step with A's call + result
+
+Retry:
+  history + user msg + [assistant: call A] + [tool: result A] → LLM → continues from B
+```
+
+A second retry (with rephrased message) also includes all captured steps from both previous attempts.
 
 ### Session Compaction
 

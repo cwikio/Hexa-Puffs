@@ -9,42 +9,34 @@ const logger = new Logger('thinker:groq-debug');
 
 /**
  * Create Groq provider using the dedicated @ai-sdk/groq package.
- * This handles tool calling properly for Groq-hosted models (Llama 4, etc.)
+ * This handles tool calling properly for Groq-hosted models (Llama, etc.)
  * instead of the generic OpenAI-compatible provider which can misformat tool calls.
  */
 export function createGroqProvider(config: Config) {
+  const isDebug = (process.env.LOG_LEVEL || 'info') === 'debug';
+
   return createGroq({
     apiKey: config.groqApiKey || '',
-    // DEBUG: log raw request/response to diagnose tool calling
-    fetch: async (url, init) => {
-      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
-      if (body?.tools) {
-        logger.debug(`[GROQ] Request has ${body.tools.length} tools, tool_choice=${JSON.stringify(body.tool_choice)}`);
-        logger.debug(`[GROQ] First tool: ${JSON.stringify(body.tools[0]?.function?.name)}`);
-        // Dump image_search tool definition to see exact schema
-        const imgTool = body.tools.find((t: { function?: { name?: string } }) => t.function?.name === 'searcher_image_search');
-        if (imgTool) {
-          logger.debug(`[GROQ] image_search tool: ${JSON.stringify(imgTool)}`);
+    // Only inject debug fetch wrapper when LOG_LEVEL=debug
+    ...(isDebug ? {
+      fetch: async (url: string | URL | globalThis.Request, init?: RequestInit) => {
+        const body = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
+        if (body?.tools) {
+          logger.debug(`[GROQ] Request: ${body.tools.length} tools, tool_choice=${JSON.stringify(body.tool_choice)}`);
         }
-        // Dump first tool to see format
-        logger.debug(`[GROQ] First tool full: ${JSON.stringify(body.tools[0])}`);
-      }
-      const response = await globalThis.fetch(url, init);
-      // Clone to read body without consuming it
-      const cloned = response.clone();
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const json: any = await cloned.json();
-        const choice = json?.choices?.[0];
-        if (choice) {
-          logger.debug(`[GROQ] Response finish_reason=${choice.finish_reason}, has_tool_calls=${!!choice.message?.tool_calls}, content_length=${choice.message?.content?.length ?? 0}`);
-          if (choice.message?.content && !choice.message?.tool_calls) {
-            logger.debug(`[GROQ] Content preview: ${choice.message.content.substring(0, 200)}`);
+        const response = await globalThis.fetch(url, init);
+        const cloned = response.clone();
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const json: any = await cloned.json();
+          const choice = json?.choices?.[0];
+          if (choice) {
+            logger.debug(`[GROQ] Response: finish_reason=${choice.finish_reason}, tool_calls=${!!choice.message?.tool_calls}, content_len=${choice.message?.content?.length ?? 0}`);
           }
-        }
-      } catch { /* streaming or parse error, ignore */ }
-      return response;
-    },
+        } catch { /* streaming or parse error, ignore */ }
+        return response;
+      },
+    } : {}),
   });
 }
 

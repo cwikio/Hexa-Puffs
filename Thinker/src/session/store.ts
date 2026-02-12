@@ -321,6 +321,23 @@ export class SessionStore {
   }
 
   /**
+   * Clear a session entirely — deletes the JSONL file and resets tracking maps.
+   * The session file will be recreated on the next message.
+   */
+  async clearSession(chatId: string): Promise<void> {
+    const filePath = this.getSessionPath(chatId);
+
+    if (existsSync(filePath)) {
+      await unlink(filePath);
+      logger.info(`Deleted session file for ${chatId}`);
+    }
+
+    this.charCounts.delete(chatId);
+    this.turnCounts.delete(chatId);
+    this.lastCompactionTimes.delete(chatId);
+  }
+
+  /**
    * Delete session files older than maxAgeDays.
    * Returns the number of sessions cleaned up.
    */

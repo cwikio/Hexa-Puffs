@@ -40,10 +40,10 @@ export const FactExtractionConfigSchema = z.object({
 export const SessionConfigSchema = z.object({
   enabled: z.boolean().default(true),
   compactionEnabled: z.boolean().default(true),
-  compactionThresholdChars: z.number().int().min(5000).default(50_000), // ~12,500 tokens
-  compactionKeepRecentTurns: z.number().int().min(2).default(10),
-  compactionCooldownMs: z.number().int().min(0).default(5 * 60 * 1000), // 5 min
-  compactionMinTurns: z.number().int().min(3).default(15),
+  compactionThresholdChars: z.number().int().min(5000).default(20_000), // ~5,000 tokens — compact sooner
+  compactionKeepRecentTurns: z.number().int().min(2).default(5),
+  compactionCooldownMs: z.number().int().min(0).default(2 * 60 * 1000), // 2 min
+  compactionMinTurns: z.number().int().min(3).default(8),
   maxAgeDays: z.number().int().min(1).default(7),
 });
 
@@ -59,7 +59,7 @@ export const ConfigSchema = z.object({
 
   // Groq settings
   groqApiKey: z.string().optional(),
-  groqModel: z.string().default('moonshotai/kimi-k2-instruct-0905'),
+  groqModel: z.string().default('llama-3.3-70b-versatile'),
 
   // LM Studio settings
   lmstudioBaseUrl: z.string().url().default('http://localhost:1234/v1'),
@@ -70,8 +70,8 @@ export const ConfigSchema = z.object({
   ollamaModel: z.string().default('llama3.2'),
 
   // LLM temperature (0-2). Lower = more deterministic, better tool calling.
-  // kimi-k2 recommends 0.6 general / 0.3 for tool calling
-  temperature: z.number().min(0).max(2).default(0.6),
+  // 0.4 balances creativity with reliable tool calling for llama-3.3-70b
+  temperature: z.number().min(0).max(2).default(0.4),
 
   // Orchestrator connection
   orchestratorUrl: z.string().url().default('http://localhost:8000'),
@@ -162,12 +162,12 @@ export function loadConfig(): Config {
     thinkerEnabled: parseBoolean(process.env.THINKER_ENABLED, true),
     llmProvider: process.env.THINKER_LLM_PROVIDER || 'groq',
     groqApiKey: process.env.GROQ_API_KEY,
-    groqModel: process.env.GROQ_MODEL || 'moonshotai/kimi-k2-instruct-0905',
+    groqModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
     lmstudioBaseUrl: process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234/v1',
     lmstudioModel: process.env.LMSTUDIO_MODEL || undefined,
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
     ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2',
-    temperature: parseNumber(process.env.THINKER_TEMPERATURE, 0.6),
+    temperature: parseNumber(process.env.THINKER_TEMPERATURE, 0.4),
     orchestratorUrl: process.env.ORCHESTRATOR_URL || 'http://localhost:8000',
     orchestratorTimeout: parseInteger(process.env.ORCHESTRATOR_TIMEOUT, 30000),
     thinkerPort: parseInteger(process.env.THINKER_PORT, 8006),
@@ -187,10 +187,10 @@ export function loadConfig(): Config {
     sessionConfig: {
       enabled: parseBoolean(process.env.THINKER_SESSION_ENABLED, true),
       compactionEnabled: parseBoolean(process.env.THINKER_SESSION_COMPACTION_ENABLED, true),
-      compactionThresholdChars: parseInteger(process.env.THINKER_SESSION_COMPACTION_THRESHOLD_CHARS, 50_000),
-      compactionKeepRecentTurns: parseInteger(process.env.THINKER_SESSION_COMPACTION_KEEP_RECENT, 10),
-      compactionCooldownMs: parseInteger(process.env.THINKER_SESSION_COMPACTION_COOLDOWN_MS, 5 * 60 * 1000),
-      compactionMinTurns: parseInteger(process.env.THINKER_SESSION_COMPACTION_MIN_TURNS, 15),
+      compactionThresholdChars: parseInteger(process.env.THINKER_SESSION_COMPACTION_THRESHOLD_CHARS, 20_000),
+      compactionKeepRecentTurns: parseInteger(process.env.THINKER_SESSION_COMPACTION_KEEP_RECENT, 5),
+      compactionCooldownMs: parseInteger(process.env.THINKER_SESSION_COMPACTION_COOLDOWN_MS, 2 * 60 * 1000),
+      compactionMinTurns: parseInteger(process.env.THINKER_SESSION_COMPACTION_MIN_TURNS, 8),
       maxAgeDays: parseInteger(process.env.THINKER_SESSION_MAX_AGE_DAYS, 7),
     },
 

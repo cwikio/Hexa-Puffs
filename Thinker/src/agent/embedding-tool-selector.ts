@@ -230,6 +230,13 @@ export class EmbeddingToolSelector {
     return this.initialized;
   }
 
+  /**
+   * Get the underlying embedding provider for reuse (e.g. semantic history selection).
+   */
+  getProvider(): EmbeddingProvider {
+    return this.provider;
+  }
+
   // ─── Cache I/O ──────────────────────────────────────────────────
 
   private async loadCache(): Promise<CacheData | null> {

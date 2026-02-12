@@ -52,22 +52,33 @@ Every time Thinker processes a message, it builds a context for the LLM. This is
 
 ### System Prompt Layers (in order)
 
-1. **Base persona** — Loaded from `~/.annabelle/agents/{agentId}/instructions.md`
-2. **Profile section** — User profile from Memorizer (`get_profile`)
-3. **Matched playbooks** — If message matches a playbook pattern, its instructions are appended
-4. **Skill descriptions** — Available skills added as XML for progressive disclosure
-5. **Date/time** — Current date/time in user's timezone
-6. **Chat context** — `chat_id: {chatId}` so tool calls can target the right chat
-7. **Compaction summary** — If session was previously compacted, the summary is included
-8. **Relevant facts** — Top 5 facts from `retrieve_memories` formatted as bullet list
+1. **Tool preamble** — `TOOL_PREAMBLE` constant enforcing structured tool calling (prepended before everything)
+2. **Base persona** — Loaded from `~/.annabelle/agents/{agentId}/instructions.md` (tool calling rules consolidated at top)
+3. **Profile section** — User profile from Memorizer (`get_profile`)
+4. **Date/time** — Current date/time in user's timezone
+5. **Chat context** — `chat_id: {chatId}` so tool calls can target the right chat
+6. **Compaction summary** — If session was previously compacted, the summary is included
+7. **Matched playbooks** — If message matches a playbook pattern, its instructions are appended (placed near end for recency attention)
+8. **Skill descriptions** — Available skills added as XML for progressive disclosure
+9. **Relevant facts** — Top 5 facts from `retrieve_memories` formatted as bullet list (very end — strong recency attention)
 
 ### Conversation History
 
-After the system prompt, the last **50 messages** from the session are included:
+After the system prompt, conversation history is selected using **semantic relevance filtering**:
 
 1. Load from session JSONL (or in-memory cache if already loaded)
-2. **Repair** via `repairConversationHistory()` — fixes broken message chains
-3. **Truncate** old tool results via `truncateHistoryToolResults()` — preserves last 2, summarizes older ones
+2. **Candidate pool:** Last **30 messages** from session
+3. **Semantic history selection** via `selectRelevantHistory()`:
+   - **Always include** last 3 exchanges (6 messages) for recency
+   - **Score older messages** by embedding cosine similarity to the current user message
+   - **Include older exchanges** above threshold (default: 0.45, env: `HISTORY_RELEVANCE_THRESHOLD`)
+   - **Cap total** at 20 messages
+   - **Maintain chronological order** in final array
+   - If embedding provider unavailable, falls back to `slice(-20)`
+4. **Repair** via `repairConversationHistory()` — fixes broken message chains
+5. **Truncate** old tool results via `truncateHistoryToolResults()` — preserves last 2, summarizes older ones
+
+This ensures that when conversations are disjointed (many different topics in one chat), only contextually relevant older exchanges are sent to the LLM alongside recent messages. Irrelevant mid-conversation noise (different topics) is dropped.
 
 ## History Repair
 
@@ -107,13 +118,13 @@ When a conversation gets too long, old messages are summarized to free up contex
 
 All must be true:
 - `compactionEnabled` is true (default: true)
-- Turn count >= `compactionMinTurns` (default: 15)
-- Time since last compaction >= `compactionCooldownMs` (default: 5 minutes)
-- Total characters > `compactionThresholdChars` (default: 50,000 ≈ 12,500 tokens)
+- Turn count >= `compactionMinTurns` (default: 8)
+- Time since last compaction >= `compactionCooldownMs` (default: 2 minutes)
+- Total characters > `compactionThresholdChars` (default: 20,000 ≈ 5,000 tokens)
 
 ### Process
 
-1. **Split messages:** Keep last `compactionKeepRecentTurns × 2` messages (default: 10 turns = 20 messages)
+1. **Split messages:** Keep last `compactionKeepRecentTurns × 2` messages (default: 5 turns = 10 messages)
 2. **Summarize old messages:** Call LLM (compaction model — Groq Llama 8B by default) with:
    - System prompt: "Summarize this conversation preserving key facts, decisions, pending tasks, and important context. Write in third person."
    - Content: Formatted old messages
@@ -129,10 +140,10 @@ All must be true:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `compactionEnabled` | true | Master switch |
-| `compactionThresholdChars` | 50,000 | Total character trigger (~12,500 tokens) |
-| `compactionKeepRecentTurns` | 10 | Turns preserved after compaction |
-| `compactionCooldownMs` | 300,000 | Minimum 5 min between compactions |
-| `compactionMinTurns` | 15 | Minimum turns before first compaction |
+| `compactionThresholdChars` | 20,000 | Total character trigger (~5,000 tokens) |
+| `compactionKeepRecentTurns` | 5 | Turns preserved after compaction |
+| `compactionCooldownMs` | 120,000 | Minimum 2 min between compactions |
+| `compactionMinTurns` | 8 | Minimum turns before first compaction |
 | `compactionProvider` | groq | LLM provider for summarization |
 | `compactionModel` | llama-3.1-8b-instant | Cheap model for summarization |
 
@@ -187,6 +198,27 @@ Subagents get their own temporary session directories: `~/.annabelle/sessions/an
 - No shared state with parent (except via Memorizer facts)
 - Auto-cleaned when subagent is killed (auto-kill timer from AgentManager)
 
+## Clear Session API
+
+**Endpoint:** `POST /clear-session` on Thinker (port 8006)
+
+Wipes all conversation history for a chat, useful when a session becomes poisoned (e.g., failed tool calls teaching the model to avoid tools).
+
+```bash
+curl -X POST http://localhost:8006/clear-session \
+  -H 'Content-Type: application/json' \
+  -d '{"chatId":"8304042211"}'
+```
+
+**What it clears:**
+
+- In-memory conversation state (`conversationStates` map)
+- Pending fact extraction timer
+- Session JSONL file on disk (auto-recreated on next message)
+- SessionStore tracking maps (char counts, turn counts, compaction times)
+
+**Files:** `Thinker/src/index.ts` (endpoint), `Thinker/src/agent/loop.ts` (`Agent.clearSession()`), `Thinker/src/session/store.ts` (`SessionStore.clearSession()`)
+
 ## Session Cleanup
 
 Old session files are cleaned up based on `maxAgeDays` (default: 7 days). The cleanup runs periodically and deletes session files + clears in-memory state for expired sessions.
@@ -197,7 +229,8 @@ Old session files are cleaned up based on `maxAgeDays` (default: 7 days). The cl
 |------|---------|
 | `Thinker/src/session/store.ts` | JSONL read/write, compaction, shouldCompact() |
 | `Thinker/src/session/types.ts` | SessionHeader, SessionTurn, SessionCompaction types |
-| `Thinker/src/agent/loop.ts` | buildContext(), scheduleFactExtraction(), runFactExtraction() |
+| `Thinker/src/agent/loop.ts` | buildContext(), selectRelevantHistory(), scheduleFactExtraction(), runFactExtraction() |
+| `Thinker/src/agent/embedding-tool-selector.ts` | EmbeddingToolSelector — reused for semantic history selection via getProvider() |
 | `Thinker/src/agent/history-repair.ts` | repairConversationHistory(), truncateHistoryToolResults() |
 | `Thinker/src/agent/fact-extractor.ts` | extractFactsFromConversation() |
 | `Thinker/src/agent/types.ts` | AgentState (messages, lastActivity, compactionSummary) |
