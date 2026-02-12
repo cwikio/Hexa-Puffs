@@ -1110,7 +1110,25 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
 
       // Build system prompt for autonomous task (same priority chain as buildContext)
       const basePrompt = this.customSystemPrompt || this.personaPrompt || DEFAULT_SYSTEM_PROMPT;
+
+      // Inject current date/time so the LLM knows "today" (same as buildContext)
+      const tz = this.config.userTimezone;
+      const currentDate = new Date();
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+
       const systemPrompt = `${basePrompt}
+
+## Current Date & Time
+${formatter.format(currentDate)} (${tz})
 
 ## Current Task
 You are executing an autonomous scheduled task. There is no user message — follow the instructions below as your goal.
