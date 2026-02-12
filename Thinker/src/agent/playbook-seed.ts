@@ -485,6 +485,48 @@ Examples: "send me an article from onet.pl every hour", "every morning summarize
     max_steps: 6,
     notify_on_completion: false,
   },
+  {
+    name: 'vercel-deployments',
+    description: 'Check Vercel deployments, build logs, and project status',
+    trigger_type: 'event',
+    trigger_config: {
+      keywords: [
+        'vercel', 'deployment', 'deploy', 'build log', 'build error',
+        'production deploy', 'preview deploy', 'vercel project',
+        'vercel status', 'deployment status', 'build status',
+      ],
+      priority: 10,
+    },
+    instructions: `## WHEN TO USE
+User asks about software deployments, build logs, project status, or deployment errors.
+
+## AVAILABLE TOOLS
+IMPORTANT: Only these Vercel tools exist. Do NOT call vercel_list_teams, vercel_list_projects, or any other tool not listed here:
+- vercel_getDeployments — list deployments (optionally filter by project name, state, target)
+- vercel_getDeployment — get details for a specific deployment by ID
+- vercel_getDeploymentEvents — get build logs/events for a deployment
+- vercel_listDeploymentFiles — list files in a deployment
+- vercel_getDeploymentFileContents — read a specific file from a deployment
+
+## STEPS
+1. vercel_getDeployments — list recent deployments (filter by project name if the user mentions one)
+2. Identify the relevant deployment from the list
+3. vercel_getDeployment with the deployment ID — get full details (status, URL, errors)
+4. If user asks about logs/errors: vercel_getDeploymentEvents with the deployment ID
+5. Present: project name, deployment state, URL, any errors or warnings from the logs
+
+## NOTES
+- There is no list_teams or list_projects tool — start with getDeployments which returns project info
+- Deployment states: READY, ERROR, BUILDING, QUEUED, CANCELED
+- Filter getDeployments by target="production" for prod-only views
+- If the user asks about a specific project, pass the project name to getDeployments`,
+    required_tools: [
+      'vercel_getDeployments', 'vercel_getDeployment', 'vercel_getDeploymentEvents',
+      'vercel_listDeploymentFiles', 'vercel_getDeploymentFileContents',
+    ],
+    max_steps: 8,
+    notify_on_completion: false,
+  },
 ];
 
 /**

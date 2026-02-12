@@ -35,6 +35,7 @@ const logger = new Logger('thinker:agent');
  */
 const TOOL_PREAMBLE = `## TOOL CALLING RULES
 Always use the structured function calling API. NEVER write tool calls as text/JSON/XML. You CANNOT perform actions without calling tools — text claims without tool calls are lies. If a tool fails, retry once or explain honestly.
+ONLY call tools that are in the provided tool list. Do NOT invent or hallucinate tool names — if a tool does not exist in the list, it is not available. Use the closest available tool instead.
 
 `;
 
@@ -592,11 +593,15 @@ export class Agent {
 
       // Convert captured steps into CoreMessage pairs (assistant tool-call + tool result)
       // so retries can continue from where the previous attempt left off
-      const buildRetryMessages = (stepsCount: number, userText?: string): CoreMessage[] => {
+      const buildRetryMessages = (stepsCount: number, userText?: string, errorContext?: string): CoreMessage[] => {
         const msgs: CoreMessage[] = [
           ...context.conversationHistory,
           { role: 'user' as const, content: userText ?? message.text },
         ];
+        if (errorContext) {
+          msgs.push({ role: 'assistant' as const, content: errorContext });
+          msgs.push({ role: 'user' as const, content: 'Please try again using only the tools available to you.' });
+        }
         for (let i = 0; i < stepsCount; i++) {
           const step = capturedSteps[i];
           if (step.toolCalls.length > 0) {
@@ -648,16 +653,20 @@ export class Agent {
 
           try {
             // First retry: include captured step results so the model continues from where it left off
-            // instead of repeating the same tool calls from scratch
+            // instead of repeating the same tool calls from scratch.
+            // Also inject the error message so the model knows what went wrong.
             const stepsSnapshot = capturedSteps.length;
             if (stepsSnapshot > 0) {
               logger.info(`[retry] Including ${stepsSnapshot} captured step(s) in retry context`);
             }
+            const errorHint = toolErrorMsg.includes('was not in request.tools')
+              ? `I tried to call a tool that doesn't exist: ${toolErrorMsg}. I need to use only the tools provided to me.`
+              : undefined;
             const retryTemp = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
             result = await generateText({
               model: this.modelFactory.getModel(),
               system: context.systemPrompt,
-              messages: buildRetryMessages(stepsSnapshot),
+              messages: buildRetryMessages(stepsSnapshot, undefined, errorHint),
               tools: selectedTools,
               toolChoice: 'auto',
               maxSteps: 4,
