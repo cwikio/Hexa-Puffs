@@ -23,6 +23,8 @@ import {
   handleNewsSearch,
   imageSearchSchema,
   handleImageSearch,
+  webFetchSchema,
+  handleWebFetch,
 } from "./tools/index.js";
 
 const TRANSPORT = process.env.TRANSPORT || "stdio";
@@ -116,6 +118,12 @@ async function main() {
                   "Search for images on the web. Returns direct image URLs and thumbnails. Use for finding photos, pictures, or visual content.",
                 inputSchema: zodToJsonSchema(imageSearchSchema),
               },
+              {
+                name: "web_fetch",
+                description:
+                  "Fetch a URL and extract its content as clean markdown. PREFERRED over browser tools for reading webpage content — much faster and more reliable. Uses Readability to extract article content (strips nav, ads, sidebars). Only fall back to browser tools if you need to interact with the page (click, scroll, fill forms, login) or if this tool returns empty/unusable content.",
+                inputSchema: zodToJsonSchema(webFetchSchema),
+              },
             ],
           })
         );
@@ -136,6 +144,7 @@ async function main() {
               web_search: toolEntry(webSearchSchema, handleWebSearch),
               news_search: toolEntry(newsSearchSchema, handleNewsSearch),
               image_search: toolEntry(imageSearchSchema, handleImageSearch),
+              web_fetch: toolEntry(webFetchSchema, handleWebFetch),
             };
 
             const tool = toolMap[name];

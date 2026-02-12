@@ -28,3 +28,11 @@ export {
   type ImageSearchToolResult,
   type ImageSearchResult,
 } from "./image-search.js";
+
+export {
+  webFetchSchema,
+  handleWebFetch,
+  type WebFetchInput,
+  type WebFetchData,
+  type WebFetchToolResult,
+} from "./web-fetch.js";

@@ -7,6 +7,7 @@ export interface Config {
   braveRateLimitMs: number;
   transport: "stdio" | "http" | "sse";
   port: number;
+  webFetchMaxLength: number;
 }
 
 /**
@@ -25,12 +26,14 @@ export function loadConfig(): Config {
     | "http"
     | "sse";
   const port = parseInt(process.env.PORT || "8007", 10);
+  const webFetchMaxLength = parseInt(process.env.WEB_FETCH_MAX_LENGTH || "20000", 10);
 
   return {
     braveApiKey,
     braveRateLimitMs,
     transport,
     port,
+    webFetchMaxLength,
   };
 }
 

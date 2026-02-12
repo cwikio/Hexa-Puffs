@@ -125,7 +125,7 @@ export class ToolRouter {
     {
       label: 'Web Search',
       description: 'Search the web and news',
-      tools: ['web_search', 'news_search'],
+      tools: ['web_search', 'news_search', 'web_fetch'],
     },
     {
       label: 'Security',
@@ -161,6 +161,7 @@ export class ToolRouter {
     // Search — after finding info, share or store it
     web_search:       { suggest: ['store_fact', 'send_message', 'send_email'], tip: 'Save findings or share them' },
     news_search:      { suggest: ['store_fact', 'send_message'] },
+    web_fetch:        { suggest: ['store_fact', 'send_message', 'send_email'], tip: 'Save extracted content or share it' },
     search_messages:  { suggest: ['send_message', 'store_fact'] },
 
     // Memory — after recalling, act on it

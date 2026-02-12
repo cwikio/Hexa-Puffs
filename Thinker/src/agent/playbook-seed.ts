@@ -108,18 +108,23 @@ User asks to schedule something, check their calendar, or find available time.
       priority: 5,
     },
     instructions: `## WHEN TO USE
-User asks to search, research, or find information about a topic.
+User asks to search, research, or find information about a topic. Also when user provides a URL and wants to know what's on the page.
 
 ## STEPS
-1. web_search or news_search — find relevant information
-2. Summarize the key findings concisely
-3. store_fact — save important findings to memory if they seem useful long-term
-4. If user wants to share: send_message or send_email with the summary
+1. If the user provides a specific URL: use web_fetch to read the page content directly
+2. If searching for a topic: web_search or news_search — find relevant information
+3. If search results have promising URLs: use web_fetch to read the full article content
+4. Summarize the key findings concisely
+5. store_fact — save important findings to memory if they seem useful long-term
+6. If user wants to share: send_message or send_email with the summary
 
 ## NOTES
+- Use web_fetch (not browser) to read webpage content — it's much faster
 - Use news_search with freshness="24h" for current events
-- Don't overwhelm — present top 3-5 results, offer to dig deeper`,
-    required_tools: ['searcher_web_search', 'searcher_news_search', 'memory_store_fact'],
+- Don't overwhelm — present top 3-5 results, offer to dig deeper
+- Only fall back to browser tools if web_fetch returns empty or unusable content
+- ALWAYS include source URLs at the bottom of your response (Sources: section with clickable links)`,
+    required_tools: ['searcher_web_search', 'searcher_news_search', 'searcher_web_fetch', 'memory_store_fact'],
     max_steps: 8,
     notify_on_completion: false,
   },
@@ -372,7 +377,12 @@ User asks to clean up, delete, or purge messages from a Telegram chat.
       priority: 10,
     },
     instructions: `## WHEN TO USE
-User asks to visit a website, extract information from a page, fill out a form, take a screenshot, or interact with web content.
+User asks to interact with a website: fill forms, click buttons, take screenshots, login, or navigate multi-page flows. NOT for just reading page content — use web_fetch for that.
+
+## IMPORTANT: web_fetch vs browser
+- If the user just wants to READ a page's content → use searcher_web_fetch instead (much faster)
+- Only use browser tools when you need to INTERACT with the page (click, scroll, fill forms, login, screenshot)
+- If web_fetch was already tried and returned empty/unusable content, then use browser as fallback
 
 ## STEPS
 1. web_browser_navigate — go to the requested URL

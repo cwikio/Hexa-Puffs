@@ -20,6 +20,7 @@ import {
   invalidInputs,
   expectedResponseStructure,
   unknownToolName,
+  fetchUrls,
 } from "../fixtures/search-queries.js";
 
 // Delay between tests to avoid rate limiting (Free plan: 1 req/sec)
@@ -54,12 +55,13 @@ describe("Searcher MCP Tests", () => {
       const toolsList = await listTools();
       expect(toolsList).not.toBeNull();
       expect(toolsList?.tools).toBeInstanceOf(Array);
-      expect(toolsList?.tools.length).toBe(3);
+      expect(toolsList?.tools.length).toBe(4);
 
       const toolNames = toolsList?.tools.map((t) => t.name) || [];
       expect(toolNames).toContain("web_search");
       expect(toolNames).toContain("news_search");
       expect(toolNames).toContain("image_search");
+      expect(toolNames).toContain("web_fetch");
     });
 
     it("1.4 should have correct tool schemas", async () => {
@@ -573,6 +575,155 @@ describe("Searcher MCP Tests", () => {
       expect(result.success).toBe(true);
       expect(result.duration).toBeLessThan(10000);
       logInfo(`News search completed in ${result.duration}ms`);
+    });
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 13. Web Fetch - Basic Operations
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  describe("13. Web Fetch - Basic Operations", () => {
+    it("13.1 should fetch a simple URL and return markdown content", async () => {
+      logSection("Web Fetch Tests");
+      const result = await tools.webFetch(fetchUrls.simple);
+      expect(result.success).toBe(true);
+      expect(result.data?.content).toBeDefined();
+      expect(typeof result.data?.content).toBe("string");
+      expect(result.data?.content.length).toBeGreaterThan(0);
+    });
+
+    it("13.2 should return results with correct structure", async () => {
+      const result = await tools.webFetch(fetchUrls.simple);
+      expect(result.success).toBe(true);
+
+      const data = result.data;
+      expect(data).toBeDefined();
+
+      for (const field of expectedResponseStructure.webFetch.requiredFields) {
+        expect(data).toHaveProperty(field);
+      }
+    });
+
+    it("13.3 should extract page title", async () => {
+      const result = await tools.webFetch(fetchUrls.simple);
+      expect(result.success).toBe(true);
+      expect(result.data?.title).toBeDefined();
+      expect(typeof result.data?.title).toBe("string");
+      expect(result.data?.title.length).toBeGreaterThan(0);
+    });
+
+    it("13.4 should return contentLength > 0", async () => {
+      const result = await tools.webFetch(fetchUrls.simple);
+      expect(result.success).toBe(true);
+      expect(result.data?.contentLength).toBeGreaterThan(0);
+    });
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 14. Web Fetch - maxLength Parameter
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  describe("14. Web Fetch - maxLength Parameter", () => {
+    it("14.1 should use default maxLength when not specified", async () => {
+      const result = await tools.webFetch(fetchUrls.simple);
+      expect(result.success).toBe(true);
+    });
+
+    it("14.2 should respect custom maxLength", async () => {
+      const result = await tools.webFetch(fetchUrls.simple, { maxLength: 1000 });
+      expect(result.success).toBe(true);
+      // Content (excluding truncation marker) should be within maxLength
+      const contentWithoutMarker = result.data?.content.replace(/\n\n\[\.\.\.TRUNCATED\]$/, "") || "";
+      expect(contentWithoutMarker.length).toBeLessThanOrEqual(1000);
+    });
+
+    it("14.3 should set truncated flag when content exceeds maxLength", async () => {
+      // example.com is small, so use a very low maxLength to force truncation
+      const result = await tools.webFetch(fetchUrls.simple, { maxLength: 1000 });
+      expect(result.success).toBe(true);
+      // May or may not truncate depending on example.com content length
+      if (result.data?.truncated) {
+        expect(result.data.content).toContain("[...TRUNCATED]");
+      }
+    });
+
+    it("14.4 should reject maxLength below minimum", async () => {
+      const result = await tools.webFetchRaw({
+        url: fetchUrls.simple,
+        maxLength: 500,
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+
+    it("14.5 should reject maxLength above maximum", async () => {
+      const result = await tools.webFetchRaw({
+        url: fetchUrls.simple,
+        maxLength: 200000,
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 15. Web Fetch - Input Validation
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  describe("15. Web Fetch - Input Validation", () => {
+    it("15.1 should reject missing URL", async () => {
+      logSection("Web Fetch Validation Tests");
+      const result = await tools.webFetchRaw({});
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/url|required/i);
+    });
+
+    it("15.2 should reject invalid URL", async () => {
+      const result = await tools.webFetchRaw({ url: "not-a-url" });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/url|invalid/i);
+    });
+
+    it("15.3 should reject null URL", async () => {
+      const result = await tools.webFetchRaw({ url: null });
+      expect(result.success).toBe(false);
+    });
+
+    it("15.4 should return error for non-existent domain", async () => {
+      const result = await tools.webFetch(fetchUrls.nonExistent);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 16. Web Fetch - Error Handling
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  describe("16. Web Fetch - Error Handling", () => {
+    it("16.1 should handle 404 URLs gracefully", async () => {
+      const result = await tools.webFetch(fetchUrls.httpError404);
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+
+    it("16.2 should handle 500 URLs gracefully", async () => {
+      const result = await tools.webFetch(fetchUrls.httpError500);
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 17. Web Fetch - Performance
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  describe("17. Web Fetch - Performance", () => {
+    it("17.1 should complete fetch within 10 seconds", async () => {
+      logSection("Web Fetch Performance Tests");
+      const result = await tools.webFetch(fetchUrls.simple);
+      expect(result.success).toBe(true);
+      expect(result.duration).toBeLessThan(10000);
+      logInfo(`Web fetch completed in ${result.duration}ms`);
     });
   });
 });

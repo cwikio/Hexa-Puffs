@@ -124,6 +124,14 @@ export interface NewsSearchData {
   query: string;
 }
 
+export interface WebFetchData {
+  url: string;
+  title: string;
+  content: string;
+  contentLength: number;
+  truncated: boolean;
+}
+
 export interface StandardResponse<T> {
   success: boolean;
   data?: T;
@@ -163,4 +171,20 @@ export const tools = {
 
   newsSearchRaw: (args: Record<string, unknown>) =>
     callTool<NewsSearchData>("news_search", args),
+
+  webFetch: (
+    url: string,
+    options?: {
+      maxLength?: number;
+      includeLinks?: boolean;
+      timeout?: number;
+    }
+  ) =>
+    callTool<WebFetchData>("web_fetch", {
+      url,
+      ...options,
+    }),
+
+  webFetchRaw: (args: Record<string, unknown>) =>
+    callTool<WebFetchData>("web_fetch", args),
 };
