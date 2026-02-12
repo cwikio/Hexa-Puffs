@@ -483,7 +483,7 @@ export class AgentManager {
       agentId: subId,
       port: 0, // dynamic port
       model: opts.model || parentDef.model,
-      systemPrompt: opts.task,
+      systemPrompt: 'You are a focused subagent. Complete the task described in the user message. Use your available tools. Be concise.',
       // Merge tool policies: subagent is a subset of parent
       allowedTools: opts.allowedTools?.length
         ? opts.allowedTools.filter(t => !parentDef.deniedTools.includes(t))

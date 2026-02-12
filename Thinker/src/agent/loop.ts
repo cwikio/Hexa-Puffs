@@ -1205,7 +1205,13 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       await this.refreshToolsIfNeeded();
 
       // Build system prompt for autonomous task (same priority chain as buildContext)
-      const basePrompt = this.customSystemPrompt || this.personaPrompt || this.defaultSystemPrompt;
+      let basePrompt = this.customSystemPrompt || this.personaPrompt || this.defaultSystemPrompt;
+
+      // Apply profile persona override (same as buildContext)
+      const profile = await this.orchestrator.getProfile(this.config.thinkerAgentId, trace);
+      if (profile?.profile_data?.persona?.system_prompt) {
+        basePrompt = profile.profile_data.persona.system_prompt;
+      }
 
       // Inject current date/time so the LLM knows "today" (same as buildContext)
       const tz = this.config.userTimezone;

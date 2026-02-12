@@ -612,13 +612,11 @@ For full session management details, see [sessions.md](sessions.md).
 
 ## Suggestions for Improvement
 
-### 1. Profile Persona Override Missing from Proactive Tasks
+### ~~1. Profile Persona Override Missing from Proactive Tasks~~ :white_check_mark:
 
-**Issue:** `buildContext()` checks `profile.profile_data.persona.system_prompt` and replaces the base prompt for interactive messages. But `processProactiveTask()` does not — it always uses the raw base prompt.
+~~**Issue:** `buildContext()` checks `profile.profile_data.persona.system_prompt` and replaces the base prompt for interactive messages. But `processProactiveTask()` does not — it always uses the raw base prompt.~~
 
-**Impact:** If an operator changes the persona at runtime via the profile system, interactive messages reflect the change but scheduled skills do not.
-
-**Location:** `loop.ts:407-409` (interactive) vs `loop.ts:1177` (proactive)
+**Done:** Added `orchestrator.getProfile()` call and persona override check to `processProactiveTask()`, mirroring the logic from `buildContext()`. Scheduled skills now respect runtime persona changes.
 
 ### ~~2. DEFAULT_SYSTEM_PROMPT Hardcoded in loop.ts~~ :white_check_mark:
 
@@ -650,13 +648,11 @@ For full session management details, see [sessions.md](sessions.md).
 
 **Done:** `classifyMessage()` now uses word-boundary regex matching (`\bkeyword\b`) via `matchesKeyword()`. Falls back to `includes()` for keywords starting/ending with non-word characters (e.g. `"c++"`, `".net"`) or if regex construction fails. Prevents false positives like `"file"` matching `"profile"`.
 
-### 7. Subagent Prompt Double-Delivery
+### ~~7. Subagent Prompt Double-Delivery~~ :white_check_mark:
 
-**Issue:** When a subagent is spawned, the `task` string is used as both the system prompt (via `systemPrompt` → temp file → `THINKER_SYSTEM_PROMPT_PATH`) AND the user message (via `client.processMessage({ text: task })`). The LLM sees the same text twice in different roles.
+~~**Issue:** When a subagent is spawned, the `task` string is used as both the system prompt (via `systemPrompt` → temp file → `THINKER_SYSTEM_PROMPT_PATH`) AND the user message (via `client.processMessage({ text: task })`). The LLM sees the same text twice in different roles.~~
 
-**Impact:** Minor token waste and potential confusion. The LLM may treat the user message as redundant with its system prompt.
-
-**Suggestion:** Consider using a minimal system prompt for subagents (e.g., "You are a focused subagent. Complete the task in the user message.") and pass the full instructions only as the user message.
+**Done:** Subagent `systemPrompt` in `spawnSubagent()` changed from `opts.task` to a minimal instruction string. Full task details are now delivered only as the user message via `processMessage()`. Eliminates token duplication.
 
 ---
 
