@@ -51,6 +51,7 @@ export const guardianConfig = {
     searcher: false,
     gmail: true,
     codexec: true,
+    linkedin: false,
   } as Record<string, boolean>,
 
   /**
@@ -68,6 +69,7 @@ export const guardianConfig = {
     searcher: true,
     gmail: true,
     codexec: false,
+    linkedin: false,
   } as Record<string, boolean>,
 
   /**

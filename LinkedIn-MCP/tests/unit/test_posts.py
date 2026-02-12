@@ -1,6 +1,9 @@
 """Unit tests for post tools."""
 
 
+# --- get_feed_posts ---
+
+
 def test_get_feed_posts_returns_posts(mock_client):
     mock_client.get_feed_posts.return_value = [
         {
@@ -63,6 +66,76 @@ def test_get_feed_posts_handles_error(mock_client):
     from src.tools.posts import handle_get_feed_posts
 
     result = handle_get_feed_posts()
+
+    assert result["success"] is False
+    assert result["errorCode"] == "LINKEDIN_ERROR"
+
+
+# --- react_to_post ---
+
+
+def test_react_to_post_success(mock_client):
+    mock_client.react_to_post.return_value = False  # False = success
+
+    from src.tools.posts import handle_react_to_post
+
+    result = handle_react_to_post("urn:li:activity:123")
+
+    assert result["success"] is True
+    assert result["data"]["reacted"] is True
+    assert result["data"]["reactionType"] == "LIKE"
+    mock_client.react_to_post.assert_called_once_with("urn:li:activity:123", reaction_type="LIKE")
+
+
+def test_react_to_post_celebrate(mock_client):
+    mock_client.react_to_post.return_value = False
+
+    from src.tools.posts import handle_react_to_post
+
+    result = handle_react_to_post("urn:li:activity:123", "CELEBRATE")
+
+    assert result["success"] is True
+    assert result["data"]["reactionType"] == "CELEBRATE"
+
+
+def test_react_to_post_case_insensitive(mock_client):
+    mock_client.react_to_post.return_value = False
+
+    from src.tools.posts import handle_react_to_post
+
+    result = handle_react_to_post("urn:li:activity:123", "empathy")
+
+    assert result["success"] is True
+    assert result["data"]["reactionType"] == "EMPATHY"
+
+
+def test_react_to_post_invalid_type(mock_client):
+    from src.tools.posts import handle_react_to_post
+
+    result = handle_react_to_post("urn:li:activity:123", "LOVE")
+
+    assert result["success"] is False
+    assert result["errorCode"] == "VALIDATION_ERROR"
+    mock_client.react_to_post.assert_not_called()
+
+
+def test_react_to_post_rejected(mock_client):
+    mock_client.react_to_post.return_value = True  # True = error
+
+    from src.tools.posts import handle_react_to_post
+
+    result = handle_react_to_post("urn:li:activity:123")
+
+    assert result["success"] is False
+    assert result["errorCode"] == "LINKEDIN_ERROR"
+
+
+def test_react_to_post_handles_error(mock_client):
+    mock_client.react_to_post.side_effect = Exception("Rate limited")
+
+    from src.tools.posts import handle_react_to_post
+
+    result = handle_react_to_post("urn:li:activity:123")
 
     assert result["success"] is False
     assert result["errorCode"] == "LINKEDIN_ERROR"

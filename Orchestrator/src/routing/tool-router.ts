@@ -148,7 +148,7 @@ export class ToolRouter {
       description: 'LinkedIn profile viewing, posting, messaging, and networking',
       tools: [
         'get_profile', 'get_own_profile', 'search_people',
-        'get_feed_posts', 'create_post', 'react_to_post', 'comment_on_post',
+        'get_feed_posts', 'react_to_post',
         'send_message', 'get_conversations', 'get_conversation',
         'get_connections', 'send_connection_request',
         'search_companies', 'get_company',

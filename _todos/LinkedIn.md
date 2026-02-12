@@ -1,8 +1,10 @@
 # LinkedIn MCP — Implementation Status
 
-## Done (Phase 1 — Read-only)
+## Done — All Phases Complete
 
-All implemented, tested (17 unit + 3 integration), and live in production.
+All tools implemented, tested (46 unit + 3 integration), and wired into the ecosystem.
+
+### Phase 1 — Read-only (MVP)
 
 | Tool | Description |
 |---|---|
@@ -12,46 +14,41 @@ All implemented, tested (17 unit + 3 integration), and live in production.
 | `get_feed_posts` | Read feed posts |
 | `get_conversations` | List inbox conversations |
 
-Supporting infrastructure also complete:
+### Phase 2 — Write Operations
+
+| Tool | Description |
+|---|---|
+| `send_message` | Send DM (reply to conversation or start new) |
+| `react_to_post` | Like/celebrate/empathy/interest/appreciation |
+
+### Phase 3 — Network & Company
+
+| Tool | Description |
+|---|---|
+| `get_conversation` | Get messages from a specific conversation thread |
+| `get_connections` | List authenticated user's connections |
+| `send_connection_request` | Send invitation with personalized note (max 300 chars) |
+| `search_companies` | Search companies by keyword |
+| `get_company` | Get detailed company info |
+
+### Not Implementable
+
+| Tool | Reason |
+|---|---|
+| `create_post` | `linkedin-api` library doesn't expose this method |
+| `comment_on_post` | `linkedin-api` library doesn't expose this method |
+
+### Supporting Infrastructure
+
 - Auto-discovery: `command`/`commandArgs` fields in manifest (Shared + Orchestrator)
 - Tool discovery: ToolRouter labels/groups/hints, tool-selector keyword routes
 - Skill/playbook: `~/.annabelle/skills/LinkedInNetworking/SKILL.md`
-- Tests: unit (mocked client), integration (stdio subprocess), e2e (skipped w/o creds)
+- Guardian: disabled for linkedin (input + output) in `guardian.ts`
+- Tests: 46 unit (mocked client), 3 integration (stdio subprocess), e2e (skipped w/o creds)
 - Docs: `HOW-TO-ADD-NEW-MPC.md` updated with Python MCP example
 
-## TODO: Phase 2 — Write Operations
+## Operational Notes
 
-| Tool | Description | `linkedin-api` method |
-|---|---|---|
-| `send_message` | Send DM to a connection | `api.send_message(conversation_urn, msg)` |
-| `create_post` | Create a text post | `api.post(text)` |
-| `react_to_post` | Like/react to a post | `api.react(urn, reaction_type)` |
-| `comment_on_post` | Comment on a post | `api.comment(urn, text)` |
-
-Notes:
-- The playbook already references `linkedin_send_message` and `linkedin_create_post` — Thinker logs warnings that these are missing
-- These are write operations, so the skill should always present drafts for user approval before executing
-- Consider rate limiting to reduce LinkedIn detection risk
-
-## TODO: Phase 3 — Network Management
-
-| Tool | Description | `linkedin-api` method |
-|---|---|---|
-| `get_conversation` | Get a single conversation thread by ID | `api.get_conversation(conversation_urn)` |
-| `get_connections` | List connections | `api.get_connections()` |
-| `send_connection_request` | Send invitation with personalized note | `api.add_connection(profile_id, message)` |
-| `search_companies` | Search companies by keyword | `api.search_companies(keywords)` |
-| `get_company` | Get company details | `api.get_company(company_id)` |
-
-## TODO: Playbook Updates
-
-Once Phase 2/3 tools are implemented:
-- Remove the `required_tools` entries that cause warnings (or implement the tools)
-- Add rate-limiting guidance to the playbook
-- Add connection request tracking (log outreach with `memory_store_fact`)
-
-## TODO: Operational
-
-- Consider adding `sensitive: true` to manifest if Guardian should scan LinkedIn inputs
+- Guardian is currently disabled for LinkedIn — re-enable in `Orchestrator/src/config/guardian.ts` when ready
 - Monitor `~/.linkedin_api/cookies/` for session expiry — may need a health-check tool
 - The `uv sync --extra dev` build preserves test deps; plain `uv sync` strips them

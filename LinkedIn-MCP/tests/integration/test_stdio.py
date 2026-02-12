@@ -4,18 +4,33 @@ import json
 
 import pytest
 
+ALL_EXPECTED_TOOLS = [
+    # Phase 1
+    "get_profile",
+    "get_own_profile",
+    "search_people",
+    "get_feed_posts",
+    "get_conversations",
+    # Phase 2
+    "send_message",
+    "react_to_post",
+    # Phase 3
+    "get_conversation",
+    "get_connections",
+    "send_connection_request",
+    "search_companies",
+    "get_company",
+]
+
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_server_lists_tools(mcp_session):
-    """Verify all Phase 1 tools are registered."""
+async def test_server_lists_all_tools(mcp_session):
+    """Verify all registered tools are discoverable."""
     result = await mcp_session.list_tools()
     tool_names = [t.name for t in result.tools]
 
-    assert "get_profile" in tool_names
-    assert "get_own_profile" in tool_names
-    assert "search_people" in tool_names
-    assert "get_feed_posts" in tool_names
-    assert "get_conversations" in tool_names
+    for expected in ALL_EXPECTED_TOOLS:
+        assert expected in tool_names, f"Missing tool: {expected}"
 
 
 @pytest.mark.asyncio(loop_scope="session")
