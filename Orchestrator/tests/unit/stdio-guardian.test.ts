@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseGuardianResponse,
   createFailureScanResult,
-} from '../../src/mcp-clients/guardian.js';
+} from '../../src/mcp-clients/guardian-types.js';
 
 describe('parseGuardianResponse', () => {
   it('should parse a safe scan result', () => {

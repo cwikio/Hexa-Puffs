@@ -1,6 +1,8 @@
+/**
+ * Shared Guardian scan types and parsing logic.
+ * Used by StdioGuardianClient and tests.
+ */
 import { z } from 'zod';
-import { BaseMCPClient, type ToolCallResult } from './base.js';
-import { type MCPServerConfig, type SecurityConfig } from '../config/index.js';
 
 export interface ScanResult {
   allowed: boolean;
@@ -42,17 +44,14 @@ function deriveRisk(safe: boolean, confidence: number, threatCount: number): Sca
   if (!safe && confidence > 0.8) return 'high';
   if (!safe && confidence > 0.5) return 'medium';
   if (!safe) return 'low';
-  // safe but with low confidence
   if (confidence < 0.5) return 'low';
   return 'none';
 }
 
 /**
  * Parse a Guardian scan response (StandardResponse-wrapped) into a ScanResult.
- * Shared between GuardianMCPClient (HTTP) and StdioGuardianClient.
  */
 export function parseGuardianResponse(parsed: unknown): ScanResult | null {
-  // First, unwrap StandardResponse envelope
   const stdResponse = StandardResponseSchema.safeParse(parsed);
   if (!stdResponse.success) {
     return null;
@@ -62,7 +61,6 @@ export function parseGuardianResponse(parsed: unknown): ScanResult | null {
     return null;
   }
 
-  // Validate the inner scan data
   const scanData = GuardianScanDataSchema.safeParse(stdResponse.data.data);
   if (!scanData.success) {
     return null;
@@ -83,7 +81,7 @@ export function parseGuardianResponse(parsed: unknown): ScanResult | null {
 export function createFailureScanResult(
   failMode: 'open' | 'closed',
   context: string,
-  error?: string
+  _error?: string,
 ): ScanResult {
   if (failMode === 'closed') {
     return {
@@ -97,55 +95,4 @@ export function createFailureScanResult(
     risk: 'none',
     reason: `${context} - allowing in fail-open mode`,
   };
-}
-
-export class GuardianMCPClient extends BaseMCPClient {
-  private failMode: 'open' | 'closed';
-
-  constructor(config: MCPServerConfig, securityConfig: SecurityConfig) {
-    super('guardian', config);
-    this.failMode = securityConfig.failMode;
-  }
-
-  async scanContent(content: string): Promise<ScanResult> {
-    const result = await this.callTool({
-      name: 'scan_content',
-      arguments: { content },
-    });
-
-    if (!result.success) {
-      return this.handleFailure('Security scan failed', result.error);
-    }
-
-    return this.parseScanResult(result);
-  }
-
-  private handleFailure(context: string, error?: string): ScanResult {
-    this.logger.warn(`${context}`, { error, failMode: this.failMode });
-    return createFailureScanResult(this.failMode, context, error);
-  }
-
-  private parseScanResult(result: ToolCallResult): ScanResult {
-    const parsed = this.parseTextResponse(result);
-    if (parsed === null) {
-      return this.handleFailure('Failed to parse scan result');
-    }
-
-    const scanResult = parseGuardianResponse(parsed);
-    if (!scanResult) {
-      this.logger.warn('Scan result validation failed', { parsed });
-      return this.handleFailure('Invalid scan result format');
-    }
-
-    return scanResult;
-  }
-
-  async getScanLog(limit: number = 10): Promise<unknown> {
-    const result = await this.callTool({
-      name: 'get_scan_log',
-      arguments: { limit },
-    });
-
-    return result.content;
-  }
 }

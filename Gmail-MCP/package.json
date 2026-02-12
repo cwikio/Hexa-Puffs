@@ -42,8 +42,6 @@
   },
   "annabelle": {
     "mcpName": "gmail",
-    "transport": "http",
-    "sensitive": true,
-    "httpPort": 8008
+    "sensitive": true
   }
 }

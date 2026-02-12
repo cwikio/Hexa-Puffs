@@ -9,7 +9,7 @@ import { GuardedMCPClient } from '../../src/mcp-clients/guarded-client.js';
 import { SecurityError } from '../../src/utils/errors.js';
 import type { StdioGuardianClient } from '../../src/mcp-clients/stdio-guardian.js';
 import type { IMCPClient, MCPToolCall, ToolCallResult } from '../../src/mcp-clients/types.js';
-import type { ScanResult } from '../../src/mcp-clients/guardian.js';
+import type { ScanResult } from '../../src/mcp-clients/guardian-types.js';
 
 // Mock IMCPClient
 function createMockInner(overrides?: Partial<IMCPClient>): IMCPClient {

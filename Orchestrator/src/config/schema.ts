@@ -14,15 +14,6 @@ export const StdioMCPServerConfigSchema = z.object({
 
 export type StdioMCPServerConfig = z.infer<typeof StdioMCPServerConfigSchema>;
 
-// Legacy HTTP-based MCP server config (for backwards compatibility)
-export const MCPServerConfigSchema = z.object({
-  url: z.string().url(),
-  timeout: z.number().positive().default(5000),
-  required: z.boolean().default(false),
-  sensitive: z.boolean().default(false),
-});
-
-export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
 
 export const SecurityConfigSchema = z.object({
   scanAllInputs: z.boolean().default(true),
@@ -64,16 +55,13 @@ export const ConfigSchema = z.object({
   transport: z.enum(['stdio', 'sse', 'http']).default('stdio'),
   port: z.number().positive().default(8010),
 
-  // Connection mode for downstream MCPs
-  mcpConnectionMode: z.enum(['stdio', 'http']).default('stdio'),
+  // Connection mode for downstream MCPs (always stdio)
+  mcpConnectionMode: z.literal('stdio').default('stdio'),
 
   // Stdio-based MCP server configs (used when mcpConnectionMode = 'stdio')
   // Dynamic: keys are auto-discovered from sibling MCP directories
   mcpServersStdio: z.record(z.string(), StdioMCPServerConfigSchema).optional(),
 
-  // HTTP-based MCP server configs (used when mcpConnectionMode = 'http' or for HTTP-only MCPs)
-  // Dynamic: keys are auto-discovered from sibling MCP directories
-  mcpServers: z.record(z.string(), MCPServerConfigSchema).optional(),
 
   security: SecurityConfigSchema,
 

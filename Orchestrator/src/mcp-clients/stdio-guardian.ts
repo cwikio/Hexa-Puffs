@@ -2,7 +2,7 @@
  * StdioGuardianClient - Adapter that wraps a StdioMCPClient to provide
  * Guardian scanning via the scan_content tool over stdio transport.
  *
- * Reuses the shared parsing logic from guardian.ts.
+ * Reuses the shared parsing logic from guardian-types.ts.
  */
 
 import type { StdioMCPClient } from './stdio-client.js';
@@ -10,7 +10,7 @@ import {
   type ScanResult,
   parseGuardianResponse,
   createFailureScanResult,
-} from './guardian.js';
+} from './guardian-types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
 export class StdioGuardianClient {

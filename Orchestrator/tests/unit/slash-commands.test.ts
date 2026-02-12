@@ -56,7 +56,7 @@ function makeStatus(overrides?: Partial<OrchestratorStatus>): OrchestratorStatus
     uptime: 7260000, // 2h 1m
     mcpServers: {
       guardian: { available: true, required: false, type: 'stdio' },
-      telegram: { available: true, required: false, type: 'http', port: 8002 },
+      telegram: { available: true, required: false, type: 'stdio' },
       memory: { available: true, required: false, type: 'stdio' },
     },
     agents: [
@@ -133,7 +133,7 @@ describe('SlashCommandHandler', () => {
       const result = await handler.tryHandle(makeMsg('/status'));
 
       expect(result.response).toContain('Guardian: up (stdio)');
-      expect(result.response).toContain('Telegram: up (http:8002)');
+      expect(result.response).toContain('Telegram: up (stdio)');
       expect(result.response).toContain('Memory: up (stdio)');
     });
 

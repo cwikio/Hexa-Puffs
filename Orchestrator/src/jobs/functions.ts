@@ -2,10 +2,26 @@ import { inngest } from './inngest-client.js';
 import { JobStorage } from './storage.js';
 import { executeAction } from './executor.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
-import { JobDefinition, TaskDefinition } from './types.js';
-import { getConfig } from '../config/index.js';
 import { getHaltManager } from '../core/halt-manager.js';
 import { Cron } from 'croner';
+
+/** Send a Telegram notification via the tool router. */
+async function notifyTelegram(message: string): Promise<void> {
+  const { getOrchestrator } = await import('../core/orchestrator.js');
+  const orchestrator = await getOrchestrator();
+  await orchestrator.getToolRouter().routeToolCall('telegram_send_message', { message });
+}
+
+/** Store a fact via the tool router. */
+async function storeErrorFact(fact: string): Promise<void> {
+  const { getOrchestrator } = await import('../core/orchestrator.js');
+  const orchestrator = await getOrchestrator();
+  await orchestrator.getToolRouter().routeToolCall('memory_store_fact', {
+    fact,
+    category: 'error',
+    agent_id: 'orchestrator',
+  });
+}
 
 const storage = new JobStorage();
 
@@ -62,10 +78,7 @@ export const backgroundJobFunction = inngest.createFunction(
       // Send notification via Telegram
       await step.run('notify-success', async () => {
         try {
-          const { handleTelegram } = await import('../tools/telegram.js');
-          await handleTelegram({
-            message: `✅ Task "${task.name}" completed successfully in ${duration}ms`,
-          });
+          await notifyTelegram(`✅ Task "${task.name}" completed successfully in ${duration}ms`);
         } catch (error) {
           logger.error('Failed to send success notification', { error });
         }
@@ -86,10 +99,7 @@ export const backgroundJobFunction = inngest.createFunction(
       // Send failure notification via Telegram
       await step.run('notify-failure', async () => {
         try {
-          const { handleTelegram } = await import('../tools/telegram.js');
-          await handleTelegram({
-            message: `❌ Task "${task.name}" failed after ${duration}ms: ${task.error}`,
-          });
+          await notifyTelegram(`❌ Task "${task.name}" failed after ${duration}ms: ${task.error}`);
         } catch (notifyError) {
           logger.error('Failed to send failure notification', { error: notifyError });
         }
@@ -98,12 +108,7 @@ export const backgroundJobFunction = inngest.createFunction(
       // Store error in Memory MCP
       await step.run('log-error', async () => {
         try {
-          const { handleStoreFact } = await import('../tools/memory.js');
-          await handleStoreFact({
-            fact: `Task "${task.name}" (${taskId}) failed: ${task.error}`,
-            category: 'error',
-            agentId: 'orchestrator',
-          });
+          await storeErrorFact(`Task "${task.name}" (${taskId}) failed: ${task.error}`);
         } catch (memoryError) {
           logger.error('Failed to log error to memory', { error: memoryError });
         }
@@ -168,10 +173,7 @@ export const cronJobFunction = inngest.createFunction(
       // Send failure notification via Telegram (after retries exhausted)
       await step.run('notify-failure', async () => {
         try {
-          const { handleTelegram } = await import('../tools/telegram.js');
-          await handleTelegram({
-            message: `❌ Cron job "${job.name}" failed after ${duration}ms: ${error instanceof Error ? error.message : String(error)}`,
-          });
+          await notifyTelegram(`❌ Cron job "${job.name}" failed after ${duration}ms: ${error instanceof Error ? error.message : String(error)}`);
         } catch (notifyError) {
           logger.error('Failed to send failure notification', { error: notifyError });
         }
@@ -180,12 +182,7 @@ export const cronJobFunction = inngest.createFunction(
       // Store error in Memory MCP
       await step.run('log-error', async () => {
         try {
-          const { handleStoreFact } = await import('../tools/memory.js');
-          await handleStoreFact({
-            fact: `Cron job "${job.name}" (${jobId}) failed: ${error instanceof Error ? error.message : String(error)}`,
-            category: 'error',
-            agentId: 'orchestrator',
-          });
+          await storeErrorFact(`Cron job "${job.name}" (${jobId}) failed: ${error instanceof Error ? error.message : String(error)}`);
         } catch (memoryError) {
           logger.error('Failed to log error to memory', { error: memoryError });
         }
@@ -310,10 +307,7 @@ export const cronJobPollerFunction = inngest.createFunction(
 
           // Send failure notification via Telegram
           try {
-            const { handleTelegram } = await import('../tools/telegram.js');
-            await handleTelegram({
-              message: `❌ Cron job "${job.name}" failed after ${duration}ms: ${error instanceof Error ? error.message : String(error)}`,
-            });
+            await notifyTelegram(`❌ Cron job "${job.name}" failed after ${duration}ms: ${error instanceof Error ? error.message : String(error)}`);
           } catch (notifyError) {
             logger.error('Failed to send failure notification', { error: notifyError });
           }
@@ -678,10 +672,7 @@ export const conversationBackfillFunction = inngest.createFunction(
     // Send start notification
     await step.run('notify-start', async () => {
       try {
-        const { handleTelegram } = await import('../tools/telegram.js');
-        await handleTelegram({
-          message: 'Conversation backfill started — extracting facts from unprocessed history.',
-        });
+        await notifyTelegram('Conversation backfill started — extracting facts from unprocessed history.');
       } catch (error) {
         logger.error('Failed to send backfill start notification', { error });
       }
@@ -744,13 +735,11 @@ export const conversationBackfillFunction = inngest.createFunction(
     // Send completion notification
     await step.run('notify-complete', async () => {
       try {
-        const { handleTelegram } = await import('../tools/telegram.js');
-        await handleTelegram({
-          message:
-            `Conversation backfill complete.\n` +
-            `Conversations processed: ${totalProcessed}\n` +
-            `Facts extracted: ${totalFactsExtracted}`,
-        });
+        await notifyTelegram(
+          `Conversation backfill complete.\n` +
+          `Conversations processed: ${totalProcessed}\n` +
+          `Facts extracted: ${totalFactsExtracted}`,
+        );
       } catch (error) {
         logger.error('Failed to send backfill completion notification', { error });
       }
@@ -812,13 +801,11 @@ export const memorySynthesisFunction = inngest.createFunction(
           .map(([cat, summary]) => `  ${cat}: ${summary}`)
           .join('\n');
 
-        const { handleTelegram } = await import('../tools/telegram.js');
-        await handleTelegram({
-          message:
-            `Weekly memory synthesis complete.\n` +
-            `Merges: ${result.merges || 0}, Deletions: ${result.deletions || 0}, Updates: ${result.updates || 0}\n` +
-            (summaryLines ? `\nPer category:\n${summaryLines}` : ''),
-        });
+        await notifyTelegram(
+          `Weekly memory synthesis complete.\n` +
+          `Merges: ${result.merges || 0}, Deletions: ${result.deletions || 0}, Updates: ${result.updates || 0}\n` +
+          (summaryLines ? `\nPer category:\n${summaryLines}` : ''),
+        );
       } catch (error) {
         logger.error('Failed to send synthesis notification', { error });
       }
