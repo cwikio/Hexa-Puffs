@@ -10,6 +10,7 @@ export const StdioMCPServerConfigSchema = z.object({
   timeout: z.number().positive().default(30000),
   required: z.boolean().default(false),
   sensitive: z.boolean().default(false),
+  description: z.string().optional(),
 });
 
 export type StdioMCPServerConfig = z.infer<typeof StdioMCPServerConfigSchema>;

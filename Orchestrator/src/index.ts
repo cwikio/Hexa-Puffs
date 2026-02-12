@@ -274,21 +274,19 @@ async function main(): Promise<void> {
       await orchestrator.startAgents();
 
       // Graceful shutdown
-      process.on('SIGINT', () => {
+      const shutdown = () => {
         logger.info('Shutting down...');
+        orchestrator.stopExternalMCPWatcher();
+        orchestrator.stopHealthMonitoring();
+        orchestrator.stopChannelPolling();
         httpServer.close(() => {
           logger.info('Server closed');
           process.exit(0);
         });
-      });
+      };
 
-      process.on('SIGTERM', () => {
-        logger.info('Shutting down...');
-        httpServer.close(() => {
-          logger.info('Server closed');
-          process.exit(0);
-        });
-      });
+      process.on('SIGINT', shutdown);
+      process.on('SIGTERM', shutdown);
     }
   } catch (error) {
     logger.error('Failed to start orchestrator', { error });

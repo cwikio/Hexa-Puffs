@@ -23,6 +23,7 @@ export interface ExternalMCPEntry {
   timeout: number;
   required: false; // External MCPs are never required
   sensitive: boolean;
+  description?: string;
 }
 
 const ENV_VAR_PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
@@ -89,6 +90,7 @@ export function loadExternalMCPs(
       timeout: config.timeout,
       required: false,
       sensitive: config.sensitive,
+      description: config.description,
     };
   }
 

@@ -52,6 +52,7 @@ describe('loadExternalMCPs', () => {
       timeout: 15000,
       required: false,
       sensitive: false,
+      description: undefined,
     });
   });
 
@@ -168,5 +169,28 @@ describe('loadExternalMCPs', () => {
 
     const result = loadExternalMCPs(configPath);
     expect(result).toEqual({});
+  });
+
+  it('should pass through description field', () => {
+    const configPath = join(tempDir, 'external-mcps.json');
+    writeFileSync(configPath, JSON.stringify({
+      posthog: {
+        command: 'posthog-mcp',
+        description: 'Product analytics and feature flags',
+      },
+    }));
+
+    const result = loadExternalMCPs(configPath);
+    expect(result.posthog.description).toBe('Product analytics and feature flags');
+  });
+
+  it('should have undefined description when not provided', () => {
+    const configPath = join(tempDir, 'external-mcps.json');
+    writeFileSync(configPath, JSON.stringify({
+      simple: { command: 'simple-mcp' },
+    }));
+
+    const result = loadExternalMCPs(configPath);
+    expect(result.simple.description).toBeUndefined();
   });
 });
