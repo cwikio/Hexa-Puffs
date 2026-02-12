@@ -95,6 +95,9 @@ export function loadConfig(): Config {
     // Multi-agent config: loaded from file (default: agents.json in MCPs root)
     agentsConfigPath: process.env.AGENTS_CONFIG_PATH || resolve(mcpsRoot, 'agents.json'),
 
+    // Track which MCPs came from external-mcps.json
+    externalMCPNames: externalNames,
+
     // Auto-discovered channel MCPs
     channelMCPs: discovered
       .filter((mcp) => mcp.isChannel)

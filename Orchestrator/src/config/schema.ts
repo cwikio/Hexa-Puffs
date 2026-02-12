@@ -85,6 +85,9 @@ export const ConfigSchema = z.object({
   // Auto-discovered channel MCPs (populated by scanner, not set manually)
   channelMCPs: z.array(ChannelMCPEntrySchema).default([]),
 
+  // Names of external MCPs (loaded from external-mcps.json, tracked for health reporting)
+  externalMCPNames: z.array(z.string()).default([]),
+
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 

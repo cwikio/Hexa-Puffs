@@ -602,6 +602,33 @@ export class Orchestrator {
   }
 
   /**
+   * Run health checks on all stdio MCP clients.
+   * Returns per-MCP status with internal/external classification.
+   */
+  async checkMCPHealth(scope: 'all' | 'internal' | 'external' = 'all'): Promise<
+    Array<{ name: string; available: boolean; healthy: boolean; type: 'internal' | 'external' }>
+  > {
+    const externalNames = new Set(this.config.externalMCPNames ?? []);
+    const results: Array<{ name: string; available: boolean; healthy: boolean; type: 'internal' | 'external' }> = [];
+
+    for (const [name, client] of this.stdioClients) {
+      const isExternal = externalNames.has(name);
+      if (scope === 'internal' && isExternal) continue;
+      if (scope === 'external' && !isExternal) continue;
+
+      const healthy = await client.healthCheck();
+      results.push({
+        name,
+        available: client.isAvailable,
+        healthy,
+        type: isExternal ? 'external' : 'internal',
+      });
+    }
+
+    return results;
+  }
+
+  /**
    * Call a Guardian MCP tool directly (bypasses tool router).
    * Guardian is not registered with the tool router — it's used internally.
    * Returns null if Guardian is unavailable.

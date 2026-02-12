@@ -19,11 +19,13 @@ import {
   handleTriggerBackfill,
   spawnSubagentToolDefinition,
   handleSpawnSubagent,
+  healthCheckToolDefinition,
+  handleHealthCheck,
   type StandardResponse,
 } from './tools/index.js';
 
 // Custom tools that are not passthrough (orchestrator-specific)
-const customToolDefinitions = [statusToolDefinition, ...jobToolDefinitions, spawnSubagentToolDefinition];
+const customToolDefinitions = [statusToolDefinition, ...jobToolDefinitions, spawnSubagentToolDefinition, healthCheckToolDefinition];
 
 // Custom tool handlers (simple tools that don't need caller context)
 const customToolHandlers: Record<
@@ -37,6 +39,7 @@ const customToolHandlers: Record<
   get_job_status: handleGetJobStatus,
   delete_job: handleDeleteJob,
   trigger_backfill: handleTriggerBackfill,
+  system_health_check: handleHealthCheck,
 };
 
 // Context-aware tool handlers (need callerAgentId from _meta)
