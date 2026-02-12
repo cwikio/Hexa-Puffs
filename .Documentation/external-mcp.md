@@ -294,7 +294,17 @@ MCPs: 8 total (6 internal, 2 external)
 
 External:
   posthog: 15 tools — Product analytics and feature flags
-  vercel: 8 tools
+    • query-run
+    • insight-create-from-query
+    • insight-get
+    • insight-update
+    • ...
+  vercel: 12 tools — Vercel project management and deployments
+    • search_documentation
+    • list_projects
+    • get_project
+    • list_deployments
+    • ...
 
 Changes since last boot:
   + posthog
@@ -397,6 +407,11 @@ When MCPs change at runtime, a Telegram message is sent:
 ```
 External MCPs changed:
   + posthog: 15 tools — Product analytics and feature flags
+    • query-run
+    • insight-create-from-query
+    • insight-get
+    • insight-update
+    • ...
   - neon
 ```
 
