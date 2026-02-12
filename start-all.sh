@@ -68,6 +68,13 @@ sleep 2
 
 # Create log directory and initialize PID tracking
 mkdir -p ~/.annabelle/logs
+
+# Seed external MCPs config if it doesn't exist
+EXTERNAL_MCPS="$HOME/.annabelle/external-mcps.json"
+if [ ! -f "$EXTERNAL_MCPS" ]; then
+  echo '{}' > "$EXTERNAL_MCPS"
+  echo -e "${GREEN}✓ Created empty external MCPs config at $EXTERNAL_MCPS${RESET}"
+fi
 PID_FILE="$HOME/.annabelle/annabelle.pids"
 : > "$PID_FILE"
 

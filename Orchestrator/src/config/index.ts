@@ -12,6 +12,7 @@ import {
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scanForMCPs } from './scanner.js';
+import { loadExternalMCPs } from '@mcp/shared/Discovery/external-loader.js';
 
 // Get the MCPs root directory (parent of Orchestrator)
 const __filename = fileURLToPath(import.meta.url);
@@ -43,6 +44,18 @@ export function loadConfig(): Config {
     };
   }
 
+  // Merge external MCPs from ~/.annabelle/external-mcps.json
+  const externalMCPs = loadExternalMCPs();
+  const externalNames: string[] = [];
+  for (const [name, entry] of Object.entries(externalMCPs)) {
+    if (mcpServersStdio[name]) {
+      logger.warn('External MCP name conflicts with internal MCP — skipping', { name });
+      continue;
+    }
+    mcpServersStdio[name] = entry;
+    externalNames.push(name);
+  }
+
   const rawConfig = {
     transport: getEnvString('TRANSPORT', 'stdio'),
     port: getEnvNumber('PORT', 8000),
@@ -59,6 +72,9 @@ export function loadConfig(): Config {
         ...discovered
           .filter((mcp) => mcp.sensitive)
           .map((mcp) => `${mcp.name}_`),
+        ...externalNames
+          .filter((name) => externalMCPs[name]?.sensitive)
+          .map((name) => `${name}_`),
         'filer_create_file',
         'filer_update_file',
         'filer_read_file',
@@ -98,6 +114,7 @@ export function loadConfig(): Config {
   logger.info('Configuration loaded successfully', {
     mcpConnectionMode,
     stdioMCPs: Object.keys(mcpServersStdio),
+    ...(externalNames.length > 0 ? { externalMCPs: externalNames } : {}),
   });
   return result.data;
 }
