@@ -274,6 +274,19 @@ else
   echo -e "  ${YELLOW}Check logs: tail -f ~/.annabelle/logs/orchestrator.log${RESET}"
 fi
 
+# ─── System Snapshot ──────────────────────────────────────────────────────────
+echo -e "\n${BOLD}Generating system snapshot...${RESET}"
+SNAPSHOT_SCRIPT="$SCRIPT_DIR/_scripts/generate-system-snapshot.ts"
+if [ -f "$SNAPSHOT_SCRIPT" ]; then
+  ORCHESTRATOR_URL=http://localhost:8010 ANNABELLE_TOKEN="$ANNABELLE_TOKEN" \
+    npx tsx "$SNAPSHOT_SCRIPT" >> ~/.annabelle/logs/snapshot.log 2>&1 &
+  SNAPSHOT_PID=$!
+  echo -e "${GREEN}✓ Snapshot generation started in background (PID: $SNAPSHOT_PID)${RESET}"
+  echo -e "  ${BLUE}Output: ~/.annabelle/documentation/system-snapshot.md${RESET}"
+else
+  echo -e "${YELLOW}⚠ Snapshot script not found at $SNAPSHOT_SCRIPT — skipping${RESET}"
+fi
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}${GREEN}=== All services launched ===${RESET}"
 
