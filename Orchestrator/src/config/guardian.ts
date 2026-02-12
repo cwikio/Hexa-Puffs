@@ -29,12 +29,19 @@ export const guardianConfig = {
   failMode: 'closed' as const,
 
   /**
+   * Default scanning for MCPs not explicitly listed below.
+   * With auto-discovery and external MCP hot-reload, new MCPs can appear
+   * dynamically — these defaults ensure they get Guardian coverage.
+   */
+  defaultInput: true,
+  defaultOutput: false,
+
+  /**
    * Scan the ARGUMENTS going into an MCP (→ direction).
    * When Thinker/Claude calls a tool, this checks what's being sent
    * BEFORE it reaches the target MCP.
    *
-   * Example: Thinker sends a message via Telegram — input scan checks
-   * the message text before Telegram MCP receives it.
+   * MCPs not listed here inherit `defaultInput`.
    */
   input: {
     telegram: false,
@@ -43,6 +50,7 @@ export const guardianConfig = {
     filer: true,
     searcher: false,
     gmail: true,
+    codexec: true,
   } as Record<string, boolean>,
 
   /**
@@ -50,8 +58,7 @@ export const guardianConfig = {
    * After an MCP processes a tool call, this checks what it returned
    * BEFORE Thinker/Claude sees the response.
    *
-   * Example: Gmail returns email content — output scan checks it
-   * for malicious payloads before Thinker receives it.
+   * MCPs not listed here inherit `defaultOutput`.
    */
   output: {
     telegram: false,
@@ -60,6 +67,7 @@ export const guardianConfig = {
     filer: true,
     searcher: true,
     gmail: true,
+    codexec: false,
   } as Record<string, boolean>,
 
   /**

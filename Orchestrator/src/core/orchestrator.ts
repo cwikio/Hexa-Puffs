@@ -135,8 +135,8 @@ export class Orchestrator {
   private maybeGuard(mcpName: string, client: IMCPClient): IMCPClient {
     if (!this.guardianScanner) return client;
 
-    const scanInput = guardianConfig.input[mcpName] ?? false;
-    const scanOutput = guardianConfig.output[mcpName] ?? false;
+    const scanInput = guardianConfig.input[mcpName] ?? guardianConfig.defaultInput;
+    const scanOutput = guardianConfig.output[mcpName] ?? guardianConfig.defaultOutput;
 
     if (!scanInput && !scanOutput) return client;
 
