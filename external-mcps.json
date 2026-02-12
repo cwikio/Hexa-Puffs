@@ -1,1 +1,7 @@
-{}
+{
+  "vercel": {
+    "command": "npx",
+    "args": ["-y", "mcp-remote", "https://mcp.vercel.com"],
+    "description": "Vercel project management and deployments"
+  }
+}
