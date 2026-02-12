@@ -255,6 +255,19 @@ export class McpClient {
   async updateProject(projectId: number, updates: Record<string, unknown>): Promise<ToolCallResult> {
     return this.callTool('update_project', { project_id: projectId, ...updates });
   }
+  // Timeline convenience method
+
+  async queryTimeline(
+    dateFrom: string,
+    agentId = 'test-agent',
+    opts: Record<string, unknown> = {}
+  ): Promise<ToolCallResult> {
+    return this.callTool('query_timeline', {
+      agent_id: agentId,
+      date_from: dateFrom,
+      ...opts,
+    });
+  }
 }
 
 // Create a shared instance for tests
