@@ -40,6 +40,8 @@ export interface AgentContext {
     style?: string;
     tone?: string;
   } | null;
+  /** Tools required by matched playbooks — must be force-included in tool selection */
+  playbookRequiredTools: string[];
 }
 
 /**

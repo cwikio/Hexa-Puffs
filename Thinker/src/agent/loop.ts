@@ -413,11 +413,15 @@ export class Agent {
     // Inject matching domain playbooks
     await this.playbookCache.refreshIfNeeded(trace);
     const matchedPlaybooks = classifyMessage(userMessage, this.playbookCache.getPlaybooks());
+    const playbookRequiredTools: string[] = [];
     if (matchedPlaybooks.length > 0) {
       const section = matchedPlaybooks
         .map((pb) => `### Playbook: ${pb.name}\n${pb.instructions}`)
         .join('\n\n');
       systemPrompt += `\n\n## Workflow Guidance\nFollow these steps when relevant:\n\n${section}`;
+      for (const pb of matchedPlaybooks) {
+        playbookRequiredTools.push(...pb.requiredTools);
+      }
     }
 
     // Inject available skills for progressive disclosure (keyword-less file-based skills)
@@ -477,6 +481,7 @@ export class Agent {
             tone: profile.profile_data.persona.tone,
           }
         : null,
+      playbookRequiredTools,
     };
   }
 
@@ -544,6 +549,21 @@ export class Agent {
       // 90s timeout leaves buffer within ThinkerClient's 120s limit
       const agentAbort = AbortSignal.timeout(90_000);
       const selectedTools = await selectToolsWithFallback(message.text, this.tools, this.embeddingSelector);
+
+      // Force-include tools required by matched playbooks (they may have been dropped by the tool cap)
+      if (selectedTools && context.playbookRequiredTools.length > 0) {
+        let injected = 0;
+        for (const name of context.playbookRequiredTools) {
+          if (!selectedTools[name] && this.tools[name]) {
+            selectedTools[name] = this.tools[name];
+            injected++;
+          }
+        }
+        if (injected > 0) {
+          logger.info(`[playbook-tools] Injected ${injected} required tool(s) from matched playbook(s)`);
+        }
+      }
+
       let result;
       let usedTextOnlyFallback = false;
 
