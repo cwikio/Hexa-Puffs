@@ -464,6 +464,9 @@ export class Agent {
       systemPrompt += `\n\nRelevant memories about the user:\n${factsText}`;
     }
 
+    const promptChars = systemPrompt.length;
+    logger.info(`[prompt-size] System prompt: ~${Math.ceil(promptChars / 4)} tokens (${promptChars} chars)`);
+
     return {
       systemPrompt,
       conversationHistory: truncateHistoryToolResults(
@@ -556,6 +559,8 @@ export class Agent {
           if (!selectedTools[name] && this.tools[name]) {
             selectedTools[name] = this.tools[name];
             injected++;
+          } else if (!this.tools[name]) {
+            logger.warn(`[playbook-tools] Required tool '${name}' not found (MCP may be down)`);
           }
         }
         if (injected > 0) {
@@ -1221,6 +1226,9 @@ Complete the task step by step, using your available tools. When done, provide a
           .join('\n');
         systemPromptWithContext += `\n\nRelevant memories:\n${factsText}`;
       }
+
+      const promptChars = systemPromptWithContext.length;
+      logger.info(`[prompt-size] Proactive task prompt: ~${Math.ceil(promptChars / 4)} tokens (${promptChars} chars)`);
 
       // Run the LLM with task instructions as the "user message"
       // For proactive tasks, exclude send_telegram — notifications are handled post-completion via notifyChatId
