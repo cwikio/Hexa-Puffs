@@ -94,7 +94,7 @@ export class SessionStore {
   /**
    * Load a session from disk. Returns null if no file exists.
    */
-  async loadSession(chatId: string): Promise<LoadedSession | null> {
+  async loadSession(chatId: string, stickyLookback = 3): Promise<LoadedSession | null> {
     const filePath = this.getSessionPath(chatId);
 
     if (!existsSync(filePath)) {
@@ -109,6 +109,7 @@ export class SessionStore {
       let compactionSummary: string | undefined;
       let turnCount = 0;
       let totalChars = 0;
+      const turnToolHistory: Array<{ turnIndex: number; tools: string[] }> = [];
 
       for (const line of lines) {
         try {
@@ -127,6 +128,11 @@ export class SessionStore {
             }
             turnCount++;
             totalChars += entry.user.length + entry.assistant.length;
+
+            // Track tools used per turn for sticky tool injection
+            if (entry.toolsUsed.length > 0) {
+              turnToolHistory.push({ turnIndex: turnCount, tools: entry.toolsUsed });
+            }
           }
           // Skip header entries — they're metadata only
         } catch {
@@ -143,7 +149,10 @@ export class SessionStore {
         return null;
       }
 
-      return { messages, compactionSummary, turnCount };
+      // Keep only the last N turns with tools for sticky injection
+      const recentToolsByTurn = turnToolHistory.slice(-stickyLookback);
+
+      return { messages, compactionSummary, turnCount, recentToolsByTurn };
     } catch (error) {
       logger.error(`Failed to load session ${chatId}`, error);
       return null;

@@ -13,6 +13,8 @@ export interface AgentState {
   lastCompactionAt?: number;
   /** Timestamp of last post-conversation fact extraction */
   lastExtractionAt?: number;
+  /** Tools used in recent turns — sliding window for sticky tool injection */
+  recentToolsByTurn: Array<{ turnIndex: number; tools: string[] }>;
 }
 
 /**

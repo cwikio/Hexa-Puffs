@@ -65,4 +65,6 @@ export interface LoadedSession {
   messages: CoreMessage[];
   compactionSummary?: string;
   turnCount: number;
+  /** Tools used in recent turns — for sticky tool injection across turns */
+  recentToolsByTurn: Array<{ turnIndex: number; tools: string[] }>;
 }

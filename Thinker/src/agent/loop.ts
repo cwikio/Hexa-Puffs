@@ -18,7 +18,7 @@ import type { IncomingMessage, ProcessingResult, AgentContext, AgentState } from
 import { PlaybookCache } from './playbook-cache.js';
 import { classifyMessage } from './playbook-classifier.js';
 import { seedPlaybooks } from './playbook-seed.js';
-import { selectToolsWithFallback } from './tool-selection.js';
+import { selectToolsWithFallback, CORE_TOOL_NAMES } from './tool-selection.js';
 import { EmbeddingToolSelector } from './embedding-tool-selector.js';
 import { createEmbeddingProviderFromEnv } from './embedding-config.js';
 import { extractFactsFromConversation, loadExtractionPromptTemplate } from './fact-extractor.js';
@@ -28,6 +28,9 @@ import { cosineSimilarity } from '@mcp/shared/Embeddings/math.js';
 import { Logger } from '@mcp/shared/Utils/logger.js';
 
 const logger = new Logger('thinker:agent');
+
+const STICKY_TOOLS_LOOKBACK = parseInt(process.env.THINKER_STICKY_TOOLS_LOOKBACK ?? '3', 10);
+const STICKY_TOOLS_MAX = parseInt(process.env.THINKER_STICKY_TOOLS_MAX ?? '8', 10);
 
 /**
  * Tool calling preamble — prepended before persona to enforce structured tool use.
@@ -272,13 +275,15 @@ export class Agent {
     // Try loading from disk
     let messages: CoreMessage[] = [];
     let compactionSummary: string | undefined;
+    let recentToolsByTurn: Array<{ turnIndex: number; tools: string[] }> = [];
 
     if (this.config.sessionConfig.enabled) {
       try {
-        const saved = await this.sessionStore.loadSession(chatId);
+        const saved = await this.sessionStore.loadSession(chatId, STICKY_TOOLS_LOOKBACK);
         if (saved) {
           messages = saved.messages;
           compactionSummary = saved.compactionSummary;
+          recentToolsByTurn = saved.recentToolsByTurn;
           logger.info(`Restored session ${chatId} from disk (${saved.turnCount} turns${compactionSummary ? ', with compaction summary' : ''})`);
         }
       } catch (error) {
@@ -291,6 +296,7 @@ export class Agent {
       messages,
       lastActivity: Date.now(),
       compactionSummary,
+      recentToolsByTurn,
     };
     this.conversationStates.set(chatId, state);
     return state;
@@ -584,6 +590,36 @@ export class Agent {
         }
         if (injected > 0) {
           logger.info(`[playbook-tools] Injected ${injected} required tool(s) from matched playbook(s)`);
+        }
+      }
+
+      // Sticky tools: inject tools used in recent turns so follow-up messages
+      // ("what about the other one?") can still call them even when the embedding
+      // selector doesn't match them for the current message.
+      if (state.recentToolsByTurn.length > 0) {
+        const coreSet = new Set(CORE_TOOL_NAMES);
+        const stickyNames: string[] = [];
+
+        // Iterate newest turn first so most recent tools get priority
+        for (let i = state.recentToolsByTurn.length - 1; i >= 0; i--) {
+          for (const name of state.recentToolsByTurn[i].tools) {
+            if (
+              !selectedTools[name] &&
+              this.tools[name] &&
+              !coreSet.has(name) &&
+              !stickyNames.includes(name)
+            ) {
+              stickyNames.push(name);
+            }
+          }
+        }
+
+        const toInject = stickyNames.slice(0, STICKY_TOOLS_MAX);
+        for (const name of toInject) {
+          selectedTools[name] = this.tools[name];
+        }
+        if (toInject.length > 0) {
+          logger.info(`[sticky-tools] Injected ${toInject.length} tool(s) from recent turns: ${toInject.join(', ')}`);
         }
       }
 
@@ -1091,6 +1127,20 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       const toolsUsed = usedTextOnlyFallback
         ? ['(text-only fallback)']
         : [...new Set([...resultToolNames, ...capturedToolNames, ...recoveredTools])];
+
+      // Update sticky tools sliding window — track non-core tools used this turn
+      const coreSet = new Set(CORE_TOOL_NAMES);
+      const stickyToolsThisTurn = toolsUsed.filter(
+        (t) => t !== '(text-only fallback)' && !coreSet.has(t),
+      );
+      if (stickyToolsThisTurn.length > 0) {
+        const turnIndex = (state.recentToolsByTurn.at(-1)?.turnIndex ?? 0) + 1;
+        state.recentToolsByTurn.push({ turnIndex, tools: stickyToolsThisTurn });
+        // Trim to lookback window
+        if (state.recentToolsByTurn.length > STICKY_TOOLS_LOOKBACK) {
+          state.recentToolsByTurn = state.recentToolsByTurn.slice(-STICKY_TOOLS_LOOKBACK);
+        }
+      }
 
       // Send response to Telegram and store conversation
       // (skip when Orchestrator handles delivery — sendResponseDirectly=false)
