@@ -276,7 +276,8 @@ User asks to classify, label, organize, sort, or categorize their emails.
 - Always check existing labels first — avoid creating duplicates
 - Ask the user for their preferred categories if this is the first time
 - Process in batches if there are many emails — summarize progress
-- Skip emails that already have user-applied labels unless asked to reclassify`,
+- Skip emails that already have user-applied labels unless asked to reclassify
+- This workflow can be scheduled as a recurring cron skill via memory_store_skill — use the cron-scheduling playbook for that`,
     required_tools: ['gmail_list_labels', 'gmail_list_emails', 'gmail_get_email', 'gmail_create_label', 'gmail_modify_labels'],
     max_steps: 10,
     notify_on_completion: false,
@@ -433,19 +434,25 @@ User wants to set up a recurring task, reminder, or scheduled job.
 ## CHOOSING THE RIGHT TOOL
 There are two options — pick based on complexity:
 
-**Option A: Cron Job (create_job)** — for fixed, single-step actions.
+**Option A: Cron Job (create_job)** — ONLY for fixed, single-step actions where the exact same tool call runs every time.
 Examples: "remind me to drink water at 9am", "send me 'good morning' every day"
 - Runs ONE tool call with the exact same parameters every time
 - The result is NOT sent to the user — so the action itself must deliver (e.g., telegram_send_message)
 - Zero cost per execution (no LLM tokens)
 
-**Option B: Scheduled Skill (memory_store_skill with trigger_type "cron")** — for anything that needs multiple steps or reasoning.
-Examples: "send me an article from onet.pl every hour", "every morning summarize my unread emails", "weekly review of my calendar"
+**Option B: Scheduled Skill (memory_store_skill with trigger_type "cron")** — for ANYTHING that needs reading, deciding, classifying, summarizing, or multiple steps.
+Examples: "classify my emails daily", "prune/organize my inbox every morning", "send me an article from onet.pl every hour", "every morning summarize my unread emails", "weekly review of my calendar", "archive old newsletters daily"
 - A full AI reasoning loop runs each execution — can search, read, decide, and SEND results
-- Use this whenever the task involves fetching data AND sending it to the user
+- Use this whenever the task involves fetching data AND making decisions about it
 - Costs LLM tokens per execution
 
-**How to decide:** If the task is just "send a fixed message" → cron job. If it involves searching, reading, browsing, summarizing, or picking content → scheduled skill.
+**IMPORTANT — ALWAYS use scheduled skill (Option B) for:**
+- Email operations: classify, prune, organize, archive, label, sort, triage, clean up
+- Anything that reads data and makes decisions based on content
+- Tasks where different inputs produce different actions each run
+- Multi-step workflows (list → read → decide → act)
+
+**Only use cron job (Option A) for:** fixed reminders, static notifications, single deterministic tool calls with hardcoded parameters.
 
 ## STEPS FOR CRON JOBS (Option A)
 1. Parse the user's schedule into a cron expression:
@@ -536,8 +543,8 @@ IMPORTANT: Only these Vercel tools exist. Do NOT call vercel_list_teams, vercel_
 ];
 
 /**
- * Seed default playbooks into Memorizer if they don't already exist.
- * Idempotent — never overwrites existing playbooks.
+ * Seed default playbooks into Memorizer.
+ * Creates new playbooks and updates existing ones if instructions have changed.
  */
 export async function seedPlaybooks(
   orchestrator: OrchestratorClient,
@@ -545,12 +552,36 @@ export async function seedPlaybooks(
   trace?: TraceContext
 ): Promise<number> {
   const { skills: existing } = await orchestrator.listSkills(agentId, 'event', undefined, trace);
-  const existingNames = new Set(existing.map((s) => s.name as string));
+  const existingByName = new Map(existing.map((s) => [s.name as string, s]));
 
   let seeded = 0;
+  let updated = 0;
 
   for (const playbook of DEFAULT_PLAYBOOKS) {
-    if (existingNames.has(playbook.name)) continue;
+    const existingSkill = existingByName.get(playbook.name);
+
+    if (existingSkill) {
+      // Update if instructions changed
+      if ((existingSkill.instructions as string) !== playbook.instructions) {
+        const updateResponse = await orchestrator.executeTool(
+          'memory_update_skill',
+          {
+            skill_id: existingSkill.id as number,
+            instructions: playbook.instructions,
+            description: playbook.description,
+            required_tools: playbook.required_tools,
+            max_steps: playbook.max_steps,
+          },
+          trace
+        );
+        if (updateResponse.success) {
+          updated++;
+        } else {
+          logger.error(`Failed to update playbook "${playbook.name}"`, updateResponse.error);
+        }
+      }
+      continue;
+    }
 
     const response = await orchestrator.executeTool(
       'memory_store_skill',
@@ -575,9 +606,9 @@ export async function seedPlaybooks(
     }
   }
 
-  if (seeded > 0) {
-    logger.info(`Seeded ${seeded} playbook(s) (${existing.length} already existed)`);
+  if (seeded > 0 || updated > 0) {
+    logger.info(`Playbooks: ${seeded} seeded, ${updated} updated (${existing.length} total)`);
   }
 
-  return seeded;
+  return seeded + updated;
 }

@@ -62,12 +62,49 @@ def _looks_like_urn_id(value: str) -> bool:
     return bool(value) and " " not in value and "," not in value
 
 
+def _resolve_via_conversations(api: object, name: str) -> str | None:
+    """Search recent conversations for a participant matching the name.
+
+    Returns the URN ID extracted from the participant's miniProfile entityUrn.
+    This bypasses the flaky search API entirely.
+    """
+    try:
+        raw = api.get_conversations()  # type: ignore[attr-defined]
+        conv_list: list = []
+        if isinstance(raw, dict):
+            conv_list = raw.get("elements", [])
+        elif isinstance(raw, list):
+            conv_list = raw
+
+        name_lower = name.lower()
+        for conv in conv_list:
+            for p in conv.get("participants", []):
+                member = p.get("com.linkedin.voyager.messaging.MessagingMember", {})
+                mini = member.get("miniProfile", {})
+                first = mini.get("firstName", "")
+                last = mini.get("lastName", "")
+                full_name = f"{first} {last}".strip().lower()
+                if name_lower == full_name:
+                    urn = mini.get("entityUrn", "")
+                    if urn and ":" in urn:
+                        urn_id = urn.split(":")[-1]
+                        logger.info(
+                            "Resolved '%s' via conversation participant (urn_id: %s)",
+                            name, urn_id,
+                        )
+                        return urn_id
+    except Exception as e:
+        logger.warning("Conversation-based lookup failed: %s", e)
+    return None
+
+
 def _resolve_recipient(api: object, recipient: str) -> str | None:
     """Resolve a recipient to a URN ID. If it already looks like a URN ID, return as-is.
-    If it looks like a name, search with multiple strategies:
+    If it looks like a name, try multiple strategies:
     1. keyword search (full name)
     2. first/last name split search
     3. broader search with include_private_profiles
+    4. scan recent conversations for matching participant name
     """
     if _looks_like_urn_id(recipient):
         return recipient
@@ -115,7 +152,13 @@ def _resolve_recipient(api: object, recipient: str) -> str | None:
             logger.info("Resolved '%s' → '%s' (urn_id: %s) via broad search", recipient, results[0].get("name"), urn_id)
             return urn_id
 
-    logger.warning("All search strategies failed for recipient '%s'", recipient)
+    # Strategy 4: scan conversations for matching participant (bypasses search API)
+    logger.info("Search strategies exhausted, scanning conversations for '%s'...", recipient)
+    conv_urn = _resolve_via_conversations(api, recipient)
+    if conv_urn:
+        return conv_urn
+
+    logger.warning("All resolution strategies failed for recipient '%s'", recipient)
     return None
 
 
