@@ -8,7 +8,7 @@ loadEnvSafely(import.meta.url);
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer } from "./server.js";
 import { initDatabase } from "./db/index.js";
-import { loadConfigGrants } from "./db/grants.js";
+import { loadConfigGrants, ensureSystemGrants } from "./db/grants.js";
 import { initializeWorkspace } from "./utils/workspace.js";
 import { getConfig } from "./utils/config.js";
 import { cleanupTempFiles } from "./services/cleanup.js";
@@ -36,6 +36,16 @@ async function main() {
     }
   } catch (error) {
     logger.warn("Could not load config grants", error);
+  }
+
+  // Ensure built-in system grants for Annabelle directories
+  try {
+    const systemGrants = await ensureSystemGrants();
+    if (systemGrants > 0) {
+      logger.info(`Created ${systemGrants} system grants`);
+    }
+  } catch (error) {
+    logger.warn("Could not create system grants", error);
   }
 
   // Initialize workspace

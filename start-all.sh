@@ -119,6 +119,23 @@ fi
 echo -e "  ${BLUE}✓ Skills directory ready at $SKILLS_DIR${RESET}"
 echo ""
 
+# ─── Documentation Sync ─────────────────────────────────────────────────────
+echo -e "${BOLD}${CYAN}=== Syncing Documentation ===${RESET}"
+
+DOCS_DIR="$HOME/.annabelle/documentation"
+DOC_SRC="$SCRIPT_DIR/.documentation"
+mkdir -p "$DOCS_DIR"
+
+if [ -d "$DOC_SRC" ]; then
+  cp "$DOC_SRC"/*.md "$DOCS_DIR/" 2>/dev/null
+  DOC_COUNT=$(ls -1 "$DOCS_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+  echo -e "  ${GREEN}✓ Synced $DOC_COUNT documentation files to $DOCS_DIR${RESET}"
+else
+  echo -e "  ${YELLOW}⚠ Documentation source not found at $DOC_SRC${RESET}"
+fi
+
+echo ""
+
 # ─── Inngest Dev Server ──────────────────────────────────────────────────────
 echo -e "${BOLD}Starting Inngest Dev Server (port 8288)...${RESET}"
 cd "$SCRIPT_DIR/Orchestrator"
