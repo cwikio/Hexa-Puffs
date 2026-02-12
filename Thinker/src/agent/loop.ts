@@ -573,15 +573,14 @@ export class Agent {
         ? Math.min(this.config.temperature, 0.3)
         : this.config.temperature;
 
-      // Pre-emptive tool enforcement: use 'required' when message clearly needs tools
-      // (high embedding match or action verbs detected) instead of waiting for hallucination retry
-      const ACTION_VERB_PATTERN = /^(send|create|search|find|check|delete|remove|schedule|update|add|set|browse|open|navigate|look\s?up|forward|reply|draft|compose)/i;
+      // Tool choice: always 'auto' for multi-step calls.
+      // 'required' forces tool calls on EVERY step, which crashes Groq/Llama on step 2+
+      // when the model wants to respond with text (summarize results) instead of calling another tool.
+      // Playbook instructions, system prompt, and embedding-selected tools provide sufficient guidance
+      // for the model to call tools on step 1 without forcing it.
       const embeddingScore = selectionStats?.topScore ?? 0;
-      const needsTools = embeddingScore > 0.7 || ACTION_VERB_PATTERN.test(message.text.trim());
-      const effectiveToolChoice = needsTools ? 'required' as const : 'auto' as const;
-      if (needsTools) {
-        logger.info(`[tool-enforcement] Pre-emptive toolChoice=required (embeddingScore=${embeddingScore.toFixed(3)}, actionVerb=${ACTION_VERB_PATTERN.test(message.text.trim())})`);
-      }
+      const effectiveToolChoice = 'auto' as const;
+      logger.info(`[tool-enforcement] toolChoice=auto (embeddingScore=${embeddingScore.toFixed(3)})`);
 
       // Capture completed steps via onStepFinish so we can recover tool results
       // if generateText() fails mid-loop (e.g., tools execute but the follow-up LLM call errors)
