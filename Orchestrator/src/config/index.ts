@@ -44,8 +44,8 @@ export function loadConfig(): Config {
     };
   }
 
-  // Merge external MCPs from ~/.annabelle/external-mcps.json
-  const externalMCPs = loadExternalMCPs();
+  // Merge external MCPs from external-mcps.json in project root
+  const externalMCPs = loadExternalMCPs(resolve(mcpsRoot, 'external-mcps.json'));
   const externalNames: string[] = [];
   for (const [name, entry] of Object.entries(externalMCPs)) {
     if (mcpServersStdio[name]) {

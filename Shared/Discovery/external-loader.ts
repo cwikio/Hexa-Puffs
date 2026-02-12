@@ -1,5 +1,8 @@
 /**
- * Loads external MCP configurations from ~/.annabelle/external-mcps.json.
+ * Loads external MCP configurations from external-mcps.json.
+ *
+ * The config file lives in the MCPs project root (next to agents.json).
+ * The caller passes the path explicitly; there is no hidden default.
  *
  * Returns a record compatible with the Orchestrator's StdioMCPServerConfig,
  * ready to be merged into the mcpServersStdio map.
@@ -10,8 +13,6 @@
  * - Resolves ${ENV_VAR} patterns in env values to actual process.env values
  */
 import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { homedir } from 'node:os';
 import { ExternalMCPsFileSchema } from './external-config.js';
 import { logger } from '../Utils/logger.js';
 
@@ -40,14 +41,14 @@ function resolveEnvVars(env: Record<string, string>): Record<string, string> {
 }
 
 /**
- * Load external MCP configs from ~/.annabelle/external-mcps.json.
+ * Load external MCP configs from the given path.
  *
- * @param configPath - Override path for testing. Defaults to ~/.annabelle/external-mcps.json.
+ * @param configPath - Path to external-mcps.json. Required.
  */
 export function loadExternalMCPs(
-  configPath?: string,
+  configPath: string,
 ): Record<string, ExternalMCPEntry> {
-  const filePath = configPath ?? resolve(homedir(), '.annabelle', 'external-mcps.json');
+  const filePath = configPath;
 
   if (!existsSync(filePath)) {
     return {};
