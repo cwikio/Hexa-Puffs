@@ -299,6 +299,27 @@ if [ "$RUN_VITEST" = true ]; then
   run_mcp_tests "CodeExec" "$MCP_DIR/CodeExec-MCP"
 
   # =====================================================
+  # Section 3b: Python MCP Tests
+  # =====================================================
+  print_section "Section 3b: Python MCP Tests"
+
+  if [ -d "$MCP_DIR/LinkedIn-MCP/.venv" ]; then
+    echo -e "  Running ${BOLD}LinkedIn${RESET} tests (unit + integration)..."
+    cd "$MCP_DIR/LinkedIn-MCP"
+    if .venv/bin/pytest tests/unit tests/integration -v 2>&1; then
+      echo -e "  ${GREEN}✓ LinkedIn tests passed${RESET}"
+      ((PASSED++)) || true
+    else
+      echo -e "  ${RED}✗ LinkedIn tests failed${RESET}"
+      ((FAILED++)) || true
+    fi
+    cd "$MCP_DIR"
+  else
+    echo -e "  ${YELLOW}⚠ LinkedIn-MCP/.venv not found — run 'uv sync' first${RESET}"
+    ((SKIPPED++)) || true
+  fi
+
+  # =====================================================
   # Section 4: Standalone HTTP MCP Tests
   # =====================================================
   # MCPs that run their own HTTP servers — full integration test

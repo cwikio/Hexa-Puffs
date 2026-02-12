@@ -35,8 +35,8 @@ export function loadConfig(): Config {
     const timeout = getEnvNumber(`${envPrefix}_MCP_TIMEOUT`, mcp.timeout);
 
     mcpServersStdio[mcp.name] = {
-      command: 'node',
-      args: [mcp.entryPoint],
+      command: mcp.command,
+      args: [...mcp.commandArgs, mcp.entryPoint],
       cwd: mcp.dir,
       timeout: timeout ?? mcp.timeout,
       required: mcp.required,

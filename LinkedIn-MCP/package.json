@@ -1,0 +1,16 @@
+{
+  "name": "linkedin-mcp-server",
+  "version": "1.0.0",
+  "description": "LinkedIn MCP server for Annabelle — profile viewing, posting, messaging, and networking",
+  "main": "src/main.py",
+  "scripts": {
+    "build": "/Users/tomasz/.local/bin/uv sync",
+    "start": ".venv/bin/python src/main.py",
+    "test": ".venv/bin/pytest tests/ -v --ignore=tests/e2e"
+  },
+  "annabelle": {
+    "mcpName": "linkedin",
+    "command": ".venv/bin/python",
+    "sensitive": false
+  }
+}

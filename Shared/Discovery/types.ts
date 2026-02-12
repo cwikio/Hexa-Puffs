@@ -20,6 +20,10 @@ export interface AnnabelleManifest {
   required?: boolean;
   httpPort?: number;
   channel?: ChannelManifestConfig;
+  /** Command to spawn this MCP (default: 'node'). Use for non-Node MCPs, e.g. '.venv/bin/python' */
+  command?: string;
+  /** Extra args inserted before entryPoint (default: []). e.g. ['run'] for 'uv run <entryPoint>' */
+  commandArgs?: string[];
 }
 
 export interface DiscoveredMCP {
@@ -45,4 +49,8 @@ export interface DiscoveredMCP {
   required: boolean;
   /** HTTP port (for http transport) */
   httpPort?: number;
+  /** Command to spawn this MCP (default: 'node') */
+  command: string;
+  /** Extra args inserted before entryPoint (default: []) */
+  commandArgs: string[];
 }

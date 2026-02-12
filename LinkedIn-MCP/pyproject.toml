@@ -1,0 +1,32 @@
+[project]
+name = "linkedin-mcp"
+version = "1.0.0"
+description = "LinkedIn MCP server for Annabelle"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.0.0",
+    "linkedin-api>=2.2.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "mcp>=1.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+markers = [
+    "e2e: end-to-end tests requiring real LinkedIn credentials",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
