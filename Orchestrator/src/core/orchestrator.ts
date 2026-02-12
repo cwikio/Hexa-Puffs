@@ -13,8 +13,18 @@ import { AgentManager, type AgentStatus } from '../agents/agent-manager.js';
 import { MessageRouter } from '../agents/message-router.js';
 import { SlashCommandHandler } from '../commands/slash-commands.js';
 import { HaltManager, getHaltManager } from './halt-manager.js';
+import { loadSnapshot, saveSnapshot, computeDiff, type MCPSnapshot, type MCPDiff, type MCPSnapshotEntry } from './startup-diff.js';
+import { ExternalMCPWatcher } from './external-watcher.js';
+import { loadExternalMCPs, type ExternalMCPEntry } from '@mcp/shared/Discovery/external-loader.js';
 import type { IncomingAgentMessage } from '../agents/agent-types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const MCPS_ROOT = resolve(__dirname, '../../../');
 
 export interface MCPServerStatus {
   available: boolean;
@@ -60,6 +70,10 @@ export class Orchestrator {
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly HEALTH_CHECK_INTERVAL_MS = 60_000; // 60 seconds
 
+  // External MCP tracking (mutable — updated by hot-reload)
+  private externalMCPNames: Set<string> = new Set();
+  private externalWatcher: ExternalMCPWatcher | null = null;
+
   constructor() {
     this.config = getConfig();
     this.logger = logger.child('orchestrator');
@@ -68,6 +82,11 @@ export class Orchestrator {
     this.toolRouter = new ToolRouter({ alwaysPrefix: true, separator: '_' });
     this.haltManager = getHaltManager();
     this.slashCommands = new SlashCommandHandler(this.toolRouter, this);
+
+    // Initialize external MCP name tracking from config
+    for (const name of this.config.externalMCPNames ?? []) {
+      this.externalMCPNames.add(name);
+    }
 
     this.initializeStdioClients();
   }
@@ -147,6 +166,15 @@ export class Orchestrator {
 
     // Start health monitoring for stdio clients
     this.startHealthMonitoring();
+
+    // Compute startup diff and send notification (best-effort, non-blocking)
+    const diff = this.computeStartupDiff();
+    this.sendStartupNotification(diff).catch((err) =>
+      this.logger.warn('Startup notification failed', { error: err }),
+    );
+
+    // Start watching external-mcps.json for hot-reload
+    this.startExternalMCPWatcher();
   }
 
   /**
@@ -608,7 +636,7 @@ export class Orchestrator {
   async checkMCPHealth(scope: 'all' | 'internal' | 'external' = 'all'): Promise<
     Array<{ name: string; available: boolean; healthy: boolean; type: 'internal' | 'external' }>
   > {
-    const externalNames = new Set(this.config.externalMCPNames ?? []);
+    const externalNames = this.externalMCPNames;
     const results: Array<{ name: string; available: boolean; healthy: boolean; type: 'internal' | 'external' }> = [];
 
     for (const [name, client] of this.stdioClients) {
@@ -637,6 +665,239 @@ export class Orchestrator {
     const guardianClient = this.stdioClients.get('guardian');
     if (!guardianClient?.isAvailable) return null;
     return guardianClient.callTool({ name: toolName, arguments: args });
+  }
+
+  // ─── Startup Diff ────────────────────────────────────────────────
+
+  private static readonly SNAPSHOT_PATH = resolve(homedir(), '.annabelle', 'last-known-mcps.json');
+
+  /**
+   * Build a snapshot of current MCPs, compare with previous boot, save new snapshot.
+   */
+  private computeStartupDiff(): MCPDiff {
+    const entries: MCPSnapshotEntry[] = [];
+    for (const name of this.stdioClients.keys()) {
+      entries.push({
+        name,
+        type: this.externalMCPNames.has(name) ? 'external' : 'internal',
+      });
+    }
+
+    const current: MCPSnapshot = {
+      timestamp: new Date().toISOString(),
+      mcps: entries,
+    };
+
+    const previous = loadSnapshot(Orchestrator.SNAPSHOT_PATH);
+    const diff = computeDiff(previous, current);
+    saveSnapshot(Orchestrator.SNAPSHOT_PATH, current);
+
+    if (diff.added.length > 0 || diff.removed.length > 0) {
+      this.logger.info('MCP diff since last boot', { added: diff.added, removed: diff.removed });
+    }
+
+    return diff;
+  }
+
+  // ─── Startup Notification ────────────────────────────────────────
+
+  /**
+   * Send a Telegram notification summarizing the startup state.
+   */
+  private async sendStartupNotification(diff: MCPDiff): Promise<void> {
+    const agentDef = this.getAgentDefinition('annabelle');
+    const chatId = agentDef?.costControls?.notifyChatId || process.env.NOTIFY_CHAT_ID;
+    if (!chatId) {
+      this.logger.debug('No chat ID for startup notification — skipping');
+      return;
+    }
+
+    const internalCount = [...this.stdioClients.keys()].filter(
+      (n) => !this.externalMCPNames.has(n),
+    ).length;
+    const externalCount = this.externalMCPNames.size;
+    const total = this.stdioClients.size;
+
+    // Build tool count per MCP
+    const toolCountByMCP = new Map<string, number>();
+    for (const route of this.toolRouter.getAllRoutes()) {
+      toolCountByMCP.set(route.mcpName, (toolCountByMCP.get(route.mcpName) ?? 0) + 1);
+    }
+
+    const lines: string[] = [
+      'Orchestrator started',
+      `MCPs: ${total} total (${internalCount} internal, ${externalCount} external)`,
+    ];
+
+    if (externalCount > 0) {
+      lines.push('', 'External:');
+      for (const name of this.externalMCPNames) {
+        const toolCount = toolCountByMCP.get(name) ?? 0;
+        const desc = this.config.mcpServersStdio?.[name]?.description;
+        lines.push(desc ? `  ${name}: ${toolCount} tools — ${desc}` : `  ${name}: ${toolCount} tools`);
+      }
+    }
+
+    if (diff.added.length > 0 || diff.removed.length > 0) {
+      lines.push('', 'Changes since last boot:');
+      for (const name of diff.added) lines.push(`  + ${name}`);
+      for (const name of diff.removed) lines.push(`  - ${name}`);
+    }
+
+    const failed = [...this.stdioClients.entries()]
+      .filter(([, client]) => !client.isAvailable)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      lines.push('', `Failed: ${failed.join(', ')}`);
+    }
+
+    const message = lines.join('\n');
+
+    try {
+      await this.toolRouter.routeToolCall('telegram_send_message', {
+        chat_id: chatId,
+        message,
+      });
+    } catch (err) {
+      this.logger.warn('Failed to send startup notification via Telegram', { error: err });
+    }
+  }
+
+  // ─── External MCP Hot-Reload ─────────────────────────────────────
+
+  /**
+   * Start watching external-mcps.json for changes.
+   */
+  private startExternalMCPWatcher(): void {
+    const configPath = resolve(MCPS_ROOT, 'external-mcps.json');
+
+    // Build initial externals map from config
+    const initialExternals: Record<string, ExternalMCPEntry> = {};
+    for (const name of this.externalMCPNames) {
+      const cfg = this.config.mcpServersStdio?.[name];
+      if (cfg) {
+        initialExternals[name] = {
+          command: cfg.command,
+          args: cfg.args,
+          env: cfg.env,
+          timeout: cfg.timeout,
+          required: false,
+          sensitive: cfg.sensitive,
+          description: cfg.description,
+        };
+      }
+    }
+
+    this.externalWatcher = new ExternalMCPWatcher(
+      configPath,
+      async (added, removed) => {
+        await this.handleExternalMCPChange(added, removed);
+      },
+      initialExternals,
+    );
+
+    this.externalWatcher.start();
+  }
+
+  /**
+   * Stop watching external-mcps.json.
+   */
+  stopExternalMCPWatcher(): void {
+    this.externalWatcher?.stop();
+    this.externalWatcher = null;
+  }
+
+  /**
+   * Handle additions and removals of external MCPs at runtime.
+   */
+  private async handleExternalMCPChange(
+    added: Map<string, ExternalMCPEntry>,
+    removed: string[],
+  ): Promise<void> {
+    // Remove old MCPs
+    for (const name of removed) {
+      const client = this.stdioClients.get(name);
+      if (client) {
+        this.logger.info(`Hot-reload: removing external MCP "${name}"`);
+        await client.close();
+        this.stdioClients.delete(name);
+        this.toolRouter.unregisterMCP(name);
+      }
+      this.externalMCPNames.delete(name);
+    }
+
+    // Add new MCPs
+    for (const [name, entry] of added) {
+      // Guard against name conflicts with internal MCPs
+      if (this.stdioClients.has(name) && !this.externalMCPNames.has(name)) {
+        this.logger.warn(`Hot-reload: external MCP "${name}" conflicts with internal MCP — skipping`);
+        continue;
+      }
+
+      this.logger.info(`Hot-reload: adding external MCP "${name}"`);
+      const raw = new StdioMCPClient(name, entry);
+      try {
+        await raw.initialize();
+      } catch (err) {
+        this.logger.error(`Hot-reload: failed to initialize external MCP "${name}"`, { error: err });
+        continue;
+      }
+
+      this.stdioClients.set(name, raw);
+      this.externalMCPNames.add(name);
+
+      const client = this.maybeGuard(name, raw);
+      this.toolRouter.registerMCP(name, client);
+    }
+
+    // Rebuild routes if anything changed
+    if (added.size > 0 || removed.length > 0) {
+      await this.toolRouter.discoverTools();
+
+      // Save updated snapshot
+      const entries: MCPSnapshotEntry[] = [];
+      for (const n of this.stdioClients.keys()) {
+        entries.push({ name: n, type: this.externalMCPNames.has(n) ? 'external' : 'internal' });
+      }
+      saveSnapshot(Orchestrator.SNAPSHOT_PATH, {
+        timestamp: new Date().toISOString(),
+        mcps: entries,
+      });
+
+      // Notify via Telegram (best-effort)
+      this.sendHotReloadNotification(added, removed).catch((err) =>
+        this.logger.warn('Hot-reload notification failed', { error: err }),
+      );
+    }
+  }
+
+  /**
+   * Send Telegram notification about hot-reload changes.
+   */
+  private async sendHotReloadNotification(
+    added: Map<string, ExternalMCPEntry>,
+    removed: string[],
+  ): Promise<void> {
+    const agentDef = this.getAgentDefinition('annabelle');
+    const chatId = agentDef?.costControls?.notifyChatId || process.env.NOTIFY_CHAT_ID;
+    if (!chatId) return;
+
+    const lines: string[] = ['External MCPs changed:'];
+
+    for (const [name, entry] of added) {
+      const toolCount = this.toolRouter.getAllRoutes().filter((r) => r.mcpName === name).length;
+      lines.push(entry.description
+        ? `  + ${name}: ${toolCount} tools — ${entry.description}`
+        : `  + ${name}: ${toolCount} tools`);
+    }
+    for (const name of removed) {
+      lines.push(`  - ${name}`);
+    }
+
+    await this.toolRouter.routeToolCall('telegram_send_message', {
+      chat_id: chatId,
+      message: lines.join('\n'),
+    });
   }
 
 }

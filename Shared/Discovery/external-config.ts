@@ -12,6 +12,7 @@ export const ExternalMCPConfigSchema = z.object({
   env: z.record(z.string()).optional(),
   timeout: z.number().positive().default(30000),
   sensitive: z.boolean().default(false),
+  description: z.string().optional(),
 });
 
 export type ExternalMCPConfig = z.infer<typeof ExternalMCPConfigSchema>;

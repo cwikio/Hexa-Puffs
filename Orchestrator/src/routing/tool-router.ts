@@ -226,6 +226,15 @@ export class ToolRouter {
   }
 
   /**
+   * Unregister an MCP client (used by hot-reload to remove external MCPs).
+   * Call discoverTools() afterwards to rebuild routes.
+   */
+  unregisterMCP(name: string): void {
+    this.mcpClients.delete(name);
+    this.logger.debug(`Unregistered MCP: ${name}`);
+  }
+
+  /**
    * Discover tools from all registered MCPs and build routing table
    */
   async discoverTools(): Promise<void> {
