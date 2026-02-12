@@ -5,20 +5,21 @@
 
 
 def test_get_feed_posts_returns_posts(mock_client):
+    # linkedin-api get_feed_posts returns: author_name, author_profile, old, content, url
     mock_client.get_feed_posts.return_value = [
         {
             "author_name": "John Doe",
-            "commentary": "Great day for coding!",
-            "num_likes": 42,
-            "num_comments": 5,
-            "urn": "urn:li:activity:123",
+            "content": "Great day for coding!",
+            "author_profile": "https://linkedin.com/in/john-doe",
+            "old": "2h",
+            "url": "https://linkedin.com/feed/update/urn:li:activity:123",
         },
         {
-            "actor_name": "Jane Smith",
-            "text": "Just shipped a new feature.",
-            "num_likes": 100,
-            "num_comments": 12,
-            "activityUrn": "urn:li:activity:456",
+            "author_name": "Jane Smith",
+            "content": "Just shipped a new feature.",
+            "author_profile": "https://linkedin.com/in/jane-smith",
+            "old": "5h",
+            "url": "https://linkedin.com/feed/update/urn:li:activity:456",
         },
     ]
 
@@ -30,7 +31,8 @@ def test_get_feed_posts_returns_posts(mock_client):
     assert result["data"]["count"] == 2
     assert result["data"]["posts"][0]["author"] == "John Doe"
     assert result["data"]["posts"][0]["text"] == "Great day for coding!"
-    assert result["data"]["posts"][0]["numLikes"] == 42
+    assert result["data"]["posts"][0]["age"] == "2h"
+    assert result["data"]["posts"][0]["url"] == "https://linkedin.com/feed/update/urn:li:activity:123"
     assert result["data"]["posts"][1]["author"] == "Jane Smith"
 
 
@@ -49,7 +51,7 @@ def test_get_feed_posts_empty(mock_client):
 def test_get_feed_posts_truncates_long_text(mock_client):
     long_text = "x" * 1000
     mock_client.get_feed_posts.return_value = [
-        {"commentary": long_text, "author_name": "Test"},
+        {"content": long_text, "author_name": "Test"},
     ]
 
     from src.tools.posts import handle_get_feed_posts

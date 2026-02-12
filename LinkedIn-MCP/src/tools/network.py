@@ -17,8 +17,14 @@ def handle_get_connections(limit: int = 50) -> dict[str, Any]:
         api = linkedin_client.get_client()
         # get_profile_connections needs the user's own URN ID
         own_profile = api.get_user_profile()
-        urn_id = own_profile.get("miniProfile", {}).get("entityUrn", "").split(":")[-1]
+        logger.debug("get_user_profile() keys: %s", list(own_profile.keys()) if own_profile else "None")
+        # Import the robust extractor from profile module
+        from src.tools.profile import _extract_own_urn_id
+        urn_id = _extract_own_urn_id(own_profile)
         if not urn_id:
+            logger.error("Could not extract URN ID from /me response. Keys: %s, miniProfile keys: %s",
+                         list(own_profile.keys()) if own_profile else "None",
+                         list(own_profile.get("miniProfile", {}).keys()) if isinstance(own_profile.get("miniProfile"), dict) else "N/A")
             return error_response("Could not determine own URN ID", "LINKEDIN_ERROR")
 
         raw = api.get_profile_connections(urn_id)

@@ -18,16 +18,17 @@ def handle_get_feed_posts(limit: int = 10) -> dict[str, Any]:
     try:
         api = linkedin_client.get_client()
         raw_posts = api.get_feed_posts(limit=limit)
+        # linkedin-api get_feed_posts returns: author_name, author_profile, old, content, url
         posts = []
         for post in raw_posts:
-            author = post.get("author_name") or post.get("actor_name", "Unknown")
-            text = post.get("commentary") or post.get("text", "")
+            author = post.get("author_name", "Unknown")
+            text = post.get("content", "")
             posts.append({
                 "author": author,
                 "text": text[:500] if text else "",
-                "numLikes": post.get("num_likes", 0),
-                "numComments": post.get("num_comments", 0),
-                "postUrn": post.get("urn") or post.get("activityUrn"),
+                "authorProfile": post.get("author_profile", ""),
+                "age": post.get("old", ""),
+                "url": post.get("url", ""),
             })
         return success_response({"posts": posts, "count": len(posts)})
     except Exception as e:

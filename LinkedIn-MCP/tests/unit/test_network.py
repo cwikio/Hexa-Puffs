@@ -37,6 +37,23 @@ def test_get_connections_returns_list(mock_client):
     mock_client.get_profile_connections.assert_called_once_with("abc123")
 
 
+def test_get_connections_flat_me_response(mock_client):
+    """get_user_profile returns flat response with entityUrn at top level."""
+    mock_client.get_user_profile.return_value = {
+        "entityUrn": "urn:li:member:flat123"
+    }
+    mock_client.get_profile_connections.return_value = [
+        {"public_id": "u1", "firstName": "User", "lastName": "One"}
+    ]
+
+    from src.tools.network import handle_get_connections
+
+    result = handle_get_connections()
+
+    assert result["success"] is True
+    mock_client.get_profile_connections.assert_called_once_with("flat123")
+
+
 def test_get_connections_respects_limit(mock_client):
     mock_client.get_user_profile.return_value = {
         "miniProfile": {"entityUrn": "urn:li:fs_miniProfile:abc123"}
@@ -55,6 +72,17 @@ def test_get_connections_respects_limit(mock_client):
 
 def test_get_connections_no_urn_id(mock_client):
     mock_client.get_user_profile.return_value = {"miniProfile": {}}
+
+    from src.tools.network import handle_get_connections
+
+    result = handle_get_connections()
+
+    assert result["success"] is False
+    assert result["errorCode"] == "LINKEDIN_ERROR"
+
+
+def test_get_connections_empty_response(mock_client):
+    mock_client.get_user_profile.return_value = {}
 
     from src.tools.network import handle_get_connections
 

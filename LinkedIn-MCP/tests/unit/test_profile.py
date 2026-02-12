@@ -80,7 +80,11 @@ def test_get_profile_trims_internal_fields(mock_client):
     assert "versionTag" not in result["data"]
 
 
+# --- get_own_profile ---
+
+
 def test_get_own_profile_success(mock_client):
+    """Standard Voyager response with miniProfile.publicIdentifier."""
     mock_client.get_user_profile.return_value = {
         "miniProfile": {"publicIdentifier": "my-profile-id"}
     }
@@ -103,6 +107,49 @@ def test_get_own_profile_success(mock_client):
     mock_client.get_profile.assert_called_once_with("my-profile-id")
 
 
+def test_get_own_profile_flat_response(mock_client):
+    """Flat /me response without miniProfile nesting."""
+    mock_client.get_user_profile.return_value = {
+        "publicIdentifier": "flat-profile-id",
+        "firstName": "Test",
+    }
+    mock_client.get_profile.return_value = {
+        "public_id": "flat-profile-id",
+        "firstName": "Test",
+        "lastName": "User",
+        "experience": [],
+        "education": [],
+    }
+
+    from src.tools.profile import handle_get_own_profile
+
+    result = handle_get_own_profile()
+
+    assert result["success"] is True
+    mock_client.get_profile.assert_called_once_with("flat-profile-id")
+
+
+def test_get_own_profile_vanity_name_fallback(mock_client):
+    """Response with vanityName instead of publicIdentifier."""
+    mock_client.get_user_profile.return_value = {
+        "vanityName": "vanity-id",
+    }
+    mock_client.get_profile.return_value = {
+        "public_id": "vanity-id",
+        "firstName": "Vanity",
+        "lastName": "User",
+        "experience": [],
+        "education": [],
+    }
+
+    from src.tools.profile import handle_get_own_profile
+
+    result = handle_get_own_profile()
+
+    assert result["success"] is True
+    mock_client.get_profile.assert_called_once_with("vanity-id")
+
+
 def test_get_own_profile_no_public_id(mock_client):
     mock_client.get_user_profile.return_value = {"miniProfile": {}}
 
@@ -112,3 +159,51 @@ def test_get_own_profile_no_public_id(mock_client):
 
     assert result["success"] is False
     assert "public ID" in result["error"]
+
+
+def test_get_own_profile_empty_response(mock_client):
+    mock_client.get_user_profile.return_value = {}
+
+    from src.tools.profile import handle_get_own_profile
+
+    result = handle_get_own_profile()
+
+    assert result["success"] is False
+
+
+# --- _extract_own_urn_id ---
+
+
+def test_extract_own_urn_id_from_mini_profile():
+    from src.tools.profile import _extract_own_urn_id
+
+    me = {"miniProfile": {"entityUrn": "urn:li:fs_miniProfile:ACoAABxyz123"}}
+    assert _extract_own_urn_id(me) == "ACoAABxyz123"
+
+
+def test_extract_own_urn_id_from_flat_entity_urn():
+    from src.tools.profile import _extract_own_urn_id
+
+    me = {"entityUrn": "urn:li:member:12345"}
+    assert _extract_own_urn_id(me) == "12345"
+
+
+def test_extract_own_urn_id_from_object_urn():
+    from src.tools.profile import _extract_own_urn_id
+
+    me = {"objectUrn": "urn:li:member:67890"}
+    assert _extract_own_urn_id(me) == "67890"
+
+
+def test_extract_own_urn_id_from_plain_id():
+    from src.tools.profile import _extract_own_urn_id
+
+    me = {"plainId": 42}
+    assert _extract_own_urn_id(me) == "42"
+
+
+def test_extract_own_urn_id_none_when_empty():
+    from src.tools.profile import _extract_own_urn_id
+
+    assert _extract_own_urn_id({}) is None
+    assert _extract_own_urn_id({"miniProfile": {}}) is None

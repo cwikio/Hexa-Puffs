@@ -22,13 +22,14 @@ def handle_search_people(
             keywords=keywords,
             limit=limit,
         )
+        # linkedin-api search_people returns: urn_id, distance, jobtitle, location, name
         people = [
             {
-                "publicId": p.get("public_id"),
                 "name": p.get("name"),
-                "headline": p.get("headline"),
-                "location": p.get("location"),
+                "jobTitle": p.get("jobtitle", ""),
+                "location": p.get("location", ""),
                 "urnId": p.get("urn_id"),
+                "distance": p.get("distance", ""),
             }
             for p in results
         ]
@@ -46,11 +47,11 @@ def handle_search_companies(
     try:
         api = linkedin_client.get_client()
         results = api.search_companies(keywords=keywords)
+        # linkedin-api search_companies returns: urn_id, name, headline, subline
         companies = []
         for c in results[:limit]:
             companies.append({
                 "name": c.get("name"),
-                "universalName": c.get("universal_name") or c.get("universalName"),
                 "headline": c.get("headline", ""),
                 "subline": c.get("subline", ""),
                 "urnId": c.get("urn_id"),

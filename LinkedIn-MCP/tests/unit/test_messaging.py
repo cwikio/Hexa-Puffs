@@ -5,6 +5,7 @@
 
 
 def test_get_conversations_returns_threads(mock_client):
+    """Test with list response (legacy format)."""
     mock_client.get_conversations.return_value = [
         {
             "entityUrn": "urn:li:fs_conversation:123",
@@ -39,6 +40,29 @@ def test_get_conversations_returns_threads(mock_client):
     assert conv["unreadCount"] == 1
 
 
+def test_get_conversations_dict_response(mock_client):
+    """Test with dict response containing 'elements' key (Voyager format)."""
+    mock_client.get_conversations.return_value = {
+        "elements": [
+            {
+                "entityUrn": "urn:li:fs_conversation:456",
+                "participants": [],
+                "lastMessage": {"body": "Hello"},
+                "unreadCount": 0,
+            },
+        ],
+        "paging": {"count": 20, "start": 0, "total": 1},
+    }
+
+    from src.tools.messaging import handle_get_conversations
+
+    result = handle_get_conversations()
+
+    assert result["success"] is True
+    assert result["data"]["count"] == 1
+    assert result["data"]["conversations"][0]["conversationId"] == "456"
+
+
 def test_get_conversations_empty_inbox(mock_client):
     mock_client.get_conversations.return_value = []
 
@@ -50,8 +74,18 @@ def test_get_conversations_empty_inbox(mock_client):
     assert result["data"]["count"] == 0
 
 
+def test_get_conversations_empty_dict_response(mock_client):
+    mock_client.get_conversations.return_value = {"elements": []}
+
+    from src.tools.messaging import handle_get_conversations
+
+    result = handle_get_conversations()
+
+    assert result["success"] is True
+    assert result["data"]["count"] == 0
+
+
 def test_get_conversations_respects_limit(mock_client):
-    # Return more conversations than the limit
     mock_client.get_conversations.return_value = [
         {
             "entityUrn": f"urn:li:fs_conversation:{i}",
@@ -140,6 +174,21 @@ def test_send_message_name_not_found(mock_client):
     from src.tools.messaging import handle_send_message
 
     result = handle_send_message("Hi!", recipients=["Nobody McFakename"])
+
+    assert result["success"] is False
+    assert result["errorCode"] == "RECIPIENT_NOT_FOUND"
+    mock_client.send_message.assert_not_called()
+
+
+def test_send_message_name_resolved_but_no_urn(mock_client):
+    """If search finds a person but urn_id is None, still return error."""
+    mock_client.search_people.return_value = [
+        {"urn_id": None, "name": "Ghost User"}
+    ]
+
+    from src.tools.messaging import handle_send_message
+
+    result = handle_send_message("Hi!", recipients=["Ghost User"])
 
     assert result["success"] is False
     assert result["errorCode"] == "RECIPIENT_NOT_FOUND"

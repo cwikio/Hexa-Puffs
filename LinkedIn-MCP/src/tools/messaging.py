@@ -17,8 +17,16 @@ def handle_get_conversations(limit: int = 20) -> dict[str, Any]:
         api = linkedin_client.get_client()
         raw = api.get_conversations()
 
+        # get_conversations returns res.json() — may be a dict with "elements" or a list
+        if isinstance(raw, dict):
+            conv_list = raw.get("elements", [])
+        elif isinstance(raw, list):
+            conv_list = raw
+        else:
+            conv_list = []
+
         conversations = []
-        for conv in raw[:limit]:
+        for conv in conv_list[:limit]:
             participants = []
             for p in conv.get("participants", []):
                 mini = p.get("com.linkedin.voyager.messaging.MessagingMember", {})
@@ -64,11 +72,17 @@ def _resolve_recipient(api: object, recipient: str) -> str | None:
     # Looks like a name — search for the person
     logger.info("Resolving recipient name '%s' to URN ID via search...", recipient)
     results = api.search_people(keywords=recipient, limit=1)  # type: ignore[attr-defined]
+    logger.debug("search_people returned %d result(s) for '%s'", len(results) if results else 0, recipient)
     if results:
+        logger.debug("First result keys: %s", list(results[0].keys()) if results[0] else "empty")
         urn_id = results[0].get("urn_id")
         name = results[0].get("name", recipient)
-        logger.info("Resolved '%s' → '%s' (urn_id: %s)", recipient, name, urn_id)
+        if urn_id:
+            logger.info("Resolved '%s' → '%s' (urn_id: %s)", recipient, name, urn_id)
+        else:
+            logger.warning("Search found '%s' but urn_id is None/empty. Full result: %s", name, results[0])
         return urn_id
+    logger.warning("No search results for recipient '%s'", recipient)
     return None
 
 

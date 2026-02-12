@@ -5,20 +5,21 @@
 
 
 def test_search_people_returns_results(mock_client):
+    # linkedin-api search_people returns: urn_id, distance, jobtitle, location, name
     mock_client.search_people.return_value = [
         {
-            "public_id": "john-doe",
-            "name": "John Doe",
-            "headline": "Engineer",
-            "location": "NYC",
             "urn_id": "abc123",
+            "name": "John Doe",
+            "jobtitle": "Engineer",
+            "location": "NYC",
+            "distance": "F",
         },
         {
-            "public_id": "jane-smith",
-            "name": "Jane Smith",
-            "headline": "Designer",
-            "location": "LA",
             "urn_id": "def456",
+            "name": "Jane Smith",
+            "jobtitle": "Designer",
+            "location": "LA",
+            "distance": "S",
         },
     ]
 
@@ -28,7 +29,10 @@ def test_search_people_returns_results(mock_client):
 
     assert result["success"] is True
     assert result["data"]["count"] == 2
-    assert result["data"]["results"][0]["publicId"] == "john-doe"
+    assert result["data"]["results"][0]["urnId"] == "abc123"
+    assert result["data"]["results"][0]["name"] == "John Doe"
+    assert result["data"]["results"][0]["jobTitle"] == "Engineer"
+    assert result["data"]["results"][0]["location"] == "NYC"
     assert result["data"]["results"][1]["name"] == "Jane Smith"
 
 
@@ -69,17 +73,16 @@ def test_search_people_handles_error(mock_client):
 
 
 def test_search_companies_returns_results(mock_client):
+    # linkedin-api search_companies returns: urn_id, name, headline, subline
     mock_client.search_companies.return_value = [
         {
             "name": "Acme Corp",
-            "universal_name": "acme-corp",
             "headline": "Building the future",
             "subline": "Technology",
             "urn_id": "comp123",
         },
         {
             "name": "Widget Inc",
-            "universalName": "widget-inc",
             "headline": "Widgets for all",
             "subline": "Manufacturing",
             "urn_id": "comp456",
@@ -93,7 +96,8 @@ def test_search_companies_returns_results(mock_client):
     assert result["success"] is True
     assert result["data"]["count"] == 2
     assert result["data"]["results"][0]["name"] == "Acme Corp"
-    assert result["data"]["results"][0]["universalName"] == "acme-corp"
+    assert result["data"]["results"][0]["headline"] == "Building the future"
+    assert result["data"]["results"][0]["urnId"] == "comp123"
     assert result["data"]["results"][1]["name"] == "Widget Inc"
 
 
