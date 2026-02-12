@@ -161,7 +161,7 @@ export class SlashCommandHandler {
       for (const [name, info] of mcpEntries) {
         const label = MCP_DISPLAY_NAMES[name] ?? name;
         const state = info.available ? 'up' : 'DOWN';
-        const transport = info.port ? `${info.type}:${info.port}` : info.type;
+        const transport = info.type;
         output += `  ${label}: ${state} (${transport})\n`;
       }
     }

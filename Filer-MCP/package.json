@@ -36,8 +36,6 @@
   },
   "annabelle": {
     "mcpName": "filer",
-    "transport": "http",
-    "httpPort": 8004,
     "sensitive": true
   }
 }

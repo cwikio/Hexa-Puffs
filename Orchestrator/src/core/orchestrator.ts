@@ -1,32 +1,10 @@
 import { getConfig, type Config, type AgentDefinition, type ChannelBinding, getDefaultAgent, loadAgentsFromFile } from '../config/index.js';
 import { guardianConfig } from '../config/guardian.js';
-import { GuardianMCPClient } from '../mcp-clients/guardian.js';
 import { StdioGuardianClient } from '../mcp-clients/stdio-guardian.js';
 import { GuardedMCPClient } from '../mcp-clients/guarded-client.js';
-import { TelegramMCPClient } from '../mcp-clients/telegram.js';
-import { OnePasswordMCPClient } from '../mcp-clients/onepassword.js';
-import {
-  MemoryMCPClient,
-  type FactCategory,
-  type StoreFactResult,
-  type ListFactsResult,
-  type DeleteFactResult,
-  type StoreConversationResult,
-  type SearchConversationsResult,
-  type GetProfileResult,
-  type UpdateProfileResult,
-  type RetrieveMemoriesResult,
-  type GetMemoryStatsResult,
-  type ExportMemoryResult,
-  type ImportMemoryResult,
-} from '../mcp-clients/memory.js';
-import { FilerMCPClient } from '../mcp-clients/filer.js';
-import { HttpMCPClient } from '../mcp-clients/http-client.js';
 import { StdioMCPClient } from '../mcp-clients/stdio-client.js';
 import type { IMCPClient, ToolCallResult } from '../mcp-clients/types.js';
-import { SecurityCoordinator } from '../routing/security.js';
 import { SessionManager } from '../agents/sessions.js';
-import { ToolExecutor, type ToolRegistry } from '../routing/tool-executor.js';
 import { ToolRouter } from '../routing/tool-router.js';
 import { ChannelManager } from '../channels/channel-poller.js';
 import { GenericChannelAdapter } from '../channels/adapters/generic-channel-adapter.js';
@@ -41,8 +19,7 @@ import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 export interface MCPServerStatus {
   available: boolean;
   required: boolean;
-  type: 'stdio' | 'http';
-  port?: number;
+  type: 'stdio';
 }
 
 export interface OrchestratorStatus {
@@ -59,22 +36,11 @@ export class Orchestrator {
   private logger: Logger;
   private startTime: Date;
 
-  // MCP Clients (HTTP mode — legacy)
-  private guardian: GuardianMCPClient | null = null;
-  private telegram: TelegramMCPClient | null = null;
-  private onepassword: OnePasswordMCPClient | null = null;
-  private memory: MemoryMCPClient | null = null;
-  private filer: FilerMCPClient | null = null;
-
-  // MCP Clients (stdio mode)
+  // MCP Clients (all stdio)
   private stdioClients: Map<string, StdioMCPClient> = new Map();
-  // HTTP MCP clients active in stdio mode (auto-discovered)
-  private httpClients: Map<string, HttpMCPClient> = new Map();
 
   // Core components
-  private security: SecurityCoordinator | null = null;
   private sessions: SessionManager;
-  private tools: ToolExecutor | null = null;
   private toolRouter: ToolRouter;
 
   // Channel polling & agent dispatch (multi-agent)
@@ -91,7 +57,6 @@ export class Orchestrator {
   private haltManager: HaltManager;
 
   private initialized: boolean = false;
-  private connectionMode: 'stdio' | 'http';
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly HEALTH_CHECK_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -99,17 +64,12 @@ export class Orchestrator {
     this.config = getConfig();
     this.logger = logger.child('orchestrator');
     this.startTime = new Date();
-    this.connectionMode = this.config.mcpConnectionMode;
     this.sessions = new SessionManager();
     this.toolRouter = new ToolRouter({ alwaysPrefix: true, separator: '_' });
     this.haltManager = getHaltManager();
     this.slashCommands = new SlashCommandHandler(this.toolRouter, this);
 
-    if (this.connectionMode === 'stdio') {
-      this.initializeStdioClients();
-    } else {
-      this.initializeHttpClients();
-    }
+    this.initializeStdioClients();
   }
 
   // Guardian scanner adapter (stdio mode)
@@ -147,21 +107,6 @@ export class Orchestrator {
       const client = this.maybeGuard(name, raw);
       this.toolRouter.registerMCP(name, client);
     }
-
-    // Register HTTP-only MCPs (auto-discovered with transport: "http")
-    const httpConfigs = this.config.mcpServers;
-    if (httpConfigs) {
-      for (const [name, httpConfig] of Object.entries(httpConfigs)) {
-        // Skip if already registered as stdio
-        if (this.stdioClients.has(name)) continue;
-
-        const raw = new HttpMCPClient(name, httpConfig);
-        this.httpClients.set(name, raw);
-
-        const client = this.maybeGuard(name, raw);
-        this.toolRouter.registerMCP(name, client);
-      }
-    }
   }
 
   /**
@@ -185,59 +130,14 @@ export class Orchestrator {
     });
   }
 
-  private initializeHttpClients(): void {
-    this.logger.info('Initializing MCP clients in HTTP mode');
-
-    const httpConfigs = this.config.mcpServers;
-    if (!httpConfigs) {
-      this.logger.warn('No HTTP MCP configs found');
-      return;
-    }
-
-    // Initialize HTTP-based MCP clients
-    this.guardian = new GuardianMCPClient(httpConfigs.guardian, this.config.security);
-    this.telegram = new TelegramMCPClient(httpConfigs.telegram);
-    this.onepassword = new OnePasswordMCPClient(httpConfigs.onepassword);
-    this.memory = new MemoryMCPClient(httpConfigs.memory);
-    this.filer = new FilerMCPClient(httpConfigs.filer);
-
-    // Initialize security coordinator (requires Guardian)
-    this.security = new SecurityCoordinator(
-      this.guardian,
-      this.config.security.scanAllInputs,
-      this.config.security.failMode
-    );
-
-    // Initialize tool executor
-    const toolRegistry: ToolRegistry = {
-      telegram: this.telegram,
-      onepassword: this.onepassword,
-      filer: this.filer,
-    };
-    this.tools = new ToolExecutor(
-      toolRegistry,
-      this.security,
-      this.config.security.sensitiveTools
-    );
-
-    // Register with tool router
-    this.toolRouter.registerMCP('telegram', this.telegram);
-    this.toolRouter.registerMCP('memory', this.memory);
-    this.toolRouter.registerMCP('filer', this.filer);
-  }
-
   async initialize(): Promise<void> {
     if (this.initialized) {
       return;
     }
 
-    this.logger.info(`Initializing Orchestrator in ${this.connectionMode} mode...`);
+    this.logger.info('Initializing Orchestrator (stdio mode)...');
 
-    if (this.connectionMode === 'stdio') {
-      await this.initializeStdioMode();
-    } else {
-      await this.initializeHttpMode();
-    }
+    await this.initializeStdioMode();
 
     // Discover tools from all MCPs for passthrough routing
     await this.toolRouter.discoverTools();
@@ -246,9 +146,7 @@ export class Orchestrator {
     this.logger.info('Orchestrator initialized successfully');
 
     // Start health monitoring for stdio clients
-    if (this.connectionMode === 'stdio') {
-      this.startHealthMonitoring();
-    }
+    this.startHealthMonitoring();
   }
 
   /**
@@ -274,12 +172,6 @@ export class Orchestrator {
       initPromises.push(client.initialize());
     }
 
-    // Initialize HTTP clients (auto-discovered, run as independent services)
-    for (const [name, client] of this.httpClients) {
-      this.logger.info(`Connecting to ${name} MCP via HTTP...`);
-      initPromises.push(client.initialize());
-    }
-
     await Promise.all(initPromises);
 
     // Log summary
@@ -291,59 +183,6 @@ export class Orchestrator {
     for (const [name, client] of this.stdioClients) {
       this.logger.info(
         `  ${name}: ${client.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (stdio)`
-      );
-    }
-
-    // Log HTTP client status
-    const httpConfigs = this.config.mcpServers;
-    for (const [name, client] of this.httpClients) {
-      const url = httpConfigs?.[name]?.url ?? 'unknown';
-      this.logger.info(
-        `  ${name}: ${client.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (http: ${url})`
-      );
-    }
-  }
-
-  private async initializeHttpMode(): Promise<void> {
-    // Initialize all HTTP MCP clients
-    const initPromises: Promise<void>[] = [];
-    if (this.guardian) initPromises.push(this.guardian.initialize());
-    if (this.telegram) initPromises.push(this.telegram.initialize());
-    if (this.onepassword) initPromises.push(this.onepassword.initialize());
-    if (this.memory) initPromises.push(this.memory.initialize());
-    if (this.filer) initPromises.push(this.filer.initialize());
-    await Promise.all(initPromises);
-
-    // Log summary
-    const green = '\x1b[32m';
-    const red = '\x1b[31m';
-    const reset = '\x1b[0m';
-    const httpConfigs = this.config.mcpServers;
-
-    this.logger.info('MCP Services Status (HTTP mode):');
-    if (this.guardian && httpConfigs) {
-      this.logger.info(
-        `  Guardian:    ${this.guardian.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (${httpConfigs.guardian.url})`
-      );
-    }
-    if (this.telegram && httpConfigs) {
-      this.logger.info(
-        `  Telegram:    ${this.telegram.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (${httpConfigs.telegram.url})`
-      );
-    }
-    if (this.onepassword && httpConfigs) {
-      this.logger.info(
-        `  1Password:   ${this.onepassword.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (${httpConfigs.onepassword.url})`
-      );
-    }
-    if (this.memory && httpConfigs) {
-      this.logger.info(
-        `  Memory:      ${this.memory.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (${httpConfigs.memory.url})`
-      );
-    }
-    if (this.filer && httpConfigs) {
-      this.logger.info(
-        `  Filer:       ${this.filer.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (${httpConfigs.filer.url})`
       );
     }
   }
@@ -726,118 +565,17 @@ export class Orchestrator {
     }
   }
 
-  // ─── HTTP Mode Helpers ────────────────────────────────────────────
-
-  /**
-   * Helper to assert we're in HTTP mode for methods that require direct MCP client access.
-   * In stdio mode, use the tool router instead.
-   */
-  private assertHttpMode(operation: string): void {
-    if (this.connectionMode !== 'http') {
-      throw new Error(
-        `Operation '${operation}' requires HTTP mode. In stdio mode, use the tool router for all tool calls.`
-      );
-    }
-  }
-
-  async sendTelegram(message: string, chatId?: string): Promise<{ success: boolean; error?: string }> {
-    this.assertHttpMode('sendTelegram');
-    // Security scan
-    const scanResult = await this.security!.scanInput(message);
-    this.security!.assertAllowed(scanResult, 'telegram');
-
-    return this.tools!.executeTelegram(message, chatId);
-  }
-
-  async listTelegramChats(limit?: number): Promise<{ success: boolean; chats?: unknown; error?: string }> {
-    this.assertHttpMode('listTelegramChats');
-    return this.tools!.listTelegramChats(limit);
-  }
-
-  async getTelegramMessages(
-    chatId: string,
-    limit?: number
-  ): Promise<{ success: boolean; messages?: unknown; error?: string }> {
-    this.assertHttpMode('getTelegramMessages');
-    return this.tools!.getTelegramMessages(chatId, limit);
-  }
-
-  async getPassword(itemName: string, vault?: string): Promise<{ found: boolean; item?: unknown; error?: string }> {
-    this.assertHttpMode('getPassword');
-    // Security scan
-    const scanResult = await this.security!.scanInput(itemName);
-    this.security!.assertAllowed(scanResult, 'password');
-
-    return this.tools!.executePassword(itemName, vault);
-  }
-
-  private extractPort(url: string): number | undefined {
-    try {
-      return new URL(url).port ? parseInt(new URL(url).port, 10) : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
   getStatus(): OrchestratorStatus {
     const uptime = Date.now() - this.startTime.getTime();
-    const httpConfigs = this.config.mcpServers;
 
     const mcpServers: Record<string, MCPServerStatus> = {};
-    let blockedCount = 0;
 
-    if (this.connectionMode === 'stdio') {
-      // Stdio MCPs
-      for (const [name, client] of this.stdioClients) {
-        mcpServers[name] = {
-          available: client.isAvailable,
-          required: client.isRequired,
-          type: 'stdio',
-        };
-      }
-
-      // HTTP MCPs (auto-discovered) — also active in stdio mode
-      for (const [name, client] of this.httpClients) {
-        mcpServers[name] = {
-          available: client.isAvailable,
-          required: client.isRequired,
-          type: 'http',
-          port: httpConfigs?.[name] ? this.extractPort(httpConfigs[name].url) : undefined,
-        };
-      }
-    } else {
-      // In HTTP mode, all MCPs have ports
-      mcpServers['guardian'] = {
-        available: this.guardian?.isAvailable ?? false,
-        required: this.guardian?.isRequired ?? false,
-        type: 'http',
-        port: httpConfigs?.guardian ? this.extractPort(httpConfigs.guardian.url) : undefined,
+    for (const [name, client] of this.stdioClients) {
+      mcpServers[name] = {
+        available: client.isAvailable,
+        required: client.isRequired,
+        type: 'stdio',
       };
-      mcpServers['memory'] = {
-        available: this.memory?.isAvailable ?? false,
-        required: this.memory?.isRequired ?? false,
-        type: 'http',
-        port: httpConfigs?.memory ? this.extractPort(httpConfigs.memory.url) : undefined,
-      };
-      mcpServers['filer'] = {
-        available: this.filer?.isAvailable ?? false,
-        required: this.filer?.isRequired ?? false,
-        type: 'http',
-        port: httpConfigs?.filer ? this.extractPort(httpConfigs.filer.url) : undefined,
-      };
-
-      // Include tool-based status (searcher, gmail, etc.)
-      const toolStatus = this.tools?.getToolStatus() ?? {};
-      for (const [name, info] of Object.entries(toolStatus)) {
-        const configEntry = httpConfigs?.[name as keyof typeof httpConfigs];
-        mcpServers[name] = {
-          ...info,
-          type: 'http',
-          port: configEntry ? this.extractPort(configEntry.url) : undefined,
-        };
-      }
-
-      blockedCount = this.security?.getBlockedCount() ?? 0;
     }
 
     return {
@@ -847,17 +585,13 @@ export class Orchestrator {
       agents: this.agentManager?.getStatus() ?? [],
       sessions: this.sessions.getStats(),
       security: {
-        blockedCount,
+        blockedCount: 0,
       },
     };
   }
 
   getAvailableTools(): string[] {
-    if (this.connectionMode === 'stdio') {
-      // In stdio mode, get tools from tool router
-      return this.toolRouter.getToolDefinitions().map((t) => t.name);
-    }
-    return this.tools?.getAvailableTools() ?? [];
+    return this.toolRouter.getToolDefinitions().map((t) => t.name);
   }
 
   /**
@@ -865,6 +599,33 @@ export class Orchestrator {
    */
   getToolRouter(): ToolRouter {
     return this.toolRouter;
+  }
+
+  /**
+   * Run health checks on all stdio MCP clients.
+   * Returns per-MCP status with internal/external classification.
+   */
+  async checkMCPHealth(scope: 'all' | 'internal' | 'external' = 'all'): Promise<
+    Array<{ name: string; available: boolean; healthy: boolean; type: 'internal' | 'external' }>
+  > {
+    const externalNames = new Set(this.config.externalMCPNames ?? []);
+    const results: Array<{ name: string; available: boolean; healthy: boolean; type: 'internal' | 'external' }> = [];
+
+    for (const [name, client] of this.stdioClients) {
+      const isExternal = externalNames.has(name);
+      if (scope === 'internal' && isExternal) continue;
+      if (scope === 'external' && !isExternal) continue;
+
+      const healthy = await client.healthCheck();
+      results.push({
+        name,
+        available: client.isAvailable,
+        healthy,
+        type: isExternal ? 'external' : 'internal',
+      });
+    }
+
+    return results;
   }
 
   /**
@@ -876,208 +637,6 @@ export class Orchestrator {
     const guardianClient = this.stdioClients.get('guardian');
     if (!guardianClient?.isAvailable) return null;
     return guardianClient.callTool({ name: toolName, arguments: args });
-  }
-
-  // Memory operations - Facts
-  async storeFact(
-    fact: string,
-    category: FactCategory,
-    agentId: string = 'main',
-    source?: string
-  ): Promise<StoreFactResult> {
-    this.assertHttpMode('storeFact');
-    // Security scan input
-    const scanResult = await this.security!.scanInput(fact);
-    this.security!.assertAllowed(scanResult, 'store_fact');
-
-    return this.memory!.storeFact(fact, category, agentId, source);
-  }
-
-  async listFacts(
-    agentId: string = 'main',
-    category?: FactCategory,
-    limit: number = 50
-  ): Promise<ListFactsResult> {
-    this.assertHttpMode('listFacts');
-    return this.memory!.listFacts(agentId, category, limit);
-  }
-
-  async deleteFact(factId: number): Promise<DeleteFactResult> {
-    this.assertHttpMode('deleteFact');
-    return this.memory!.deleteFact(factId);
-  }
-
-  // Memory operations - Conversations
-  async storeConversation(
-    userMessage: string,
-    agentResponse: string,
-    agentId: string = 'main',
-    sessionId?: string,
-    tags?: string[]
-  ): Promise<StoreConversationResult> {
-    this.assertHttpMode('storeConversation');
-    // Security scan input
-    const scanResult = await this.security!.scanInput(userMessage);
-    this.security!.assertAllowed(scanResult, 'store_conversation');
-
-    return this.memory!.storeConversation(userMessage, agentResponse, agentId, sessionId, tags);
-  }
-
-  async searchConversations(
-    query: string,
-    agentId: string = 'main',
-    limit: number = 10,
-    dateFrom?: string,
-    dateTo?: string
-  ): Promise<SearchConversationsResult> {
-    this.assertHttpMode('searchConversations');
-    return this.memory!.searchConversations(query, agentId, limit, dateFrom, dateTo);
-  }
-
-  // Memory operations - Profile
-  async getProfile(agentId: string = 'main'): Promise<GetProfileResult> {
-    this.assertHttpMode('getProfile');
-    return this.memory!.getProfile(agentId);
-  }
-
-  async updateProfile(
-    updates: Record<string, unknown>,
-    agentId: string = 'main',
-    reason?: string
-  ): Promise<UpdateProfileResult> {
-    this.assertHttpMode('updateProfile');
-    // Security scan input
-    const scanResult = await this.security!.scanInput(JSON.stringify(updates));
-    this.security!.assertAllowed(scanResult, 'update_profile');
-
-    return this.memory!.updateProfile(updates, agentId, reason);
-  }
-
-  // Memory operations - Retrieval
-  async retrieveMemories(
-    query: string,
-    agentId: string = 'main',
-    limit: number = 5,
-    includeConversations: boolean = true
-  ): Promise<RetrieveMemoriesResult> {
-    this.assertHttpMode('retrieveMemories');
-    return this.memory!.retrieveMemories(query, agentId, limit, includeConversations);
-  }
-
-  // Memory operations - Stats
-  async getMemoryStats(agentId: string = 'main'): Promise<GetMemoryStatsResult> {
-    this.assertHttpMode('getMemoryStats');
-    return this.memory!.getMemoryStats(agentId);
-  }
-
-  // Memory operations - Export/Import
-  async exportMemory(
-    agentId: string = 'main',
-    format: 'markdown' | 'json' = 'markdown',
-    includeConversations: boolean = true
-  ): Promise<ExportMemoryResult> {
-    this.assertHttpMode('exportMemory');
-    return this.memory!.exportMemory(agentId, format, includeConversations);
-  }
-
-  async importMemory(filePath: string, agentId: string = 'main'): Promise<ImportMemoryResult> {
-    this.assertHttpMode('importMemory');
-    return this.memory!.importMemory(filePath, agentId);
-  }
-
-  // Filer operations - File operations
-  async createFile(path: string, content: string, overwrite: boolean = false): Promise<unknown> {
-    this.assertHttpMode('createFile');
-    // Security scan the content
-    const scanResult = await this.security!.scanInput(content);
-    this.security!.assertAllowed(scanResult, 'create_file');
-
-    return this.tools!.executeFiler('create_file', { path, content, overwrite });
-  }
-
-  async readFile(path: string): Promise<unknown> {
-    this.assertHttpMode('readFile');
-    return this.tools!.executeFiler('read_file', { path });
-  }
-
-  async listFiles(path: string = '.', recursive: boolean = false): Promise<unknown> {
-    this.assertHttpMode('listFiles');
-    return this.tools!.executeFiler('list_files', { path, recursive });
-  }
-
-  async updateFile(path: string, content: string, createBackup: boolean = true): Promise<unknown> {
-    this.assertHttpMode('updateFile');
-    // Security scan the content
-    const scanResult = await this.security!.scanInput(content);
-    this.security!.assertAllowed(scanResult, 'update_file');
-
-    return this.tools!.executeFiler('update_file', { path, content, create_backup: createBackup });
-  }
-
-  async deleteFile(path: string): Promise<unknown> {
-    this.assertHttpMode('deleteFile');
-    return this.tools!.executeFiler('delete_file', { path });
-  }
-
-  async moveFile(source: string, destination: string): Promise<unknown> {
-    this.assertHttpMode('moveFile');
-    return this.tools!.executeFiler('move_file', { source, destination });
-  }
-
-  async copyFile(source: string, destination: string): Promise<unknown> {
-    this.assertHttpMode('copyFile');
-    return this.tools!.executeFiler('copy_file', { source, destination });
-  }
-
-  async searchFiles(
-    query: string,
-    searchIn: 'workspace' | 'granted' | 'all' = 'workspace',
-    searchType: 'filename' | 'content' = 'filename',
-    fileTypes?: string[]
-  ): Promise<unknown> {
-    this.assertHttpMode('searchFiles');
-    return this.tools!.executeFiler('search_files', {
-      query,
-      search_in: searchIn,
-      search_type: searchType,
-      file_types: fileTypes,
-    });
-  }
-
-  // Filer operations - Grant operations
-  async checkGrant(path: string): Promise<unknown> {
-    this.assertHttpMode('checkGrant');
-    return this.tools!.executeFiler('check_grant', { path });
-  }
-
-  async requestGrant(path: string, permission: 'read' | 'read-write' | 'write', reason: string): Promise<unknown> {
-    this.assertHttpMode('requestGrant');
-    return this.tools!.executeFiler('request_grant', { path, permission, reason });
-  }
-
-  async listGrants(includeExpired: boolean = false): Promise<unknown> {
-    this.assertHttpMode('listGrants');
-    return this.tools!.executeFiler('list_grants', { include_expired: includeExpired });
-  }
-
-  // Filer operations - Info operations
-  async getWorkspaceInfo(): Promise<unknown> {
-    this.assertHttpMode('getWorkspaceInfo');
-    return this.tools!.executeFiler('get_workspace_info', {});
-  }
-
-  async getAuditLog(
-    limit: number = 50,
-    operation?: string,
-    startDate?: string,
-    endDate?: string
-  ): Promise<unknown> {
-    this.assertHttpMode('getAuditLog');
-    const args: Record<string, unknown> = { limit };
-    if (operation) args.operation = operation;
-    if (startDate) args.start_date = startDate;
-    if (endDate) args.end_date = endDate;
-    return this.tools!.executeFiler('get_audit_log', args);
   }
 
 }

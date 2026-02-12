@@ -1,7 +1,7 @@
 import { loadEnvSafely } from '@mcp/shared/Utils/env.js';
 loadEnvSafely(import.meta.url, 2);
 
-import { ConfigSchema, type Config, type StdioMCPServerConfig, type MCPServerConfig } from './schema.js';
+import { ConfigSchema, type Config, type StdioMCPServerConfig } from './schema.js';
 import { ConfigurationError } from '../utils/errors.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
@@ -12,6 +12,7 @@ import {
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scanForMCPs } from './scanner.js';
+import { loadExternalMCPs } from '@mcp/shared/Discovery/external-loader.js';
 
 // Get the MCPs root directory (parent of Orchestrator)
 const __filename = fileURLToPath(import.meta.url);
@@ -21,41 +22,38 @@ const __dirname = dirname(__filename);
 const mcpsRoot = resolve(__dirname, '../../../');
 
 export function loadConfig(): Config {
-  const mcpConnectionMode = getEnvString('MCP_CONNECTION_MODE', 'stdio') as 'stdio' | 'http';
+  const mcpConnectionMode = 'stdio' as const;
 
   // Auto-discover MCPs from sibling directories
   const discovered = scanForMCPs(mcpsRoot);
 
-  // Build stdio configs from discovered MCPs
+  // Build stdio configs from discovered MCPs (all MCPs are now stdio)
   const mcpServersStdio: Record<string, StdioMCPServerConfig> = {};
-  const mcpServersHttp: Record<string, MCPServerConfig> = {};
 
   for (const mcp of discovered) {
     const envPrefix = mcp.name.toUpperCase();
     const timeout = getEnvNumber(`${envPrefix}_MCP_TIMEOUT`, mcp.timeout);
 
-    if (mcp.transport === 'stdio') {
-      mcpServersStdio[mcp.name] = {
-        command: 'node',
-        args: [mcp.entryPoint],
-        cwd: mcp.dir,
-        timeout: timeout ?? mcp.timeout,
-        required: mcp.required,
-        sensitive: mcp.sensitive,
-      };
-    }
+    mcpServersStdio[mcp.name] = {
+      command: 'node',
+      args: [mcp.entryPoint],
+      cwd: mcp.dir,
+      timeout: timeout ?? mcp.timeout,
+      required: mcp.required,
+      sensitive: mcp.sensitive,
+    };
+  }
 
-    if (mcp.transport === 'http') {
-      const port = mcp.httpPort ?? 8000;
-      const envPort = getEnvNumber(`${envPrefix}_MCP_PORT`, port) ?? port;
-      const defaultUrl = `http://localhost:${envPort}`;
-      mcpServersHttp[mcp.name] = {
-        url: getEnvString(`${envPrefix}_MCP_URL`, defaultUrl) ?? defaultUrl,
-        timeout: timeout ?? mcp.timeout,
-        required: mcp.required,
-        sensitive: mcp.sensitive,
-      };
+  // Merge external MCPs from external-mcps.json in project root
+  const externalMCPs = loadExternalMCPs(resolve(mcpsRoot, 'external-mcps.json'));
+  const externalNames: string[] = [];
+  for (const [name, entry] of Object.entries(externalMCPs)) {
+    if (mcpServersStdio[name]) {
+      logger.warn('External MCP name conflicts with internal MCP — skipping', { name });
+      continue;
     }
+    mcpServersStdio[name] = entry;
+    externalNames.push(name);
   }
 
   const rawConfig = {
@@ -63,9 +61,8 @@ export function loadConfig(): Config {
     port: getEnvNumber('PORT', 8000),
     mcpConnectionMode,
 
-    // Auto-discovered MCP configs
+    // Auto-discovered MCP configs (all stdio)
     mcpServersStdio: Object.keys(mcpServersStdio).length > 0 ? mcpServersStdio : undefined,
-    mcpServers: Object.keys(mcpServersHttp).length > 0 ? mcpServersHttp : undefined,
 
     security: {
       scanAllInputs: getEnvBoolean('SCAN_ALL_INPUTS', true),
@@ -75,6 +72,9 @@ export function loadConfig(): Config {
         ...discovered
           .filter((mcp) => mcp.sensitive)
           .map((mcp) => `${mcp.name}_`),
+        ...externalNames
+          .filter((name) => externalMCPs[name]?.sensitive)
+          .map((name) => `${name}_`),
         'filer_create_file',
         'filer_update_file',
         'filer_read_file',
@@ -95,6 +95,9 @@ export function loadConfig(): Config {
     // Multi-agent config: loaded from file (default: agents.json in MCPs root)
     agentsConfigPath: process.env.AGENTS_CONFIG_PATH || resolve(mcpsRoot, 'agents.json'),
 
+    // Track which MCPs came from external-mcps.json
+    externalMCPNames: externalNames,
+
     // Auto-discovered channel MCPs
     channelMCPs: discovered
       .filter((mcp) => mcp.isChannel)
@@ -114,7 +117,7 @@ export function loadConfig(): Config {
   logger.info('Configuration loaded successfully', {
     mcpConnectionMode,
     stdioMCPs: Object.keys(mcpServersStdio),
-    httpMCPs: Object.keys(mcpServersHttp),
+    ...(externalNames.length > 0 ? { externalMCPs: externalNames } : {}),
   });
   return result.data;
 }
@@ -131,7 +134,6 @@ export function getConfig(): Config {
 
 export {
   type Config,
-  type MCPServerConfig,
   type StdioMCPServerConfig,
   type SecurityConfig,
   type ChannelPollingConfig,

@@ -3,7 +3,7 @@
 # Launch script for Annabelle MCP Stack
 #
 # MCPs are auto-discovered from package.json "annabelle" manifests.
-# HTTP MCPs are started by this script; stdio MCPs are spawned by Orchestrator.
+# All MCPs are stdio-only, spawned by Orchestrator at startup.
 #
 # Orchestrator spawns Thinker agent(s) via AgentManager (multi-agent mode).
 # Cost controls are enabled by default in agents.json.
@@ -36,10 +36,8 @@ if [ -z "$DISCOVERY" ]; then
   exit 1
 fi
 
-# Separate into HTTP and stdio MCPs
-HTTP_MCPS=""
+# All MCPs are stdio — spawned by Orchestrator
 STDIO_MCPS=""
-ALL_HTTP_PORTS=""
 
 while IFS='|' read -r name transport port dir sensitive; do
   # Check if disabled via env var (e.g. TELEGRAM_MCP_ENABLED=false)
@@ -47,24 +45,16 @@ while IFS='|' read -r name transport port dir sensitive; do
   env_var="${upper_name}_MCP_ENABLED"
   enabled=$(eval echo "\$$env_var")
   if [ "$enabled" = "false" ]; then
-    echo -e "  ${YELLOW}${name}$(printf '%*s' $((16 - ${#name})))${transport}$(printf '%*s' $((8 - ${#transport})))DISABLED (${env_var}=false)${RESET}"
+    echo -e "  ${YELLOW}${name}$(printf '%*s' $((16 - ${#name})))DISABLED (${env_var}=false)${RESET}"
     continue
   fi
 
-  if [ "$transport" = "http" ]; then
-    echo -e "  ${GREEN}${name}$(printf '%*s' $((16 - ${#name})))http :${port}$(printf '%*s' $((8 - ${#port})))← started by this script${RESET}"
-    HTTP_MCPS="${HTTP_MCPS}${name}|${port}|${dir}\n"
-    ALL_HTTP_PORTS="${ALL_HTTP_PORTS} ${port}"
-  else
-    echo -e "  ${BLUE}${name}$(printf '%*s' $((16 - ${#name})))stdio$(printf '%*s' 9)← spawned by Orchestrator${RESET}"
-    STDIO_MCPS="${STDIO_MCPS}${name}|${dir}\n"
-  fi
+  echo -e "  ${BLUE}${name}$(printf '%*s' $((16 - ${#name})))stdio$(printf '%*s' 9)← spawned by Orchestrator${RESET}"
+  STDIO_MCPS="${STDIO_MCPS}${name}|${dir}\n"
 done <<< "$DISCOVERY"
 
-HTTP_COUNT=$(echo -e "$HTTP_MCPS" | grep -c '|' 2>/dev/null || echo 0)
 STDIO_COUNT=$(echo -e "$STDIO_MCPS" | grep -c '|' 2>/dev/null || echo 0)
-TOTAL=$((HTTP_COUNT + STDIO_COUNT))
-echo -e "${BOLD}${CYAN}Found ${TOTAL} MCP(s): ${HTTP_COUNT} HTTP + ${STDIO_COUNT} stdio${RESET}\n"
+echo -e "${BOLD}${CYAN}Found ${STDIO_COUNT} MCP(s) (all stdio, spawned by Orchestrator)${RESET}\n"
 
 # ─── Cleanup ──────────────────────────────────────────────────────────────────
 echo -e "${YELLOW}Cleaning up existing processes...${RESET}"
@@ -74,14 +64,17 @@ lsof -ti:8006 | xargs kill -9 2>/dev/null  # Thinker
 lsof -ti:3000 | xargs kill -9 2>/dev/null  # Orchestrator's Inngest HTTP server
 lsof -ti:8288 | xargs kill -9 2>/dev/null  # Inngest Dev Server
 lsof -ti:8289 | xargs kill -9 2>/dev/null  # Orchestrator standalone Inngest
-# Discovered HTTP MCP ports
-for port in $ALL_HTTP_PORTS; do
-  lsof -ti:$port | xargs kill -9 2>/dev/null
-done
 sleep 2
 
 # Create log directory and initialize PID tracking
 mkdir -p ~/.annabelle/logs
+
+# Seed external MCPs config if it doesn't exist (lives in project root)
+EXTERNAL_MCPS="$SCRIPT_DIR/external-mcps.json"
+if [ ! -f "$EXTERNAL_MCPS" ]; then
+  echo '{}' > "$EXTERNAL_MCPS"
+  echo -e "${GREEN}✓ Created empty external MCPs config at $EXTERNAL_MCPS${RESET}"
+fi
 PID_FILE="$HOME/.annabelle/annabelle.pids"
 : > "$PID_FILE"
 
@@ -148,48 +141,6 @@ else
   echo -e "${YELLOW}⚠ Inngest Dev Server not responding (may still be starting)${RESET}"
 fi
 
-# ─── HTTP MCPs (auto-discovered) ─────────────────────────────────────────────
-# Track PIDs and names for summary
-declare -a HTTP_MCP_NAMES=()
-declare -a HTTP_MCP_PORTS=()
-declare -a HTTP_MCP_PIDS=()
-
-while IFS='|' read -r name port dir; do
-  [ -z "$name" ] && continue
-
-  log_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
-  echo -e "\n${BOLD}Starting ${name} MCP (HTTP on port ${port})...${RESET}"
-  cd "$dir"
-  TRANSPORT=http PORT=$port ANNABELLE_TOKEN="$ANNABELLE_TOKEN" npm start >> ~/.annabelle/logs/${log_name}.log 2>&1 &
-  pid=$!
-  echo -e "${GREEN}✓ ${name} MCP started (PID: $pid)${RESET}"
-
-  echo "$pid" >> "$PID_FILE"
-  HTTP_MCP_NAMES+=("$name")
-  HTTP_MCP_PORTS+=("$port")
-  HTTP_MCP_PIDS+=("$pid")
-
-  sleep 3
-
-  if ! kill -0 "$pid" 2>/dev/null; then
-    echo -e "${RED}✗ ${name} MCP process died immediately — check ~/.annabelle/logs/${log_name}.log${RESET}"
-  fi
-done < <(echo -e "$HTTP_MCPS")
-
-# Health check all HTTP MCPs
-for i in "${!HTTP_MCP_NAMES[@]}"; do
-  name="${HTTP_MCP_NAMES[$i]}"
-  port="${HTTP_MCP_PORTS[$i]}"
-  log_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
-  HEALTH=$(curl -s "http://localhost:${port}/health" 2>/dev/null)
-  if echo "$HEALTH" | grep -q "ok"; then
-    echo -e "${GREEN}✓ ${name} MCP is healthy${RESET}"
-  else
-    echo -e "${YELLOW}⚠ ${name} MCP not responding (may still be starting)${RESET}"
-    echo -e "  ${YELLOW}Check logs: tail -f ~/.annabelle/logs/${log_name}.log${RESET}"
-  fi
-done
-
 # ─── Ollama + Guardian model ─────────────────────────────────────────────────
 echo -e "\n${BOLD}Checking Ollama + Guardian model...${RESET}"
 if ! command -v ollama &> /dev/null; then
@@ -241,7 +192,6 @@ cd "$SCRIPT_DIR/Orchestrator"
 TRANSPORT=http PORT=8010 MCP_CONNECTION_MODE=stdio \
   AGENTS_CONFIG_PATH="$AGENTS_JSON" \
   ORCHESTRATOR_URL=http://localhost:8010 \
-  TELEGRAM_DIRECT_URL=http://localhost:8002 \
   ANNABELLE_TOKEN="$ANNABELLE_TOKEN" \
   npm start >> ~/.annabelle/logs/orchestrator.log 2>&1 &
 ORCHESTRATOR_PID=$!
@@ -311,54 +261,26 @@ fi
 echo -e "\n${BOLD}${GREEN}=== All services launched ===${RESET}"
 
 echo -e "\n${BOLD}Architecture:${RESET}"
-
-# HTTP MCPs (started by this script)
-for i in "${!HTTP_MCP_NAMES[@]}"; do
-  echo -e "  ${HTTP_MCP_NAMES[$i]} MCP (${HTTP_MCP_PORTS[$i]}) - HTTP service"
-done
-
-# Stdio MCPs (spawned by Orchestrator)
-echo -e "  Orchestrator (8010) spawns via stdio:"
+echo -e "  Orchestrator (8010) spawns all MCPs via stdio:"
 while IFS='|' read -r name dir; do
   [ -z "$name" ] && continue
   echo -e "    └── ${name} MCP"
 done < <(echo -e "$STDIO_MCPS")
-
 echo -e "  Orchestrator (8010) spawns Thinker agent(s) from agents.json:"
 echo -e "    └── Thinker :8006 (annabelle) — cost controls enabled"
 
-echo -e "  Orchestrator (8010) connects via HTTP:"
-for i in "${!HTTP_MCP_NAMES[@]}"; do
-  echo -e "    └── ${HTTP_MCP_NAMES[$i]} MCP (${HTTP_MCP_PORTS[$i]})"
-done
-
 echo -e "\n${BOLD}Service URLs:${RESET}"
-for i in "${!HTTP_MCP_NAMES[@]}"; do
-  name="${HTTP_MCP_NAMES[$i]}"
-  port="${HTTP_MCP_PORTS[$i]}"
-  echo -e "  $(printf '%-14s' "${name}:") http://localhost:${port}"
-done
 echo -e "  $(printf '%-14s' "Orchestrator:") http://localhost:8010"
 echo -e "  $(printf '%-14s' "Thinker:") http://localhost:8006"
 echo -e "  $(printf '%-14s' "Inngest:") http://localhost:8288"
 
 echo -e "\n${BOLD}Log files:${RESET}"
-for i in "${!HTTP_MCP_NAMES[@]}"; do
-  name="${HTTP_MCP_NAMES[$i]}"
-  log_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
-  echo -e "  $(printf '%-14s' "${name}:") ~/.annabelle/logs/${log_name}.log"
-done
 echo -e "  $(printf '%-14s' "Orchestrator:") ~/.annabelle/logs/orchestrator.log"
 echo -e "  $(printf '%-14s' "Thinker:") ~/.annabelle/logs/thinker.log"
 echo -e "  $(printf '%-14s' "Inngest:") ~/.annabelle/logs/inngest.log"
 
 echo -e "\n${BOLD}Process IDs:${RESET}"
-for i in "${!HTTP_MCP_NAMES[@]}"; do
-  name="${HTTP_MCP_NAMES[$i]}"
-  pid="${HTTP_MCP_PIDS[$i]}"
-  echo -e "  $(printf '%-14s' "${name}:") $pid"
-done
-echo -e "  $(printf '%-14s' "Orchestrator:") $ORCHESTRATOR_PID (Thinker agent(s) are child processes)"
+echo -e "  $(printf '%-14s' "Orchestrator:") $ORCHESTRATOR_PID (MCPs + Thinker agent(s) are child processes)"
 echo -e "  $(printf '%-14s' "Inngest:") $INNGEST_PID"
 
 echo -e "\n${YELLOW}Tip: Use 'tail -f ~/.annabelle/logs/*.log' to monitor all services${RESET}"

@@ -231,21 +231,13 @@ echo -e "MCP Directory: ${CYAN}$MCP_DIR${RESET}"
 
 print_section "Section 1: Health Checks"
 
-# HTTP services
+# HTTP services (only Orchestrator and Thinker have HTTP ports; MCPs are all stdio)
 ORCHESTRATOR_UP=false
 THINKER_UP=false
-TELEGRAM_UP=false
-SEARCHER_UP=false
-FILER_UP=false
-GMAIL_UP=false
 
 echo -e "  ${BOLD}HTTP Service Health Checks:${RESET}"
 check_health "Orchestrator (8010)" "http://localhost:8010/health" "ok" && ORCHESTRATOR_UP=true
 check_health "Thinker (8006)" "http://localhost:8006/health" "ok" && THINKER_UP=true
-check_health "Telegram MCP (8002)" "http://localhost:8002/health" "ok" && TELEGRAM_UP=true
-check_health "Filer MCP (8004)" "http://localhost:8004/health" "healthy" && FILER_UP=true
-check_health "Searcher MCP (8007)" "http://localhost:8007/health" "healthy" && SEARCHER_UP=true
-check_health "Gmail MCP (8008)" "http://localhost:8008/health" "ok" && GMAIL_UP=true
 
 # =============================================================================
 # Section 2: Quick Curl Tests (if --quick or full mode)
@@ -282,25 +274,6 @@ if [ "$RUN_CURL" = true ]; then
       echo -e "  Thinker config... ${RED}✗${RESET}"
       ((CURL_FAILED++)) || true
     fi
-  fi
-
-  # =====================================================
-  # Direct HTTP MCP tests
-  # =====================================================
-  if [ "$TELEGRAM_UP" = true ]; then
-    echo -e "\n  ${BOLD}Telegram MCP (direct):${RESET}"
-    test_curl "List chats" "http://localhost:8002/tools/call" \
-      '{"name": "list_chats", "arguments": {"limit": 5}}' "chats"
-  fi
-
-  if [ "$SEARCHER_UP" = true ]; then
-    echo -e "\n  ${BOLD}Searcher MCP (direct):${RESET}"
-    test_curl_get "List tools" "http://localhost:8007/tools/list" "name"
-  fi
-
-  if [ "$GMAIL_UP" = true ]; then
-    echo -e "\n  ${BOLD}Gmail MCP (direct):${RESET}"
-    test_curl_get "List tools" "http://localhost:8008/tools/list" "name"
   fi
 
   echo -e "\n  Curl tests: ${GREEN}$CURL_PASSED passed${RESET}, ${RED}$CURL_FAILED failed${RESET}"

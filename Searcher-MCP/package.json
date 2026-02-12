@@ -40,8 +40,6 @@
   },
   "annabelle": {
     "mcpName": "searcher",
-    "transport": "http",
-    "sensitive": false,
-    "httpPort": 8007
+    "sensitive": false
   }
 }
