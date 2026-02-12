@@ -442,6 +442,7 @@ export const skillSchedulerFunction = inngest.createFunction(
       notify_on_completion?: boolean;
       last_run_at?: string | null;
       last_run_status?: string | null;
+      required_tools?: string[] | string;
     }
 
     const FAILURE_COOLDOWN_MINUTES = 5;
@@ -584,12 +585,21 @@ export const skillSchedulerFunction = inngest.createFunction(
             }
           }
 
+          // Parse required_tools (can be JSON string or array from DB)
+          let parsedRequiredTools: string[] | undefined;
+          if (typeof skill.required_tools === 'string') {
+            try { parsedRequiredTools = JSON.parse(skill.required_tools); } catch { /* ignore */ }
+          } else if (Array.isArray(skill.required_tools)) {
+            parsedRequiredTools = skill.required_tools;
+          }
+
           const result = await client.executeSkill(
             skill.instructions,
             skill.max_steps || 10,
             skill.notify_on_completion ?? false,
             false,
             notifyChatId,
+            parsedRequiredTools,
           );
 
           // Update skill's last_run fields via Memory MCP

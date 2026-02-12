@@ -1069,7 +1069,8 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
     taskInstructions: string,
     maxSteps: number = 10,
     notifyChatId?: string,
-    noTools?: boolean
+    noTools?: boolean,
+    requiredTools?: string[],
   ): Promise<ProcessingResult & { summary: string }> {
     const trace = createTrace('thinker-skill');
     this.currentTrace = trace;
@@ -1129,7 +1130,21 @@ Complete the task step by step, using your available tools. When done, provide a
 
       // Run the LLM with task instructions as the "user message"
       // For proactive tasks, exclude send_telegram — notifications are handled post-completion via notifyChatId
-      const selectedTools = noTools ? undefined : await selectToolsWithFallback(taskInstructions, this.tools, this.embeddingSelector);
+      let selectedTools: Record<string, CoreTool> | undefined;
+      if (noTools) {
+        selectedTools = undefined;
+      } else if (requiredTools && requiredTools.length > 0) {
+        // Skills declare required_tools — resolve directly instead of keyword-matching
+        selectedTools = {};
+        for (const name of requiredTools) {
+          if (this.tools[name]) {
+            selectedTools[name] = this.tools[name];
+          }
+        }
+        logger.info(`Tool selection: method=required_tools, resolved=${Object.keys(selectedTools).length}/${requiredTools.length}`);
+      } else {
+        selectedTools = await selectToolsWithFallback(taskInstructions, this.tools, this.embeddingSelector);
+      }
       if (selectedTools) {
         delete selectedTools['send_telegram'];
       }
