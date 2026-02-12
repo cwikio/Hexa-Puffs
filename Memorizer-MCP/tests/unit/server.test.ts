@@ -94,6 +94,7 @@ const EXPECTED_TOOLS = [
   'create_project',
   'list_projects',
   'update_project',
+  'query_timeline',
 ];
 
 const READ_ONLY_TOOLS = [
@@ -107,6 +108,7 @@ const READ_ONLY_TOOLS = [
   'get_skill',
   'list_contacts',
   'list_projects',
+  'query_timeline',
 ];
 
 const DESTRUCTIVE_TOOLS = [
@@ -137,8 +139,8 @@ describe('Memorizer MCP Server Registration', () => {
     await client.close();
   });
 
-  it('should register all 26 tools', () => {
-    expect(tools).toHaveLength(26);
+  it('should register all 27 tools', () => {
+    expect(tools).toHaveLength(27);
   });
 
   it('should register tools with correct names', () => {

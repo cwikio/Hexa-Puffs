@@ -88,6 +88,9 @@ import {
   handleCreateProject,
   handleListProjects,
   handleUpdateProject,
+  queryTimelineToolDefinition,
+  QueryTimelineInputSchema,
+  handleQueryTimeline,
 } from './tools/index.js';
 
 export function createServer(): McpServer {
@@ -313,6 +316,15 @@ export function createServer(): McpServer {
     inputSchema: UpdateProjectInputSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     handler: async (params) => handleUpdateProject(params),
+  });
+
+  // Timeline
+  registerTool(server, {
+    name: 'query_timeline',
+    description: queryTimelineToolDefinition.description,
+    inputSchema: QueryTimelineInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleQueryTimeline(params),
   });
 
   return server;

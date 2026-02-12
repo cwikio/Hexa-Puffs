@@ -113,6 +113,12 @@ export {
   handleUpdateProject,
 } from './projects.js';
 
+export {
+  queryTimelineToolDefinition,
+  QueryTimelineInputSchema,
+  handleQueryTimeline,
+} from './timeline.js';
+
 // Import all definitions for convenience
 import { storeFactToolDefinition, listFactsToolDefinition, deleteFactToolDefinition, updateFactToolDefinition } from './facts.js';
 import { storeConversationToolDefinition, searchConversationsToolDefinition } from './conversations.js';
@@ -132,6 +138,7 @@ import { synthesizeFactsToolDefinition } from './synthesis.js';
 import { backfillEmbeddingsToolDefinition } from './backfill-embeddings.js';
 import { createContactToolDefinition, listContactsToolDefinition, updateContactToolDefinition } from './contacts.js';
 import { createProjectToolDefinition, listProjectsToolDefinition, updateProjectToolDefinition } from './projects.js';
+import { queryTimelineToolDefinition } from './timeline.js';
 
 export const allToolDefinitions = [
   // Facts
@@ -171,4 +178,6 @@ export const allToolDefinitions = [
   createProjectToolDefinition,
   listProjectsToolDefinition,
   updateProjectToolDefinition,
+  // Timeline
+  queryTimelineToolDefinition,
 ];

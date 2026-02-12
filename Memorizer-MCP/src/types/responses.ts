@@ -241,3 +241,25 @@ export interface UpdateProjectData {
   updated_fields: string[];
 }
 
+// ============================================================================
+// Timeline Tool Response Types
+// ============================================================================
+
+export type TimelineSource = 'facts' | 'conversations' | 'profile_changes' | 'skills' | 'contacts' | 'projects';
+export type TimelineEventType = 'created' | 'updated' | 'executed' | 'changed';
+
+export interface TimelineEvent {
+  timestamp: string;
+  source: TimelineSource;
+  event_type: TimelineEventType;
+  summary: string;
+  details: Record<string, unknown>;
+}
+
+export interface QueryTimelineData {
+  events: TimelineEvent[];
+  total_count: number;
+  date_range: { from: string; to: string };
+  sources_queried: TimelineSource[];
+}
+

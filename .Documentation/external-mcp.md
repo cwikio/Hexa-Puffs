@@ -8,13 +8,14 @@ This document describes how third-party MCP servers are integrated into the Anna
 
 1. [Overview](#overview)
 2. [Config File Format](#config-file-format)
-3. [Loading and Merging at Startup](#loading-and-merging-at-startup)
-4. [Health Monitoring](#health-monitoring)
-5. [Startup Diff and Notification](#startup-diff-and-notification)
-6. [Hot-Reload](#hot-reload)
-7. [Thinker System Prompt](#thinker-system-prompt)
-8. [End-to-End Flow](#end-to-end-flow)
-9. [File Reference](#file-reference)
+3. [Authorization](#authorization)
+4. [Loading and Merging at Startup](#loading-and-merging-at-startup)
+5. [Health Monitoring](#health-monitoring)
+6. [Startup Diff and Notification](#startup-diff-and-notification)
+7. [Hot-Reload](#hot-reload)
+8. [Thinker System Prompt](#thinker-system-prompt)
+9. [End-to-End Flow](#end-to-end-flow)
+10. [File Reference](#file-reference)
 
 ---
 
@@ -118,6 +119,63 @@ Env values support `${ENV_VAR}` placeholders that resolve to `process.env` value
 ### Enforced Constraints
 
 All external MCPs are forced to `required: false`. A failed external MCP is logged but does not prevent the Orchestrator from starting. If an external MCP's name conflicts with an internal MCP, it is skipped with a warning.
+
+---
+
+## Authorization
+
+External MCPs authenticate with their upstream services using **API keys or tokens** passed as environment variables. The Orchestrator does not handle OAuth browser flows — tokens are obtained once from each provider's dashboard and stored as environment variables.
+
+### How It Works
+
+1. The MCP's `env` field in `external-mcps.json` references tokens via `${ENV_VAR}` placeholders
+2. At spawn time, the Orchestrator resolves these from `process.env`
+3. The spawned MCP process receives the resolved values and uses them to authenticate with its API
+
+### Token Setup Per Provider
+
+| Provider | Where to Get Token | Env Var | Notes |
+| -------- | ------------------ | ------- | ----- |
+| PostHog | Project Settings > Personal API Keys (use "MCP Server" preset) | `POSTHOG_PERSONAL_API_KEY` | Scoped to read access + feature flag writes |
+| Neon | Console > Account Settings > API Keys | `NEON_API_KEY` | 64-bit token, valid until revoked |
+| Vercel | Account Settings > Tokens | `VERCEL_API_TOKEN` | Can be scoped to specific teams |
+| GitHub | Settings > Developer Settings > Personal Access Tokens | `GITHUB_TOKEN` | Fine-grained tokens recommended |
+
+### Step-by-Step
+
+1. **Get the token** from the provider's dashboard (see table above)
+2. **Export it** in your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
+
+   ```bash
+   export POSTHOG_PERSONAL_API_KEY="phx_abc123..."
+   ```
+
+3. **Reference it** in `external-mcps.json`:
+
+   ```json
+   {
+     "posthog": {
+       "command": "npx",
+       "args": ["-y", "@anthropic/posthog-mcp"],
+       "env": {
+         "POSTHOG_PERSONAL_API_KEY": "${POSTHOG_PERSONAL_API_KEY}"
+       }
+     }
+   }
+   ```
+
+4. **Restart the Orchestrator** (or let hot-reload pick up the change)
+
+### Security Notes
+
+- Tokens live in environment variables, not in `external-mcps.json` — the config file only contains `${PLACEHOLDER}` references, safe to commit
+- Missing env vars resolve to empty string at load time (the MCP will fail to authenticate, not crash the Orchestrator)
+- Use the narrowest token scope available (e.g., PostHog's "MCP Server" preset, GitHub fine-grained tokens)
+- Rotate tokens periodically via the provider's dashboard — update the env var and restart
+
+### OAuth-Only Providers
+
+Most developer-focused MCPs (PostHog, Neon, Vercel, GitHub, Supabase, Cloudflare, Linear) support static API keys. OAuth browser flows are **not currently supported** by the Orchestrator. If a future MCP requires OAuth exclusively, the planned approach is a CLI command (`annabelle auth <mcp>`) that opens a browser, captures the callback, and stores the token in `~/.annabelle/tokens/`.
 
 ---
 
@@ -236,7 +294,17 @@ MCPs: 8 total (6 internal, 2 external)
 
 External:
   posthog: 15 tools — Product analytics and feature flags
-  vercel: 8 tools
+    • query-run
+    • insight-create-from-query
+    • insight-get
+    • insight-update
+    • ...
+  vercel: 12 tools — Vercel project management and deployments
+    • search_documentation
+    • list_projects
+    • get_project
+    • list_deployments
+    • ...
 
 Changes since last boot:
   + posthog
@@ -339,6 +407,11 @@ When MCPs change at runtime, a Telegram message is sent:
 ```
 External MCPs changed:
   + posthog: 15 tools — Product analytics and feature flags
+    • query-run
+    • insight-create-from-query
+    • insight-get
+    • insight-update
+    • ...
   - neon
 ```
 
