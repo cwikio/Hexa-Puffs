@@ -84,6 +84,8 @@ export function scanForMCPs(mcpsRoot: string): DiscoveredMCP[] {
       timeout: manifest.timeout ?? 30000,
       required: manifest.required ?? false,
       httpPort: manifest.httpPort,
+      command: manifest.command ?? 'node',
+      commandArgs: manifest.commandArgs ?? [],
     };
 
     discovered.push(mcp);

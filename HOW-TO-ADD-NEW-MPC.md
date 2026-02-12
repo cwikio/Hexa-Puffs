@@ -72,6 +72,8 @@ The Orchestrator's scanner reads every sibling directory's `package.json` lookin
 |---|---|---|---|
 | `mcpName` | `string` | **required** | Logical name the Orchestrator uses (e.g. `"filer"`, `"searcher"`). Becomes the tool prefix. |
 | `transport` | `"stdio" \| "http"` | `"stdio"` | How the Orchestrator communicates with this MCP. |
+| `command` | `string` | `"node"` | The executable used to spawn stdio MCPs. Override for non-Node MCPs (e.g. `".venv/bin/python"`). |
+| `commandArgs` | `string[]` | `[]` | Extra arguments prepended before the entry point (e.g. `["-u"]` for unbuffered Python output). |
 | `sensitive` | `boolean` | `false` | If `true`, the Guardian security scanner may inspect this MCP's inputs/outputs. |
 | `role` | `"guardian" \| "channel"` | — | Special roles. Most MCPs omit this. |
 | `timeout` | `number` | `30000` | Default timeout in milliseconds for tool calls. |
@@ -87,6 +89,8 @@ This is the exact type the scanner expects (from `Shared/Discovery/types.ts`):
 interface AnnabelleManifest {
   mcpName: string;
   transport?: 'stdio' | 'http';
+  command?: string;        // default: 'node' — override for non-Node MCPs
+  commandArgs?: string[];  // prepended before entryPoint, default: []
   sensitive?: boolean;
   role?: 'guardian' | 'channel';
   timeout?: number;
@@ -133,13 +137,37 @@ interface AnnabelleManifest {
 }
 ```
 
+### Example: Python MCP (non-Node)
+
+For MCPs written in Python (or any non-Node language), set `command` to the executable path. The entry point (from `"main"`) is appended as the last argument.
+
+```json
+{
+  "name": "linkedin-mcp-server",
+  "version": "1.0.0",
+  "main": "src/main.py",
+  "scripts": {
+    "build": "uv sync",
+    "start": ".venv/bin/python src/main.py",
+    "test": ".venv/bin/pytest tests/ -v --ignore=tests/e2e"
+  },
+  "annabelle": {
+    "mcpName": "linkedin",
+    "command": ".venv/bin/python",
+    "sensitive": false
+  }
+}
+```
+
+The Orchestrator will spawn this as `.venv/bin/python src/main.py` instead of `node src/main.py`. The `"build"` script should set up the language-specific environment (e.g. `uv sync` for Python).
+
 ### How Discovery Works
 
 1. The scanner reads every subdirectory in the MCPs root
 2. Skips directories without a `package.json` or without an `"annabelle"` field
 3. Checks the `${MCPNAME}_MCP_ENABLED` env var — if `false`, skips
 4. Resolves the entry point from the `"main"` field (defaults to `dist/index.js`)
-5. For **stdio** MCPs: the Orchestrator spawns them as child processes via `node <entryPoint>`
+5. For **stdio** MCPs: the Orchestrator spawns them as child processes via `<command> [...commandArgs] <entryPoint>` (defaults to `node <entryPoint>`)
 6. For **HTTP** MCPs: the Orchestrator connects to `http://localhost:<httpPort>`
 
 ### Tool Naming
@@ -802,3 +830,5 @@ Restart the Orchestrator. It will auto-discover `Hello-MCP`, spawn it via stdio,
 - **`registerTool` input typing**: The handler receives `Record<string, unknown>`. Cast to your input type: `params as SayHelloInput`.
 - **Build before test**: Integration tests spawn `dist/index.js`. Always `npm run build` first.
 - **File extensions in imports**: ESM requires `.js` extensions in import paths (e.g., `./server.js`, not `./server`).
+- **Python MCPs — venv symlinks**: The venv `python` is a symlink to the system interpreter. Never `resolve()` or dereference the symlink in configs or tests — CPython uses the binary's directory to locate `site-packages`. Resolving the symlink loses the venv prefix.
+- **Python MCPs — stdout**: Same as Node — never print to stdout. Use `logging` configured to `stderr`. FastMCP's `mcp.run()` uses stdout for JSON-RPC.

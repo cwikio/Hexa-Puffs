@@ -1,50 +1,54 @@
-# LinkedIn MCP — Brainstorm
+# LinkedIn MCP — Implementation Status
 
-## 1. Official LinkedIn API (OAuth 2.0)
+## Done — All Phases Complete
 
-LinkedIn has official REST APIs for posting, profile management, etc.
+All tools implemented, tested (46 unit + 3 integration), and wired into the ecosystem.
 
-- **How**: Register an app on LinkedIn Developer Portal, get OAuth tokens, call their API endpoints
-- **Pros**: Stable, sanctioned, no risk of account ban
-- **Cons**: Very restrictive. Most useful endpoints (like posting on behalf of a user) require partner-level access or specific product approvals (e.g., "Share on LinkedIn", "Sign In with LinkedIn"). Getting approved can be slow/impossible for personal use
-- **Verdict**: Worth checking what's available to you, but LinkedIn is notoriously stingy with API access for individual developers
+### Phase 1 — Read-only (MVP)
 
-## 2. Browser Automation (Playwright/Puppeteer)
+| Tool | Description |
+|---|---|
+| `get_profile` | Get profile by public ID |
+| `get_own_profile` | Get authenticated user's profile |
+| `search_people` | Search people by keywords/company/title |
+| `get_feed_posts` | Read feed posts |
+| `get_conversations` | List inbox conversations |
 
-Control a headless or headed browser that's logged into your LinkedIn session.
+### Phase 2 — Write Operations
 
-- **How**: Use Playwright to automate actions — navigate to the post composer, fill in text, click "Post", etc.
-- **Pros**: Full access to everything you can do manually. No API approval needed
-- **Cons**: Fragile (LinkedIn changes their DOM), slow, needs a browser running, LinkedIn actively fights automation (CAPTCHAs, session invalidation), risk of account restriction
-- **Verdict**: Works for personal use if you're careful, but high maintenance
+| Tool | Description |
+|---|---|
+| `send_message` | Send DM (reply to conversation or start new) |
+| `react_to_post` | Like/celebrate/empathy/interest/appreciation |
 
-## 3. LinkedIn's Undocumented/Internal API ("Voyager API")
+### Phase 3 — Network & Company
 
-LinkedIn's frontend talks to internal REST endpoints. Libraries like `linkedin-api` (Python) reverse-engineer these.
+| Tool | Description |
+|---|---|
+| `get_conversation` | Get messages from a specific conversation thread |
+| `get_connections` | List authenticated user's connections |
+| `send_connection_request` | Send invitation with personalized note (max 300 chars) |
+| `search_companies` | Search companies by keyword |
+| `get_company` | Get detailed company info |
 
-- **How**: Authenticate with your credentials (or cookies), call the internal endpoints directly
-- **Pros**: Fast, no browser needed, covers most actions (post, comment, message, profile edits)
-- **Cons**: Against LinkedIn ToS, can break without warning, risk of account ban, requires maintaining cookie/session auth
-- **Verdict**: The most practical "hacker" approach. Many open-source libs exist (mostly Python: `linkedin-api`, `linkedin-messaging-api`)
+### Not Implementable
 
-## 4. Hybrid: Cookie-Based Session + HTTP Requests
+| Tool | Reason |
+|---|---|
+| `create_post` | `linkedin-api` library doesn't expose this method |
+| `comment_on_post` | `linkedin-api` library doesn't expose this method |
 
-A middle ground between #2 and #3.
+### Supporting Infrastructure
 
-- **How**: Log in manually once in a browser, extract the `li_at` session cookie, use that cookie to make direct HTTP requests to LinkedIn's internal API
-- **Pros**: No need for full browser automation, simpler than Playwright, same power as #3
-- **Cons**: Cookie expires periodically (you'd need to refresh it), still against ToS
-- **Verdict**: Probably the most pragmatic approach for a personal MCP
+- Auto-discovery: `command`/`commandArgs` fields in manifest (Shared + Orchestrator)
+- Tool discovery: ToolRouter labels/groups/hints, tool-selector keyword routes
+- Skill/playbook: `~/.annabelle/skills/LinkedInNetworking/SKILL.md`
+- Guardian: disabled for linkedin (input + output) in `guardian.ts`
+- Tests: 46 unit (mocked client), 3 integration (stdio subprocess), e2e (skipped w/o creds)
+- Docs: `HOW-TO-ADD-NEW-MPC.md` updated with Python MCP example
 
-## Recommended Approach for Annabelle Stack
+## Operational Notes
 
-Options 3 or 4 implemented as a new `LinkedIn-MCP` package:
-
-- A stdio MCP spawned by Orchestrator (like Guardian, Filer, etc.)
-- Tools like `linkedin_create_post`, `linkedin_get_feed`, `linkedin_update_profile`, `linkedin_send_message`
-- Credentials stored in 1Password, retrieved via the existing 1Password MCP
-- The `li_at` cookie or username/password as the auth mechanism
-
-The Python `linkedin-api` library is the most mature reverse-engineered client. Options:
-- Write the MCP in **TypeScript** and port/re-implement the API calls directly (they're just HTTP requests with specific headers)
-- Write it in **Python** and use `linkedin-api` directly, then bridge it as an MCP (slightly breaks the all-TS convention)
+- Guardian is currently disabled for LinkedIn — re-enable in `Orchestrator/src/config/guardian.ts` when ready
+- Monitor `~/.linkedin_api/cookies/` for session expiry — may need a health-check tool
+- The `uv sync --extra dev` build preserves test deps; plain `uv sync` strips them

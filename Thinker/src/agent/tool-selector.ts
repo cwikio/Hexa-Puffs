@@ -35,6 +35,7 @@ const TOOL_GROUPS: Record<string, string[]> = {
   jobs: ['create_job', 'queue_task', 'list_jobs', 'get_job_status', 'delete_job',
          'memory_store_skill', 'memory_list_skills'],
   codexec: ['codexec_*'],
+  linkedin: ['linkedin_*'],
 };
 
 /** Keyword patterns → tool groups to activate */
@@ -59,6 +60,8 @@ const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
     groups: ['codexec'] },
   { pattern: /cron|remind me|recurring|every\s+(day|hour|week|minute|morning|evening|\d)|daily at|weekly|hourly|schedule.*(task|job|remind)|per\s+(minute|hour|day|week)|for\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(minute|hour|day|week)|\d+\s*times|once\s+a\s+(day|week|hour|minute)|repeat/i,
     groups: ['jobs'] },
+  { pattern: /linkedin|connection request|professional network|post on linkedin|linkedin message|connect with/i,
+    groups: ['linkedin'] },
   { pattern: /photo|picture|image|pic|show\s?me|gallery|wallpaper/i,
     groups: ['search', 'telegram'] },
   { pattern: /subagent|sub.?agent|delegate|parallel.*task|spawn/i,
