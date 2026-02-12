@@ -593,17 +593,18 @@ For full session management details, see [sessions.md](sessions.md).
 
 ### How it works
 
-1. Triggered by idle timer (configurable via `THINKER_FACT_EXTRACTION_IDLE_MS`)
-2. Takes recent conversation turns (minimum 4 messages / 2 exchanges)
-3. Retrieves already-known facts for deduplication
-4. Builds a structured extraction prompt:
+1. At startup, `loadExtractionPromptTemplate()` loads the prompt template from file (default: `Thinker/prompts/fact-extraction-prompt.md`, override via `THINKER_FACT_EXTRACTION_PROMPT_PATH`). Falls back to a hardcoded prompt if file not found.
+2. Triggered by idle timer (configurable via `THINKER_FACT_EXTRACTION_IDLE_MS`)
+3. Takes recent conversation turns (minimum 4 messages / 2 exchanges)
+4. Retrieves already-known facts for deduplication
+5. Builds a structured extraction prompt by substituting `{{KNOWN_FACTS}}` and `{{CONVERSATION}}` placeholders in the template:
    - Lists known facts under "DO NOT extract these again"
    - Formats the conversation as `User: ... / Assistant: ...`
    - Defines fact categories: `preference`, `background`, `pattern`, `project`, `contact`, `decision`
    - Asks for JSON output with confidence scores
-5. Validates response with Zod schema
-6. Filters by confidence threshold (default 0.7)
-7. Stores extracted facts via `store_fact` tool
+6. Validates response with Zod schema
+7. Filters by confidence threshold (default 0.7)
+8. Stores extracted facts via `store_fact` tool
 
 ### Key differences from main prompt
 
@@ -611,7 +612,8 @@ For full session management details, see [sessions.md](sessions.md).
 - No tools — pure text-to-JSON extraction
 - Uses cheap/fast model, not the main agent model
 - Maximum 5 facts per extraction
-- Configurable via `THINKER_FACT_EXTRACTION_ENABLED`, `THINKER_FACT_EXTRACTION_IDLE_MS`, `THINKER_FACT_EXTRACTION_MAX_TURNS`
+- Prompt template is file-based (`Thinker/prompts/fact-extraction-prompt.md`) with `{{KNOWN_FACTS}}` / `{{CONVERSATION}}` placeholders
+- Configurable via `THINKER_FACT_EXTRACTION_ENABLED`, `THINKER_FACT_EXTRACTION_IDLE_MS`, `THINKER_FACT_EXTRACTION_MAX_TURNS`, `THINKER_FACT_EXTRACTION_PROMPT_PATH`
 
 ---
 
@@ -664,22 +666,24 @@ For full session management details, see [sessions.md](sessions.md).
 ## File Reference
 
 | Component | File | Key Functions/Lines |
-|-----------|------|-------------------|
-| Default system prompt | `Thinker/src/agent/loop.ts:34-150` | `DEFAULT_SYSTEM_PROMPT` constant |
-| Prompt loading (init) | `Thinker/src/agent/loop.ts:218-240` | `initialize()` — loads custom + persona prompts |
-| Context building | `Thinker/src/agent/loop.ts:386-486` | `buildContext()` — all 6 dynamic layers |
-| Proactive prompt | `Thinker/src/agent/loop.ts:1137-1246` | `processProactiveTask()` — skill prompt assembly |
-| Playbook injection | `Thinker/src/agent/loop.ts:554-565` | Force-inject playbook required tools |
+| --------- | ---- | ------------------- |
+| Default system prompt (fallback) | `Thinker/src/agent/loop.ts:45-47` | `DEFAULT_SYSTEM_PROMPT` constant (3-line fallback) |
+| Default system prompt (file) | `Thinker/prompts/default-system-prompt.md` | File-based prompt loaded at startup |
+| Prompt loading (init) | `Thinker/src/agent/loop.ts:116-215` | `initialize()` — loads custom + persona + default prompts |
+| Context building | `Thinker/src/agent/loop.ts:402-507` | `buildContext()` — all 6 dynamic layers + profile persona override |
+| Proactive prompt | `Thinker/src/agent/loop.ts:1168-1397` | `processProactiveTask()` — skill prompt assembly + profile persona override |
+| Playbook injection | `Thinker/src/agent/loop.ts:575-588` | Force-inject playbook required tools (with missing-tool warning) |
 | Agent spawning | `Orchestrator/src/agents/agent-manager.ts:187-295` | `spawnAgent()` — write prompt, set env, spawn |
 | Agent env vars | `Orchestrator/src/agents/agent-manager.ts:396-455` | `buildAgentEnv()` |
-| Subagent definition | `Orchestrator/src/agents/agent-manager.ts:478-500` | `spawnSubagent()` — task → systemPrompt |
+| Subagent definition | `Orchestrator/src/agents/agent-manager.ts:464-535` | `spawnSubagent()` — minimal system prompt, task as user message |
 | Agent config schema | `Orchestrator/src/config/agents.ts` | `AgentDefinition` type, `loadAgentsFromFile()` |
 | Spawn subagent tool | `Orchestrator/src/tools/spawn-subagent.ts` | Task dispatch to subagent |
-| Playbook classifier | `Thinker/src/agent/playbook-classifier.ts` | `classifyMessage()` — keyword matching |
+| Playbook classifier | `Thinker/src/agent/playbook-classifier.ts` | `classifyMessage()` — word-boundary keyword matching |
 | Playbook cache | `Thinker/src/agent/playbook-cache.ts` | DB + file skill merging, 5-min refresh |
 | Playbook seeds | `Thinker/src/agent/playbook-seed.ts` | 14 default playbook definitions |
 | Skill loader | `Thinker/src/agent/skill-loader.ts` | `SkillLoader.scan()` — parse SKILL.md files |
 | History repair | `Thinker/src/agent/history-repair.ts` | `repairConversationHistory()`, `truncateHistoryToolResults()` |
-| Fact extraction | `Thinker/src/agent/fact-extractor.ts` | `extractFactsFromConversation()` — separate prompt pipeline |
+| Fact extraction | `Thinker/src/agent/fact-extractor.ts:48-61,130-174` | `loadExtractionPromptTemplate()`, `extractFactsFromConversation()` |
+| Fact extraction prompt (file) | `Thinker/prompts/fact-extraction-prompt.md` | File-based template with `{{KNOWN_FACTS}}`/`{{CONVERSATION}}` placeholders |
 | Tool wrapping | `Thinker/src/orchestrator/tools.ts` | `createToolsFromOrchestrator()`, `createEssentialTools()` |
 | Thinker config | `Thinker/src/config.ts` | All env var definitions and defaults |
