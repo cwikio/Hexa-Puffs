@@ -102,7 +102,7 @@ export const ConfigSchema = z.object({
   defaultNotifyChatId: z.string().optional(),
 
   // User context
-  userTimezone: z.string().default('Europe/Warsaw'),
+  userTimezone: z.string().default('America/New_York'),
 
   // Logging
   logLevel: LogLevelSchema.default('info'),
@@ -178,7 +178,7 @@ export function loadConfig(): Config {
     skillsDir: process.env.THINKER_SKILLS_DIR || '~/.annabelle/skills',
     proactiveTasksEnabled: parseBoolean(process.env.PROACTIVE_TASKS_ENABLED, true),
     defaultNotifyChatId: process.env.DEFAULT_NOTIFY_CHAT_ID || undefined,
-    userTimezone: process.env.USER_TIMEZONE || 'Europe/Warsaw',
+    userTimezone: process.env.USER_TIMEZONE || 'America/New_York',
     logLevel: process.env.LOG_LEVEL || 'info',
     traceLogPath: process.env.TRACE_LOG_PATH || '~/.annabelle/logs/traces.jsonl',
 

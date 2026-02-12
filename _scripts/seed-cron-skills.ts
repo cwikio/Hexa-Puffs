@@ -85,7 +85,7 @@ Keep it concise for Telegram.`,
   {
     name: 'Morning Briefing',
     description: 'Daily morning overview: calendar, unread emails, pending items, meeting prep.',
-    trigger_config: { schedule: '0 6 * * *', timezone: 'Europe/Warsaw' },
+    trigger_config: { schedule: '0 6 * * *', timezone: 'America/New_York' },
     instructions: `You are running the Morning Briefing skill. Produce a comprehensive daily overview.
 
 Steps:
@@ -110,7 +110,7 @@ Keep it actionable and scannable.`,
   {
     name: 'Evening Recap',
     description: 'Daily evening wrap-up: what happened today, pending items, tomorrow preview.',
-    trigger_config: { schedule: '0 18 * * *', timezone: 'Europe/Warsaw' },
+    trigger_config: { schedule: '0 18 * * *', timezone: 'America/New_York' },
     instructions: `You are running the Evening Recap skill. Summarize the day and preview tomorrow.
 
 Steps:
@@ -134,7 +134,7 @@ Keep it brief — this is a wind-down summary, not a full report.`,
   {
     name: 'Weekly Digest',
     description: 'Sunday evening weekly summary and next week preview.',
-    trigger_config: { schedule: '0 18 * * 0', timezone: 'Europe/Warsaw' },
+    trigger_config: { schedule: '0 18 * * 0', timezone: 'America/New_York' },
     instructions: `You are running the Weekly Digest skill. Produce a week-in-review summary.
 
 Steps:
@@ -158,7 +158,7 @@ This is the big-picture view — focus on patterns and priorities, not individua
   {
     name: 'Follow-up Tracker',
     description: 'Check for sent emails that have not received a reply in 48+ hours.',
-    trigger_config: { schedule: '0 9 * * *', timezone: 'Europe/Warsaw' },
+    trigger_config: { schedule: '0 9 * * *', timezone: 'America/New_York' },
     instructions: `You are running the Follow-up Tracker skill. Find emails you sent that haven't been replied to.
 
 Steps:
@@ -212,7 +212,7 @@ Keep each briefing focused and actionable.`,
   {
     name: 'Meeting Overload Warning',
     description: 'Warn about tomorrow having too many meetings or a heavy schedule.',
-    trigger_config: { schedule: '0 20 * * *', timezone: 'Europe/Warsaw' },
+    trigger_config: { schedule: '0 20 * * *', timezone: 'America/New_York' },
     instructions: `You are running the Meeting Overload Warning skill. Check if tomorrow's schedule is too heavy.
 
 Steps:
