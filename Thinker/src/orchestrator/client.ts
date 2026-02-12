@@ -137,16 +137,21 @@ export class OrchestratorClient {
     }
 
     try {
-      const parsed = JSON.parse(textContent.text) as {
-        success: boolean;
-        data?: unknown;
-        error?: string;
-      };
-      return {
-        success: parsed.success,
-        result: parsed.data,
-        error: parsed.error,
-      };
+      const parsed = JSON.parse(textContent.text);
+
+      // Internal MCPs return StandardResponse: { success, data?, error? }
+      if ('success' in parsed) {
+        return {
+          success: parsed.success,
+          result: parsed.data,
+          error: parsed.error,
+        };
+      }
+
+      // External MCPs (e.g. vercel-mcp) return raw JSON without StandardResponse wrapping.
+      // The Orchestrator passes their response text through directly, so we treat
+      // any valid JSON without a 'success' field as a successful result.
+      return { success: true, result: parsed };
     } catch {
       // If parsing fails, treat the text as the result
       return { success: true, result: textContent.text };

@@ -80,13 +80,15 @@ Prompt creation spans two services: the **Orchestrator** (which configures and s
 | File | Role |
 |------|------|
 | `Thinker/src/agent/loop.ts` | `DEFAULT_SYSTEM_PROMPT`, `buildContext()`, `processProactiveTask()`, `initialize()` |
+| `Thinker/prompts/default-system-prompt.md` | Default system prompt (loaded at startup, hardcoded fallback in loop.ts) |
+| `Thinker/prompts/fact-extraction-prompt.md` | Fact extraction prompt template (`{{KNOWN_FACTS}}`, `{{CONVERSATION}}` placeholders) |
 | `Orchestrator/src/agents/agent-manager.ts` | `spawnAgent()`, `buildAgentEnv()` — writes prompt file, sets env vars |
 | `Orchestrator/src/config/agents.ts` | `AgentDefinition` schema, channel bindings |
-| `Orchestrator/src/tools/spawn-subagent.ts` | Subagent prompt: `task` → `systemPrompt` |
-| `Thinker/src/agent/playbook-classifier.ts` | `classifyMessage()` — keyword matching |
+| `Orchestrator/src/tools/spawn-subagent.ts` | Subagent task dispatch (task sent as user message only) |
+| `Thinker/src/agent/playbook-classifier.ts` | `classifyMessage()` — word-boundary keyword matching |
 | `Thinker/src/agent/playbook-cache.ts` | Merges database + file-based playbooks |
 | `Thinker/src/agent/skill-loader.ts` | Parses `~/.annabelle/skills/*/SKILL.md` |
-| `Thinker/src/agent/fact-extractor.ts` | Post-conversation fact extraction prompt |
+| `Thinker/src/agent/fact-extractor.ts` | Post-conversation fact extraction (prompt loadable from file) |
 | `Thinker/src/orchestrator/tools.ts` | Wraps MCP tools → Vercel AI SDK tools |
 
 ---
@@ -105,12 +107,10 @@ Priority 1 ─── Custom file prompt (THINKER_SYSTEM_PROMPT_PATH env var)
     │                       Each agent ID has its own persona directory
     │                       Configurable via THINKER_PERSONA_DIR env var
     │
-    ├── If not found ──▶ Priority 3 ─── Built-in DEFAULT_SYSTEM_PROMPT
-    │                       ~160 lines hardcoded in loop.ts (lines 34-157)
-    │                       Defines the "Annabelle" persona: memory usage,
-    │                       proactive learning, email/calendar/search,
-    │                       external service tool guidance (discover-then-act),
-    │                       action-first rule, response format rules
+    ├── If not found ──▶ Priority 3 ─── Default system prompt file
+    │                       Loaded from Thinker/prompts/default-system-prompt.md
+    │                       Configurable via THINKER_DEFAULT_SYSTEM_PROMPT_PATH env var
+    │                       Falls back to hardcoded DEFAULT_SYSTEM_PROMPT constant in loop.ts
     │
     └── Profile Override ─── After selecting the base, if the user's Memorizer
                               profile has persona.system_prompt set, that value
@@ -151,7 +151,7 @@ If the agent config has an **empty `systemPrompt`** (the default), no temp file 
 // Refresh cached playbooks (5-min TTL for DB, file-based loaded at startup)
 await this.playbookCache.refreshIfNeeded(trace);
 
-// Classify user message against all playbooks via keyword substring match
+// Classify user message against all playbooks via word-boundary keyword matching
 const matchedPlaybooks = classifyMessage(userMessage, this.playbookCache.getPlaybooks());
 
 // Inject matching playbooks' instructions
@@ -261,7 +261,8 @@ Relevant memories about the user:
 
 ### What's the same
 
-- Same base prompt priority chain: `customSystemPrompt || personaPrompt || DEFAULT_SYSTEM_PROMPT`
+- Same base prompt priority chain: `customSystemPrompt || personaPrompt || defaultSystemPrompt`
+- Profile persona override applied (fetches profile, replaces base if set)
 - Current date/time appended with the same formatter
 - Relevant memories (top 5) retrieved and appended
 
@@ -269,7 +270,7 @@ Relevant memories about the user:
 
 | Aspect | Interactive | Proactive Task |
 |--------|------------|----------------|
-| Profile persona override | Yes — replaces base if set | **No** — uses base as-is |
+| Profile persona override | Yes — replaces base if set | **Yes** — same behavior |
 | Playbook injection | Yes — keyword-matched | **No** |
 | Available skills | Yes — progressive disclosure | **No** |
 | Chat ID | Yes — injected | **No** |
@@ -348,12 +349,14 @@ buildContext()                     processMessage()
                                })
 ```
 
-After tool selection (`loop.ts:554-565`), any tools required by matched playbooks are force-injected:
+After tool selection, any tools required by matched playbooks are force-injected. Missing tools (e.g. MCP is down) trigger a warning:
 
 ```typescript
 for (const name of context.playbookRequiredTools) {
   if (!selectedTools[name] && this.tools[name]) {
     selectedTools[name] = this.tools[name];
+  } else if (!this.tools[name]) {
+    logger.warn(`[playbook-tools] Required tool '${name}' not found (MCP may be down)`);
   }
 }
 ```
@@ -437,7 +440,7 @@ First match wins — specific bindings go before wildcards. The matched agent ge
 
 ### Subagent Prompts
 
-When `spawn_subagent` is called, the `task` parameter becomes the subagent's `systemPrompt`:
+When `spawn_subagent` is called, the subagent gets a minimal system prompt and receives the full task as its user message:
 
 ```typescript
 // agent-manager.ts:486
@@ -445,15 +448,15 @@ const subDef: AgentDefinition = {
   ...parentDef,
   agentId: subId,
   port: 0,  // dynamic
-  systemPrompt: opts.task,  // ← task instructions become the system prompt
+  systemPrompt: 'You are a focused subagent. Complete the task described in the user message...',
   allowedTools: /* subset of parent */,
   deniedTools: [...parentDef.deniedTools, 'spawn_subagent'],
 };
 ```
 
 The subagent then goes through the same prompt priority chain, but since `systemPrompt` is set, it becomes the custom file prompt (Priority 1). The subagent:
-- Gets the task as its system prompt
-- Receives the same task text again as the user message (via `processMessage`)
+- Gets a minimal instruction as its system prompt
+- Receives the full task as the user message (via `processMessage` in `spawn-subagent.ts`)
 - Has a subset of the parent's tools (deny list includes `spawn_subagent`)
 - Cannot spawn its own subagents (single-level)
 - Auto-kills after configurable timeout (default 5 min)
@@ -472,16 +475,18 @@ Both sources are merged by `PlaybookCache` (`playbook-cache.ts`) into a single `
 
 ### Keyword Classification
 
-`classifyMessage()` (`playbook-classifier.ts`) performs simple lowercase substring matching:
+`classifyMessage()` (`playbook-classifier.ts`) uses word-boundary regex matching with `includes()` fallback:
 
 ```typescript
 for (const pb of playbooks) {
-  if (pb.keywords.some((kw) => lower.includes(kw))) {
+  if (pb.keywords.some((kw) => matchesKeyword(lower, kw))) {
     matched.push(pb);
   }
 }
 return matched.sort((a, b) => b.priority - a.priority);
 ```
+
+`matchesKeyword()` uses `\b` word-boundary regex for keywords that start/end with word characters (e.g. `"file"` won't match `"profile"`). Keywords starting/ending with non-word characters (e.g. `"c++"`, `".net"`) fall back to `includes()` since `\b` cannot anchor there.
 
 - Multiple playbooks can match a single message
 - Results sorted by priority (highest first)
