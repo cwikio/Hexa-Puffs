@@ -98,17 +98,52 @@ def test_send_message_to_conversation(mock_client):
     )
 
 
-def test_send_message_to_recipients(mock_client):
+def test_send_message_to_urn_recipients(mock_client):
+    """URN IDs are passed through without search."""
     from src.tools.messaging import handle_send_message
 
-    result = handle_send_message("Hi there", recipients=["urn1", "urn2"])
+    result = handle_send_message("Hi there", recipients=["ACoAAB123", "ACoAAB456"])
 
     assert result["success"] is True
     mock_client.send_message.assert_called_once_with(
         message_body="Hi there",
         conversation_urn_id=None,
-        recipients=["urn1", "urn2"],
+        recipients=["ACoAAB123", "ACoAAB456"],
     )
+    mock_client.search_people.assert_not_called()
+
+
+def test_send_message_resolves_name_to_urn(mock_client):
+    """Names are auto-resolved to URN IDs via search."""
+    mock_client.search_people.return_value = [
+        {"urn_id": "ACoAABxyz", "name": "Tomasz Cwik"}
+    ]
+
+    from src.tools.messaging import handle_send_message
+
+    result = handle_send_message("Hi!", recipients=["Tomasz Cwik"])
+
+    assert result["success"] is True
+    assert result["data"]["resolvedRecipients"] == ["ACoAABxyz"]
+    mock_client.search_people.assert_called_once_with(keywords="Tomasz Cwik", limit=1)
+    mock_client.send_message.assert_called_once_with(
+        message_body="Hi!",
+        conversation_urn_id=None,
+        recipients=["ACoAABxyz"],
+    )
+
+
+def test_send_message_name_not_found(mock_client):
+    """If name search returns no results, return error instead of silently failing."""
+    mock_client.search_people.return_value = []
+
+    from src.tools.messaging import handle_send_message
+
+    result = handle_send_message("Hi!", recipients=["Nobody McFakename"])
+
+    assert result["success"] is False
+    assert result["errorCode"] == "RECIPIENT_NOT_FOUND"
+    mock_client.send_message.assert_not_called()
 
 
 def test_send_message_empty_body(mock_client):
