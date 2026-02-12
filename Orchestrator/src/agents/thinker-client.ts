@@ -69,6 +69,7 @@ export class ThinkerClient {
     noTools: boolean = false,
     notifyChatId?: string,
     requiredTools?: string[],
+    skillId?: number,
   ): Promise<ProcessingResponse> {
     const url = `${this.baseUrl}/execute-skill`;
 
@@ -76,7 +77,7 @@ export class ThinkerClient {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instructions, maxSteps, notifyOnCompletion, noTools, notifyChatId, requiredTools }),
+        body: JSON.stringify({ skillId, instructions, maxSteps, notifyOnCompletion, noTools, notifyChatId, requiredTools }),
         signal: AbortSignal.timeout(this.timeout),
       });
 

@@ -225,21 +225,9 @@ export class Agent {
   private async refreshToolsIfNeeded(): Promise<void> {
     try {
       const freshOrchestratorTools = await this.orchestrator.getCachedToolsOrRefresh();
-      const freshNames = new Set(freshOrchestratorTools.map(t => t.name));
       const currentNames = new Set(Object.keys(this.tools));
 
-      // Quick set equality check
-      if (freshNames.size === currentNames.size && [...freshNames].every(n => currentNames.has(n))) {
-        return; // no change
-      }
-
-      const added = [...freshNames].filter(n => !currentNames.has(n));
-      const removed = [...currentNames].filter(n => !freshNames.has(n));
-      logger.info(`Tool set changed: +${added.length} added, -${removed.length} removed`);
-      if (added.length > 0) logger.info(`  Added: ${added.join(', ')}`);
-      if (removed.length > 0) logger.info(`  Removed: ${removed.join(', ')}`);
-
-      // Rebuild tools
+      // Always rebuild (cheap) so essential tools stay current
       const dynamicTools = createToolsFromOrchestrator(
         freshOrchestratorTools,
         this.orchestrator,
@@ -251,6 +239,18 @@ export class Agent {
         () => this.currentTrace,
       );
       this.tools = { ...dynamicTools, ...essentialTools };
+
+      // Compare rebuilt set against previous set to detect real changes
+      const rebuiltNames = new Set(Object.keys(this.tools));
+      if (rebuiltNames.size === currentNames.size && [...rebuiltNames].every(n => currentNames.has(n))) {
+        return; // no real change
+      }
+
+      const added = [...rebuiltNames].filter(n => !currentNames.has(n));
+      const removed = [...currentNames].filter(n => !rebuiltNames.has(n));
+      logger.info(`Tool set changed: +${added.length} added, -${removed.length} removed`);
+      if (added.length > 0) logger.info(`  Added: ${added.join(', ')}`);
+      if (removed.length > 0) logger.info(`  Removed: ${removed.join(', ')}`);
 
       // Re-initialize embedding selector (cache makes this fast for existing tools)
       if (this.embeddingSelector) {
@@ -1325,15 +1325,41 @@ Complete the task step by step, using your available tools. When done, provide a
       if (selectedTools) {
         delete selectedTools['send_telegram'];
       }
-      const result = await generateText({
-        model: this.modelFactory.getModel(),
-        system: systemPromptWithContext,
-        messages: [{ role: 'user', content: taskInstructions }],
-        ...(selectedTools ? { tools: selectedTools, toolChoice: 'auto' as const } : {}),
-        maxSteps,
-        temperature: this.config.temperature,
-        abortSignal: AbortSignal.timeout(90_000),
-      });
+      let result;
+      try {
+        result = await generateText({
+          model: this.modelFactory.getModel(),
+          system: systemPromptWithContext,
+          messages: [{ role: 'user', content: taskInstructions }],
+          ...(selectedTools ? { tools: selectedTools, toolChoice: 'auto' as const } : {}),
+          maxSteps,
+          temperature: this.config.temperature,
+          abortSignal: AbortSignal.timeout(90_000),
+        });
+      } catch (genError) {
+        const genMsg = genError instanceof Error ? genError.message : '';
+        const isToolCallError =
+          genMsg.includes('Failed to call a function') ||
+          genMsg.includes('failed_generation') ||
+          genMsg.includes('tool call validation failed') ||
+          genMsg.includes('maximum number of items');
+
+        if (isToolCallError && selectedTools) {
+          logger.warn(`[proactive] Tool call failed, retrying once: ${genMsg}`);
+          const retryTemp = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
+          result = await generateText({
+            model: this.modelFactory.getModel(),
+            system: systemPromptWithContext,
+            messages: [{ role: 'user', content: taskInstructions }],
+            ...(selectedTools ? { tools: selectedTools, toolChoice: 'auto' as const } : {}),
+            maxSteps: Math.min(maxSteps, 4),
+            temperature: retryTemp,
+            abortSignal: AbortSignal.timeout(90_000),
+          });
+        } else {
+          throw genError;
+        }
+      }
 
       // Record token usage in cost monitor
       this.costMonitor?.recordUsage(

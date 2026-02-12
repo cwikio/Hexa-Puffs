@@ -594,6 +594,7 @@ export const skillSchedulerFunction = inngest.createFunction(
             false,
             notifyChatId,
             parsedRequiredTools,
+            skill.id,
           );
 
           // Update skill's last_run fields via Memory MCP
