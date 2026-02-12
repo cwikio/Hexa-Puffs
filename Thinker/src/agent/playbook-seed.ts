@@ -122,7 +122,8 @@ User asks to search, research, or find information about a topic. Also when user
 - Use web_fetch (not browser) to read webpage content — it's much faster
 - Use news_search with freshness="24h" for current events
 - Don't overwhelm — present top 3-5 results, offer to dig deeper
-- Only fall back to browser tools if web_fetch returns empty or unusable content`,
+- Only fall back to browser tools if web_fetch returns empty or unusable content
+- ALWAYS include source URLs at the bottom of your response (Sources: section with clickable links)`,
     required_tools: ['searcher_web_search', 'searcher_news_search', 'searcher_web_fetch', 'memory_store_fact'],
     max_steps: 8,
     notify_on_completion: false,
