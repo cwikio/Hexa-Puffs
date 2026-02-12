@@ -502,16 +502,21 @@ User asks about software deployments, build logs, project status, or deployment 
 
 ## AVAILABLE TOOLS
 IMPORTANT: Only these Vercel tools exist. Do NOT call vercel_list_teams, vercel_list_projects, or any other tool not listed here:
-- vercel_getDeployments — list deployments (optionally filter by project name, state, target)
+- vercel_getDeployments — list deployments (optionally filter by project name via "app" param, state, target)
 - vercel_getDeployment — get details for a specific deployment by ID
 - vercel_getDeploymentEvents — get build logs/events for a deployment
 - vercel_listDeploymentFiles — list files in a deployment
 - vercel_getDeploymentFileContents — read a specific file from a deployment
 
+## CRITICAL PARAMETER RULES
+- NEVER pass teamId or slug parameters — the API token handles scope automatically
+- Passing made-up teamId/slug values causes 403 Forbidden errors
+- The only required parameter is deploymentId (for single-deployment tools) or no params for getDeployments
+
 ## STEPS
-1. vercel_getDeployments — list recent deployments (filter by project name if the user mentions one)
-2. Identify the relevant deployment from the list
-3. vercel_getDeployment with the deployment ID — get full details (status, URL, errors)
+1. vercel_getDeployments — list recent deployments. Use "app" param to filter by project name if mentioned. Do NOT pass teamId or slug.
+2. Identify the relevant deployment from the list — note its deployment ID (starts with "dpl_")
+3. vercel_getDeployment with the real deployment ID from step 1 — get full details (status, URL, errors)
 4. If user asks about logs/errors: vercel_getDeploymentEvents with the deployment ID
 5. Present: project name, deployment state, URL, any errors or warnings from the logs
 
@@ -519,7 +524,8 @@ IMPORTANT: Only these Vercel tools exist. Do NOT call vercel_list_teams, vercel_
 - There is no list_teams or list_projects tool — start with getDeployments which returns project info
 - Deployment states: READY, ERROR, BUILDING, QUEUED, CANCELED
 - Filter getDeployments by target="production" for prod-only views
-- If the user asks about a specific project, pass the project name to getDeployments`,
+- Use "app" parameter (not "project" or "name") to filter by project name
+- ALWAYS use real IDs from API responses — never guess or make up IDs`,
     required_tools: [
       'vercel_getDeployments', 'vercel_getDeployment', 'vercel_getDeploymentEvents',
       'vercel_listDeploymentFiles', 'vercel_getDeploymentFileContents',
