@@ -257,33 +257,39 @@ Guardian scanning is controlled by a single config file:
 
 ```typescript
 export const guardianConfig = {
-  enabled: false,               // Global kill switch (disabled by default)
-  failMode: 'closed' as const,  // 'closed' = block when Guardian unavailable
+  enabled: true,
+  failMode: 'closed' as const,
+
+  defaultInput: true,           // Scan inputs for unknown/new MCPs
+  defaultOutput: true,          // Scan outputs for unknown/new MCPs
 
   input: {                      // Scan tool arguments BEFORE reaching the MCP
-    telegram: true,
+    telegram: false,
     onepassword: true,
-    filer: true,
-    gmail: true,
     memory: true,
+    filer: true,
     searcher: false,
+    gmail: true,
+    codexec: true,
   },
 
   output: {                     // Scan tool results BEFORE returning to caller
-    onepassword: true,
-    filer: true,
-    gmail: true,
     telegram: false,
+    onepassword: false,
     memory: false,
-    searcher: false,
+    filer: true,
+    searcher: true,
+    gmail: true,
+    codexec: false,
   },
 };
 ```
 
 ### Enabling Guardian
 
-1. Set `enabled: true` in `Orchestrator/src/config/guardian.ts`
-2. Ensure Ollama is running with the Guardian model loaded
+Guardian scanning is enabled by default (`enabled: true`). Ensure a scanning provider is available:
+1. **Groq (cloud):** Set `GROQ_API_KEY` in Guardian's `.env`
+2. **Ollama (local):** Ensure Ollama is running with the Guardian model loaded
 3. Restart the Orchestrator
 
 ### Disabling Guardian
@@ -315,14 +321,16 @@ output: {
 
 ### What Gets Scanned
 
-| MCP        | Input Scanning | Output Scanning | Rationale                            |
-| ---------- | -------------- | --------------- | ------------------------------------ |
-| Telegram   | Yes            | No              | Catch injection in outgoing messages |
-| 1Password  | Yes            | Yes             | Protect credentials from leakage     |
-| Filer      | Yes            | Yes             | Scan file content both ways          |
-| Gmail      | Yes            | Yes             | Scan email content both ways         |
-| Memory     | Yes            | No              | Protect stored facts from injection  |
-| Searcher   | No             | No              | Search queries are low-risk          |
+| MCP        | Input Scanning | Output Scanning | Rationale                                  |
+| ---------- | -------------- | --------------- | ------------------------------------------ |
+| Telegram   | No             | No              | AI-composed messages, low risk both ways    |
+| 1Password  | Yes            | No              | Protect queries; output is trusted          |
+| Memory     | Yes            | No              | Protect stored facts; output is trusted     |
+| Filer      | Yes            | Yes             | File content could carry injections         |
+| Searcher   | No             | Yes             | Queries are low-risk; web results untrusted |
+| Gmail      | Yes            | Yes             | Emails are the primary injection vector     |
+| CodeExec   | Yes            | No              | Code args are high-risk; output follows     |
+| (unknown)  | Yes            | Yes             | New/external MCPs scanned both ways         |
 
 ## Architecture
 

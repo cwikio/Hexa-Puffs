@@ -34,7 +34,7 @@ export const guardianConfig = {
    * dynamically — these defaults ensure they get Guardian coverage.
    */
   defaultInput: true,
-  defaultOutput: false,
+  defaultOutput: true,
 
   /**
    * Scan the ARGUMENTS going into an MCP (→ direction).
