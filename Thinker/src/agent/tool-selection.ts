@@ -5,6 +5,8 @@ import { Logger } from '@mcp/shared/Utils/logger.js';
 
 const logger = new Logger('thinker:tool-selection');
 
+const MAX_TOOLS = parseInt(process.env.TOOL_SELECTOR_MAX_TOOLS ?? '25', 10);
+
 /** Core tools that are always included regardless of selection method */
 const CORE_TOOL_NAMES = [
   'send_telegram',
@@ -13,6 +15,55 @@ const CORE_TOOL_NAMES = [
   'get_status',
   'spawn_subagent',
 ];
+
+/**
+ * Applies a hard cap on the number of tools using tiered priority:
+ *  Tier 1: Core tools (always kept)
+ *  Tier 2: Tools with embedding scores, sorted descending
+ *  Tier 3: Regex-only tools (no score), alphabetical
+ */
+function applyToolCap(
+  tools: Record<string, CoreTool>,
+  coreNames: string[],
+  scores: Map<string, number> | null,
+  cap: number,
+): Record<string, CoreTool> {
+  const names = Object.keys(tools);
+  if (names.length <= cap) return tools;
+
+  const coreSet = new Set(coreNames);
+  const kept: string[] = [];
+
+  // Tier 1: core tools
+  for (const name of names) {
+    if (coreSet.has(name)) kept.push(name);
+  }
+
+  // Remaining non-core tools
+  const remaining = names.filter(n => !coreSet.has(n));
+
+  // Tier 2 + 3: sort by score descending, no-score tools last (alphabetical)
+  remaining.sort((a, b) => {
+    const sa = scores?.get(a) ?? -1;
+    const sb = scores?.get(b) ?? -1;
+    if (sa !== sb) return sb - sa;
+    return a.localeCompare(b);
+  });
+
+  const slotsLeft = cap - kept.length;
+  const dropped = remaining.slice(slotsLeft);
+  kept.push(...remaining.slice(0, slotsLeft));
+
+  if (dropped.length > 0) {
+    logger.info(`Tool cap: kept ${kept.length}/${names.length}, dropped ${dropped.length}: ${dropped.join(', ')}`);
+  }
+
+  const result: Record<string, CoreTool> = {};
+  for (const name of kept) {
+    result[name] = tools[name];
+  }
+  return result;
+}
 
 /**
  * Select tools with embedding-based selection, falling back to regex on error or absence.
@@ -51,7 +102,7 @@ export async function selectToolsWithFallback(
         );
       }
 
-      return merged;
+      return applyToolCap(merged, CORE_TOOL_NAMES, embeddingSelector.getLastScores(), MAX_TOOLS);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logger.warn(`Embedding tool selection failed, falling back to regex: ${msg}`);
@@ -60,5 +111,5 @@ export async function selectToolsWithFallback(
 
   // Fallback: existing regex-based selector
   logger.info('Tool selection: method=regex (embedding unavailable)');
-  return selectToolsForMessage(message, allTools);
+  return applyToolCap(selectToolsForMessage(message, allTools), CORE_TOOL_NAMES, null, MAX_TOOLS);
 }

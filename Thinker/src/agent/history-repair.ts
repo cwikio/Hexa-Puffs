@@ -4,6 +4,72 @@ import { Logger } from '@mcp/shared/Utils/logger.js';
 const logger = new Logger('thinker:history-repair');
 
 /**
+ * Truncates old tool results in conversation history to reduce token usage.
+ *
+ * Keeps the most recent `preserveLastN` tool-result messages intact,
+ * and replaces older tool results with a one-line summary.
+ * Does not mutate the input array.
+ */
+export function truncateHistoryToolResults(
+  messages: CoreMessage[],
+  preserveLastN: number = 2,
+): CoreMessage[] {
+  if (messages.length === 0) return [];
+
+  // Find all indices with tool-result messages
+  const toolIndices: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === 'tool') toolIndices.push(i);
+  }
+
+  // If we have fewer tool messages than the preserve count, nothing to truncate
+  if (toolIndices.length <= preserveLastN) return messages;
+
+  // Indices to preserve (the last N tool messages)
+  const preserveSet = new Set(
+    preserveLastN > 0 ? toolIndices.slice(-preserveLastN) : [],
+  );
+
+  const result: CoreMessage[] = [];
+  let truncatedCount = 0;
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+
+    if (msg.role === 'tool' && !preserveSet.has(i) && Array.isArray(msg.content)) {
+      // Truncate this tool message's results
+      const truncatedContent = msg.content.map((part) => {
+        if (
+          typeof part === 'object' &&
+          part !== null &&
+          'type' in part &&
+          part.type === 'tool-result' &&
+          'toolName' in part &&
+          'result' in part
+        ) {
+          const resultJson = JSON.stringify(part.result);
+          truncatedCount++;
+          return {
+            ...part,
+            result: `[${(part as { toolName: string }).toolName}: truncated, was ${resultJson.length} chars]`,
+          };
+        }
+        return part;
+      });
+      result.push({ role: 'tool', content: truncatedContent });
+    } else {
+      result.push(msg);
+    }
+  }
+
+  if (truncatedCount > 0) {
+    logger.info(`Truncated ${truncatedCount} old tool result(s) in history (preserved last ${preserveLastN})`);
+  }
+
+  return result;
+}
+
+/**
  * Extracts tool-call parts from an assistant message's content.
  * Returns an empty array if the message is not an assistant message
  * or has string content (no tool calls).

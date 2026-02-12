@@ -60,6 +60,7 @@ export class EmbeddingToolSelector {
   private toolEmbeddings: Map<string, Float32Array> = new Map();
   private initialized = false;
   private lastStats: ToolSelectionStats | null = null;
+  private lastScores: Map<string, number> | null = null;
 
   constructor(provider: EmbeddingProvider, config?: Partial<EmbeddingToolSelectorConfig>) {
     this.provider = provider;
@@ -149,6 +150,9 @@ export class EmbeddingToolSelector {
     // Sort by score descending
     scores.sort((a, b) => b.score - a.score);
 
+    // Store full scores for use by tool cap logic
+    this.lastScores = new Map(scores.map(s => [s.name, s.score]));
+
     // Build selected set: always include core tools
     const selected = new Set<string>();
     let coreToolCount = 0;
@@ -216,6 +220,10 @@ export class EmbeddingToolSelector {
 
   getLastSelectionStats(): ToolSelectionStats | null {
     return this.lastStats;
+  }
+
+  getLastScores(): Map<string, number> | null {
+    return this.lastScores;
   }
 
   isInitialized(): boolean {

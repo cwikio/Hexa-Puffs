@@ -203,6 +203,12 @@ When **no keywords match**, the default groups `['search', 'memory']` are activa
 
 Glob patterns (e.g., `memory_*`) are expanded against the full tool map at runtime by converting to regex (`memory_.*`).
 
+After selection (both regex-only and embedding+regex paths), a **hard cap** is applied (default 25, configurable via `TOOL_SELECTOR_MAX_TOOLS`). If the merged result exceeds the cap, tools are dropped using tiered priority:
+
+1. **Tier 1** (always kept): Core tools — `send_telegram`, `store_fact`, `search_memories`, `get_status`, `spawn_subagent`
+2. **Tier 2** (kept by score): Tools with embedding scores, sorted descending
+3. **Tier 3** (kept last): Regex-only tools (no embedding score), alphabetical
+
 ### Embedding-Based Selection
 
 ```
@@ -258,11 +264,12 @@ When embedding selection is available, both methods run and results are merged:
 
 Rationale: Regex encodes curated domain knowledge that pure semantic similarity can miss. For example, image requests need both `search` (to find images) AND `telegram` (to send them) — a semantic model might only catch the search aspect.
 
-The merge is additive — embedding results take priority, regex results fill gaps.
+The merge is additive — embedding results take priority, regex results fill gaps. After merging, the tool cap is applied if the total exceeds `MAX_TOOLS` (default 25).
 
 **Logging:**
 ```
 Tool selection: method=embedding+regex, embedding=15, regex added=8, total=23/72, topScore=0.682
+Tool cap: kept 25/35, dropped 10: extra_tool_1, extra_tool_2, ...
 ```
 
 ### Required Tools (Skill Shortcut)
@@ -611,20 +618,21 @@ Every LLM call includes several components, each consuming tokens:
 │  └────────────────────────────────────────────────────┘      │
 │                                                              │
 │  ┌────────────────────────────────────────────────────┐      │
-│  │ Conversation History                  ~2000-5000 tk│      │
+│  │ Conversation History                  ~1000-5000 tk│      │
 │  │  - Last 50 messages (slice(-50))                   │      │
-│  │  - Includes tool calls and results                 │      │
 │  │  - Repaired for valid alternation                  │      │
+│  │  - Old tool results truncated to summaries         │      │
+│  │  - Last 2 tool exchanges kept verbatim             │      │
 │  └────────────────────────────────────────────────────┘      │
 │                                                              │
 │  ┌────────────────────────────────────────────────────┐      │
-│  │ Tool Definitions                      ~1500-14000 tk│     │
+│  │ Tool Definitions                      ~500-3750 tk │      │
 │  │  - JSON schemas for each selected tool             │      │
 │  │  - ~100-200 tokens per tool                        │      │
+│  │  - Hard cap: 25 tools max (TOOL_SELECTOR_MAX_TOOLS)│      │
 │  │                                                    │      │
-│  │  Interactive (15-20 tools):          ~1500-3000 tk │      │
+│  │  Interactive (capped at 25):        ~2500-3750 tk  │      │
 │  │  Skill with required_tools (3-5):    ~300-600 tk   │      │
-│  │  Skill WITHOUT required_tools (72+): ~7000-14000 tk│      │
 │  └────────────────────────────────────────────────────┘      │
 │                                                              │
 │  ┌────────────────────────────────────────────────────┐      │
@@ -632,9 +640,8 @@ Every LLM call includes several components, each consuming tokens:
 │  └────────────────────────────────────────────────────┘      │
 │                                                              │
 │  Total per turn:                                             │
-│    Interactive:  ~4,500 - 10,000 tokens                      │
+│    Interactive:  ~4,000 - 8,000 tokens                       │
 │    Skill (opt):  ~1,500 - 3,000 tokens                       │
-│    Skill (old):  ~10,000 - 20,000 tokens                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -653,23 +660,46 @@ With `required_tools`, the Email Processor drops from 72 to 3 tools — saving ~
 
 ```
 Thinker/src/agent/loop.ts — buildContext()
+Thinker/src/agent/history-repair.ts
 ```
 
 - **Window**: Last 50 messages (`state.messages.slice(-50)`)
-- **Includes**: Full structured tool calls and results (can be large)
+- **Repair**: `repairConversationHistory()` fixes orphan tool results, missing results, and mismatched tool-call/result pairs
+- **Truncation**: `truncateHistoryToolResults()` replaces old tool results with one-line summaries to reduce token waste
 - **Compaction**: When session exceeds a threshold, older messages are summarized by an LLM and the summary is injected into the system prompt
 - **Session storage**: JSONL files in `~/.annabelle/sessions/{agentId}/`
 
+#### History Tool Result Truncation
+
+Tool results in conversation history can be very large (a single `web_fetch` can return 20K+ chars). The `truncateHistoryToolResults()` function reduces this by replacing old tool results with summaries while preserving the most recent exchanges.
+
+```
+History pipeline:
+  state.messages.slice(-50)
+    │
+    ▼
+  repairConversationHistory()    ← fix structural issues
+    │
+    ▼
+  truncateHistoryToolResults(messages, preserveLastN=2)
+    │
+    ├── Tool results [0..N-2]:  replaced with "[toolName: truncated, was X chars]"
+    └── Tool results [N-1..N]:  kept verbatim (last 2 exchanges)
+```
+
+**Token savings:** With 10 tool-result messages in a 50-message window, each historical result of ~500-5000 tokens is reduced to ~15 tokens. Potential savings: 5K-50K tokens per turn.
+
 ### Skill vs Interactive Comparison
 
-| Dimension | Interactive | Skill (with required_tools) | Skill (without) |
-|-----------|-------------|----------------------------|-----------------|
-| System prompt | Full persona + injections | Persona + task header | Same |
-| History | Last 50 messages | None (instructions only) | None |
-| Tool selection | Embedding + regex | Direct resolution | Keyword on instructions |
-| Tools passed | ~15-20 | ~3-5 | ~72+ |
-| Tool tokens | ~2,000 | ~500 | ~10,000+ |
-| Total input | ~5,000-10,000 | ~1,500-3,000 | ~12,000-18,000 |
+| Dimension | Interactive | Skill (with required_tools) |
+|-----------|-------------|----------------------------|
+| System prompt | Full persona + injections | Persona + task header |
+| History | Last 50 messages (old results truncated) | None (instructions only) |
+| Tool selection | Embedding + regex (capped at 25) | Direct resolution |
+| Tools passed | ~15-25 | ~3-5 |
+| Tool tokens | ~1,500-3,750 | ~300-600 |
+| History tokens | ~1,000-5,000 (truncated) | N/A |
+| Total input | ~4,000-8,000 | ~1,500-3,000 |
 
 ---
 
@@ -785,9 +815,10 @@ The Thinker detects new or removed tools without requiring a restart:
 | HTTP Tool Endpoints | `Orchestrator/src/core/http-handlers.ts` | `/tools/list`, `/tools/call` |
 | Thinker Message Endpoint | `Thinker/src/index.ts` | `/process-message`, `/execute-skill` |
 | Agent Loop | `Thinker/src/agent/loop.ts` | `processMessage()`, `processProactiveTask()`, `buildContext()`, `refreshToolsIfNeeded()` |
-| Embedding Tool Selector | `Thinker/src/agent/embedding-tool-selector.ts` | Initialization, selection, caching |
-| Tool Selection Merge | `Thinker/src/agent/tool-selection.ts` | `selectToolsWithFallback()` |
+| Embedding Tool Selector | `Thinker/src/agent/embedding-tool-selector.ts` | Initialization, selection, caching, `getLastScores()` |
+| Tool Selection Merge | `Thinker/src/agent/tool-selection.ts` | `selectToolsWithFallback()`, `applyToolCap()` |
 | Regex Tool Selector | `Thinker/src/agent/tool-selector.ts` | Groups, keyword routes, `selectToolsForMessage()` |
+| History Repair & Truncation | `Thinker/src/agent/history-repair.ts` | `repairConversationHistory()`, `truncateHistoryToolResults()` |
 | Cost Monitor | `Thinker/src/cost/monitor.ts` | Sliding window, thresholds, pause/resume |
 | Inngest Skill Scheduler | `Orchestrator/src/jobs/functions.ts` | Auto-enable, cron matching, execution |
 | Thinker Client | `Orchestrator/src/agents/thinker-client.ts` | `executeSkill()` HTTP call |
