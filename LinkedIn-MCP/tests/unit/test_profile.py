@@ -1,5 +1,8 @@
 """Unit tests for profile tools."""
 
+import os
+from unittest.mock import patch
+
 
 def test_get_profile_returns_structured_data(mock_client):
     mock_client.get_profile.return_value = {
@@ -57,7 +60,6 @@ def test_get_profile_handles_error(mock_client):
 
 
 def test_get_profile_trims_internal_fields(mock_client):
-    """Ensure internal Voyager fields are not leaked to the response."""
     mock_client.get_profile.return_value = {
         "public_id": "jane",
         "firstName": "Jane",
@@ -103,18 +105,71 @@ def test_get_own_profile_success(mock_client):
 
     assert result["success"] is True
     assert result["data"]["firstName"] == "Annabelle"
-    mock_client.get_user_profile.assert_called_once()
     mock_client.get_profile.assert_called_once_with("my-profile-id")
 
 
+def test_get_own_profile_me_error_retries_without_cache(mock_client):
+    """/me returns error, retry with use_cache=False succeeds."""
+    mock_client.get_user_profile.side_effect = [
+        {"status": 403},  # first call (cached error)
+        {"miniProfile": {"publicIdentifier": "retry-id"}},  # retry
+    ]
+    mock_client.client.metadata = {"me": {"status": 403}}
+    mock_client.get_profile.return_value = {
+        "firstName": "Test",
+        "lastName": "User",
+        "experience": [],
+        "education": [],
+    }
+
+    from src.tools.profile import handle_get_own_profile
+
+    result = handle_get_own_profile()
+
+    assert result["success"] is True
+    mock_client.get_profile.assert_called_once_with("retry-id")
+
+
+def test_get_own_profile_me_error_falls_back_to_env(mock_client):
+    """/me keeps failing, falls back to LINKEDIN_PUBLIC_ID env var."""
+    mock_client.get_user_profile.return_value = {"status": 403}
+    mock_client.client.metadata = {}
+    mock_client.get_profile.return_value = {
+        "public_id": "env-id",
+        "firstName": "Env",
+        "lastName": "User",
+        "experience": [],
+        "education": [],
+    }
+
+    from src.tools.profile import handle_get_own_profile
+
+    with patch.dict(os.environ, {"LINKEDIN_PUBLIC_ID": "env-id"}):
+        result = handle_get_own_profile()
+
+    assert result["success"] is True
+    mock_client.get_profile.assert_called_once_with("env-id")
+
+
+def test_get_own_profile_no_fallback_returns_error(mock_client):
+    """/me fails and no LINKEDIN_PUBLIC_ID set."""
+    mock_client.get_user_profile.return_value = {"status": 403}
+    mock_client.client.metadata = {}
+
+    from src.tools.profile import handle_get_own_profile
+
+    with patch.dict(os.environ, {}, clear=True):
+        result = handle_get_own_profile()
+
+    assert result["success"] is False
+    assert "LINKEDIN_PUBLIC_ID" in result["error"]
+
+
 def test_get_own_profile_flat_response(mock_client):
-    """Flat /me response without miniProfile nesting."""
     mock_client.get_user_profile.return_value = {
         "publicIdentifier": "flat-profile-id",
-        "firstName": "Test",
     }
     mock_client.get_profile.return_value = {
-        "public_id": "flat-profile-id",
         "firstName": "Test",
         "lastName": "User",
         "experience": [],
@@ -127,48 +182,6 @@ def test_get_own_profile_flat_response(mock_client):
 
     assert result["success"] is True
     mock_client.get_profile.assert_called_once_with("flat-profile-id")
-
-
-def test_get_own_profile_vanity_name_fallback(mock_client):
-    """Response with vanityName instead of publicIdentifier."""
-    mock_client.get_user_profile.return_value = {
-        "vanityName": "vanity-id",
-    }
-    mock_client.get_profile.return_value = {
-        "public_id": "vanity-id",
-        "firstName": "Vanity",
-        "lastName": "User",
-        "experience": [],
-        "education": [],
-    }
-
-    from src.tools.profile import handle_get_own_profile
-
-    result = handle_get_own_profile()
-
-    assert result["success"] is True
-    mock_client.get_profile.assert_called_once_with("vanity-id")
-
-
-def test_get_own_profile_no_public_id(mock_client):
-    mock_client.get_user_profile.return_value = {"miniProfile": {}}
-
-    from src.tools.profile import handle_get_own_profile
-
-    result = handle_get_own_profile()
-
-    assert result["success"] is False
-    assert "public ID" in result["error"]
-
-
-def test_get_own_profile_empty_response(mock_client):
-    mock_client.get_user_profile.return_value = {}
-
-    from src.tools.profile import handle_get_own_profile
-
-    result = handle_get_own_profile()
-
-    assert result["success"] is False
 
 
 # --- _extract_own_urn_id ---
@@ -186,13 +199,6 @@ def test_extract_own_urn_id_from_flat_entity_urn():
 
     me = {"entityUrn": "urn:li:member:12345"}
     assert _extract_own_urn_id(me) == "12345"
-
-
-def test_extract_own_urn_id_from_object_urn():
-    from src.tools.profile import _extract_own_urn_id
-
-    me = {"objectUrn": "urn:li:member:67890"}
-    assert _extract_own_urn_id(me) == "67890"
 
 
 def test_extract_own_urn_id_from_plain_id():

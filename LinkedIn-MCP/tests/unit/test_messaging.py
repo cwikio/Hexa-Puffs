@@ -148,7 +148,7 @@ def test_send_message_to_urn_recipients(mock_client):
 
 
 def test_send_message_resolves_name_to_urn(mock_client):
-    """Names are auto-resolved to URN IDs via search."""
+    """Names are auto-resolved to URN IDs via keyword search (strategy 1)."""
     mock_client.search_people.return_value = [
         {"urn_id": "ACoAABxyz", "name": "Tomasz Cwik"}
     ]
@@ -159,7 +159,6 @@ def test_send_message_resolves_name_to_urn(mock_client):
 
     assert result["success"] is True
     assert result["data"]["resolvedRecipients"] == ["ACoAABxyz"]
-    mock_client.search_people.assert_called_once_with(keywords="Tomasz Cwik", limit=1)
     mock_client.send_message.assert_called_once_with(
         message_body="Hi!",
         conversation_urn_id=None,
@@ -167,8 +166,24 @@ def test_send_message_resolves_name_to_urn(mock_client):
     )
 
 
+def test_send_message_resolves_name_via_first_last_split(mock_client):
+    """Strategy 2: keyword search fails, first/last name split succeeds."""
+    mock_client.search_people.side_effect = [
+        [],  # strategy 1: keywords search → empty
+        [{"urn_id": "ACoAABsplit", "name": "Tomasz Cwik"}],  # strategy 2: name split
+    ]
+
+    from src.tools.messaging import handle_send_message
+
+    result = handle_send_message("Hi!", recipients=["Tomasz Cwik"])
+
+    assert result["success"] is True
+    assert result["data"]["resolvedRecipients"] == ["ACoAABsplit"]
+    assert mock_client.search_people.call_count == 2
+
+
 def test_send_message_name_not_found(mock_client):
-    """If name search returns no results, return error instead of silently failing."""
+    """All search strategies fail → RECIPIENT_NOT_FOUND."""
     mock_client.search_people.return_value = []
 
     from src.tools.messaging import handle_send_message
@@ -178,10 +193,12 @@ def test_send_message_name_not_found(mock_client):
     assert result["success"] is False
     assert result["errorCode"] == "RECIPIENT_NOT_FOUND"
     mock_client.send_message.assert_not_called()
+    # All 3 strategies tried
+    assert mock_client.search_people.call_count == 3
 
 
 def test_send_message_name_resolved_but_no_urn(mock_client):
-    """If search finds a person but urn_id is None, still return error."""
+    """Search finds a person but urn_id is None on all strategies → error."""
     mock_client.search_people.return_value = [
         {"urn_id": None, "name": "Ghost User"}
     ]

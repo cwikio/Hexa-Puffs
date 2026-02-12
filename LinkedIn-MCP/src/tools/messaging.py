@@ -64,25 +64,58 @@ def _looks_like_urn_id(value: str) -> bool:
 
 def _resolve_recipient(api: object, recipient: str) -> str | None:
     """Resolve a recipient to a URN ID. If it already looks like a URN ID, return as-is.
-    If it looks like a name, search for the person and return the top match's URN ID.
+    If it looks like a name, search with multiple strategies:
+    1. keyword search (full name)
+    2. first/last name split search
+    3. broader search with include_private_profiles
     """
     if _looks_like_urn_id(recipient):
         return recipient
 
-    # Looks like a name — search for the person
     logger.info("Resolving recipient name '%s' to URN ID via search...", recipient)
-    results = api.search_people(keywords=recipient, limit=1)  # type: ignore[attr-defined]
-    logger.debug("search_people returned %d result(s) for '%s'", len(results) if results else 0, recipient)
+
+    # Strategy 1: keyword search
+    results = api.search_people(keywords=recipient, limit=5)  # type: ignore[attr-defined]
     if results:
-        logger.debug("First result keys: %s", list(results[0].keys()) if results[0] else "empty")
         urn_id = results[0].get("urn_id")
-        name = results[0].get("name", recipient)
         if urn_id:
-            logger.info("Resolved '%s' → '%s' (urn_id: %s)", recipient, name, urn_id)
-        else:
-            logger.warning("Search found '%s' but urn_id is None/empty. Full result: %s", name, results[0])
-        return urn_id
-    logger.warning("No search results for recipient '%s'", recipient)
+            logger.info("Resolved '%s' → '%s' (urn_id: %s)", recipient, results[0].get("name"), urn_id)
+            return urn_id
+
+    # Strategy 2: split into first/last name — more precise LinkedIn filter
+    parts = recipient.strip().split()
+    if len(parts) >= 2:
+        first_name = parts[0]
+        last_name = " ".join(parts[1:])
+        logger.info("Keyword search empty, trying first='%s' last='%s'...", first_name, last_name)
+        results = api.search_people(  # type: ignore[attr-defined]
+            keyword_first_name=first_name,
+            keyword_last_name=last_name,
+            include_private_profiles=True,
+            network_depths=["F", "S", "O"],
+            limit=5,
+        )
+        if results:
+            urn_id = results[0].get("urn_id")
+            if urn_id:
+                logger.info("Resolved '%s' → '%s' (urn_id: %s) via name split", recipient, results[0].get("name"), urn_id)
+                return urn_id
+
+    # Strategy 3: broad keyword search including out-of-network
+    logger.info("Name split empty, trying broad search for '%s'...", recipient)
+    results = api.search_people(  # type: ignore[attr-defined]
+        keywords=recipient,
+        include_private_profiles=True,
+        network_depths=["F", "S", "O"],
+        limit=5,
+    )
+    if results:
+        urn_id = results[0].get("urn_id")
+        if urn_id:
+            logger.info("Resolved '%s' → '%s' (urn_id: %s) via broad search", recipient, results[0].get("name"), urn_id)
+            return urn_id
+
+    logger.warning("All search strategies failed for recipient '%s'", recipient)
     return None
 
 

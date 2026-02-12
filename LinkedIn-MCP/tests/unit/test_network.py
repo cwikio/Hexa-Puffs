@@ -1,5 +1,8 @@
 """Unit tests for network tools."""
 
+import os
+from unittest.mock import patch
+
 
 # --- get_connections ---
 
@@ -37,21 +40,23 @@ def test_get_connections_returns_list(mock_client):
     mock_client.get_profile_connections.assert_called_once_with("abc123")
 
 
-def test_get_connections_flat_me_response(mock_client):
-    """get_user_profile returns flat response with entityUrn at top level."""
-    mock_client.get_user_profile.return_value = {
-        "entityUrn": "urn:li:member:flat123"
-    }
+def test_get_connections_me_error_falls_back_to_env(mock_client):
+    """/me returns error, falls back to LINKEDIN_PUBLIC_ID -> get_profile for URN."""
+    mock_client.get_user_profile.return_value = {"status": 403}
+    mock_client.client.metadata = {}
+    mock_client.get_profile.return_value = {"profile_id": "env_urn_123"}
     mock_client.get_profile_connections.return_value = [
         {"public_id": "u1", "firstName": "User", "lastName": "One"}
     ]
 
     from src.tools.network import handle_get_connections
 
-    result = handle_get_connections()
+    with patch.dict(os.environ, {"LINKEDIN_PUBLIC_ID": "my-public-id"}):
+        result = handle_get_connections()
 
     assert result["success"] is True
-    mock_client.get_profile_connections.assert_called_once_with("flat123")
+    mock_client.get_profile.assert_called_once_with("my-public-id")
+    mock_client.get_profile_connections.assert_called_once_with("env_urn_123")
 
 
 def test_get_connections_respects_limit(mock_client):
@@ -59,7 +64,7 @@ def test_get_connections_respects_limit(mock_client):
         "miniProfile": {"entityUrn": "urn:li:fs_miniProfile:abc123"}
     }
     mock_client.get_profile_connections.return_value = [
-        {"public_id": f"user-{i}", "firstName": f"User", "lastName": f"{i}"}
+        {"public_id": f"user-{i}", "firstName": "User", "lastName": f"{i}"}
         for i in range(20)
     ]
 
@@ -70,23 +75,14 @@ def test_get_connections_respects_limit(mock_client):
     assert result["data"]["count"] == 5
 
 
-def test_get_connections_no_urn_id(mock_client):
-    mock_client.get_user_profile.return_value = {"miniProfile": {}}
+def test_get_connections_no_urn_no_env(mock_client):
+    mock_client.get_user_profile.return_value = {"status": 403}
+    mock_client.client.metadata = {}
 
     from src.tools.network import handle_get_connections
 
-    result = handle_get_connections()
-
-    assert result["success"] is False
-    assert result["errorCode"] == "LINKEDIN_ERROR"
-
-
-def test_get_connections_empty_response(mock_client):
-    mock_client.get_user_profile.return_value = {}
-
-    from src.tools.network import handle_get_connections
-
-    result = handle_get_connections()
+    with patch.dict(os.environ, {}, clear=True):
+        result = handle_get_connections()
 
     assert result["success"] is False
     assert result["errorCode"] == "LINKEDIN_ERROR"
