@@ -29,16 +29,30 @@ export interface ExternalMCPEntry {
 const ENV_VAR_PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
 /**
+ * Resolve ${ENV_VAR} placeholders in a single string.
+ */
+function resolveString(value: string): string {
+  return value.replace(ENV_VAR_PATTERN, (_match, varName: string) => {
+    return process.env[varName] ?? '';
+  });
+}
+
+/**
  * Resolve ${ENV_VAR} placeholders in env values to actual environment values.
  */
 function resolveEnvVars(env: Record<string, string>): Record<string, string> {
   const resolved: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
-    resolved[key] = value.replace(ENV_VAR_PATTERN, (_match, varName: string) => {
-      return process.env[varName] ?? '';
-    });
+    resolved[key] = resolveString(value);
   }
   return resolved;
+}
+
+/**
+ * Resolve ${ENV_VAR} placeholders in args array.
+ */
+function resolveArgs(args: string[]): string[] {
+  return args.map(resolveString);
 }
 
 /**
@@ -85,7 +99,7 @@ export function loadExternalMCPs(
   for (const [name, config] of Object.entries(result.data)) {
     entries[name] = {
       command: config.command,
-      args: config.args,
+      args: config.args ? resolveArgs(config.args) : undefined,
       env: config.env ? resolveEnvVars(config.env) : undefined,
       timeout: config.timeout,
       required: false,
