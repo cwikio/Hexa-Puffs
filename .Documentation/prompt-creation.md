@@ -15,7 +15,6 @@ How the Thinker agent's system prompt is assembled, how dynamic context is injec
 7. [Playbook & Skill Injection Details](#playbook--skill-injection-details)
 8. [Conversation History as Context](#conversation-history-as-context)
 9. [Fact Extraction Prompt (Separate Pipeline)](#fact-extraction-prompt-separate-pipeline)
-10. [Suggestions for Improvement](#suggestions-for-improvement)
 
 ---
 
@@ -253,6 +252,12 @@ Relevant memories about the user:
 - Lives in Krakow (background)
 ```
 
+After assembly, the prompt size is logged for observability:
+
+```
+[prompt-size] System prompt: ~1250 tokens (5000 chars)
+```
+
 ---
 
 ## Proactive Task Prompt (Skills)
@@ -297,7 +302,7 @@ Relevant memories:
 - [fact 2]
 ```
 
-The task instructions are then passed as the sole user message:
+The assembled prompt size is logged (same `[prompt-size]` format as interactive messages). The task instructions are then passed as the sole user message:
 
 ```typescript
 const result = await generateText({
@@ -614,52 +619,6 @@ For full session management details, see [sessions.md](sessions.md).
 - Maximum 5 facts per extraction
 - Prompt template is file-based (`Thinker/prompts/fact-extraction-prompt.md`) with `{{KNOWN_FACTS}}` / `{{CONVERSATION}}` placeholders
 - Configurable via `THINKER_FACT_EXTRACTION_ENABLED`, `THINKER_FACT_EXTRACTION_IDLE_MS`, `THINKER_FACT_EXTRACTION_MAX_TURNS`, `THINKER_FACT_EXTRACTION_PROMPT_PATH`
-
----
-
-## Suggestions for Improvement
-
-### ~~1. Profile Persona Override Missing from Proactive Tasks~~ :white_check_mark:
-
-~~**Issue:** `buildContext()` checks `profile.profile_data.persona.system_prompt` and replaces the base prompt for interactive messages. But `processProactiveTask()` does not — it always uses the raw base prompt.~~
-
-**Done:** Added `orchestrator.getProfile()` call and persona override check to `processProactiveTask()`, mirroring the logic from `buildContext()`. Scheduled skills now respect runtime persona changes.
-
-### ~~2. DEFAULT_SYSTEM_PROMPT Hardcoded in loop.ts~~ :white_check_mark:
-
-~~**Issue:** The ~150-line default system prompt is a string constant at the top of `loop.ts`. Editing it requires modifying TypeScript source, rebuilding, and restarting.~~
-
-**Done:** Extracted to `Thinker/prompts/default-system-prompt.md`, loaded at startup in `initialize()`. Hardcoded constant kept as ultimate fallback. Configurable via `THINKER_DEFAULT_SYSTEM_PROMPT_PATH` env var.
-
-### ~~3. No Validation of Playbook required_tools~~ :white_check_mark:
-
-~~**Issue:** When playbooks declare `required_tools`, those tools are force-injected after selection (`loop.ts:554-565`). But there's no validation that the tool actually exists in `this.tools`. If a playbook references a tool that's not currently registered (e.g., the MCP is down), the tool is silently skipped.~~
-
-**Done:** Added `logger.warn()` when a required tool is not found in `this.tools` — logs `[playbook-tools] Required tool '{name}' not found (MCP may be down)`.
-
-### ~~4. Fact Extraction Prompt Not Parameterized~~ :white_check_mark:
-
-~~**Issue:** The fact extraction prompt in `fact-extractor.ts` is hardcoded. Unlike the main prompt (which has a priority chain with file overrides), the extraction prompt can only be changed by editing source code.~~
-
-**Done:** Template extracted to `Thinker/prompts/fact-extraction-prompt.md` with `{{KNOWN_FACTS}}` / `{{CONVERSATION}}` placeholders. Loaded at startup via `loadExtractionPromptTemplate()`. Falls back to hardcoded prompt if file not found. Configurable via `THINKER_FACT_EXTRACTION_PROMPT_PATH` env var.
-
-### ~~5. No Observability on Assembled Prompt Size~~ :white_check_mark:
-
-~~**Issue:** The system logs tool selection results (count, method, scores) but does not log the total assembled system prompt size in tokens. This makes it harder to debug token budget issues.~~
-
-**Done:** Added `[prompt-size]` log line after prompt assembly in both `buildContext()` and `processProactiveTask()`. Logs approximate token count (`chars / 4`) and character count.
-
-### ~~6. Playbook Keyword Matching is Brittle~~ :white_check_mark:
-
-~~**Issue:** `classifyMessage()` uses simple `message.toLowerCase().includes(keyword)` substring matching. This can produce false positives — e.g., the keyword `"file"` matches "profile", "meanwhile", etc.~~
-
-**Done:** `classifyMessage()` now uses word-boundary regex matching (`\bkeyword\b`) via `matchesKeyword()`. Falls back to `includes()` for keywords starting/ending with non-word characters (e.g. `"c++"`, `".net"`) or if regex construction fails. Prevents false positives like `"file"` matching `"profile"`.
-
-### ~~7. Subagent Prompt Double-Delivery~~ :white_check_mark:
-
-~~**Issue:** When a subagent is spawned, the `task` string is used as both the system prompt (via `systemPrompt` → temp file → `THINKER_SYSTEM_PROMPT_PATH`) AND the user message (via `client.processMessage({ text: task })`). The LLM sees the same text twice in different roles.~~
-
-**Done:** Subagent `systemPrompt` in `spawnSubagent()` changed from `opts.task` to a minimal instruction string. Full task details are now delivered only as the user message via `processMessage()`. Eliminates token duplication.
 
 ---
 
