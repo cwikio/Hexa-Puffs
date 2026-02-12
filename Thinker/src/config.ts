@@ -91,6 +91,10 @@ export const ConfigSchema = z.object({
   // Set by Orchestrator's AgentManager when spawning agents with custom prompts
   systemPromptPath: z.string().optional(),
 
+  // Path to the default system prompt file (fallback when no systemPromptPath or persona is configured)
+  // Defaults to the bundled prompts/default-system-prompt.md alongside the package
+  defaultSystemPromptPath: z.string().optional(),
+
   // Directory containing per-agent persona files (~/.annabelle/agents/{agentId}/instructions.md)
   personaDir: z.string().default('~/.annabelle/agents'),
 
@@ -118,6 +122,9 @@ export const ConfigSchema = z.object({
 
   // Post-conversation fact extraction
   factExtraction: FactExtractionConfigSchema.default({}),
+
+  // Path to fact extraction prompt template file (optional, uses bundled default if not set)
+  factExtractionPromptPath: z.string().optional(),
 
   // Embedding cache directory (for persisting tool embeddings across restarts)
   embeddingCacheDir: z.string().default('~/.annabelle/data'),
@@ -174,6 +181,7 @@ export function loadConfig(): Config {
     sendResponseDirectly: parseBoolean(process.env.THINKER_SEND_RESPONSE_DIRECTLY, false),
     thinkerAgentId: process.env.THINKER_AGENT_ID || 'thinker',
     systemPromptPath: process.env.THINKER_SYSTEM_PROMPT_PATH || undefined,
+    defaultSystemPromptPath: process.env.THINKER_DEFAULT_SYSTEM_PROMPT_PATH || undefined,
     personaDir: process.env.THINKER_PERSONA_DIR || '~/.annabelle/agents',
     skillsDir: process.env.THINKER_SKILLS_DIR || '~/.annabelle/skills',
     proactiveTasksEnabled: parseBoolean(process.env.PROACTIVE_TASKS_ENABLED, true),
@@ -205,6 +213,9 @@ export function loadConfig(): Config {
       maxTurns: parseInteger(process.env.THINKER_FACT_EXTRACTION_MAX_TURNS, 10),
       confidenceThreshold: parseNumber(process.env.THINKER_FACT_EXTRACTION_CONFIDENCE, 0.7),
     },
+
+    // Fact extraction prompt template
+    factExtractionPromptPath: process.env.THINKER_FACT_EXTRACTION_PROMPT_PATH || undefined,
 
     // Embedding cache directory
     embeddingCacheDir: process.env.EMBEDDING_CACHE_DIR || '~/.annabelle/data',

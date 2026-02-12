@@ -1,3 +1,5 @@
+import { readFile } from 'fs/promises';
+import { resolve } from 'path';
 import { generateText, type LanguageModelV1 } from 'ai';
 import { z } from 'zod';
 import { Logger } from '@mcp/shared/Utils/logger.js';
@@ -35,6 +37,29 @@ export interface ExtractedFact {
   confidence: number;
 }
 
+/** Cached file-based template (null = use hardcoded fallback) */
+let cachedTemplate: string | null = null;
+
+/**
+ * Load the extraction prompt template from a file.
+ * Called once at startup from Agent.initialize().
+ * Template should contain {{KNOWN_FACTS}} and {{CONVERSATION}} placeholders.
+ */
+export async function loadExtractionPromptTemplate(filePath?: string): Promise<void> {
+  const templatePath = filePath
+    ?? resolve(import.meta.dirname, '../../prompts/fact-extraction-prompt.md');
+  try {
+    const content = await readFile(templatePath, 'utf-8');
+    if (content.trim().length > 0) {
+      cachedTemplate = content.trim();
+      logger.info(`Loaded fact extraction prompt template from ${templatePath} (${cachedTemplate.length} chars)`);
+    }
+  } catch {
+    logger.info(`No fact extraction prompt template at ${templatePath}, using built-in fallback`);
+    cachedTemplate = null;
+  }
+}
+
 /**
  * Build the extraction prompt with conversation context and known facts
  */
@@ -50,6 +75,13 @@ function buildExtractionPrompt(
     knownFacts.length > 0
       ? `\nAlready known facts (DO NOT extract these again):\n${knownFacts.map((f) => `- ${f}`).join('\n')}\n`
       : '\nNo facts currently stored.\n';
+
+  // Use file-based template if loaded, otherwise fall back to hardcoded prompt
+  if (cachedTemplate) {
+    return cachedTemplate
+      .replace('{{KNOWN_FACTS}}', knownFactsText)
+      .replace('{{CONVERSATION}}', conversationText);
+  }
 
   return `Analyze this conversation and extract NEW facts about the user that are not already known.
 ${knownFactsText}

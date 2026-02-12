@@ -15,8 +15,30 @@ export interface CachedPlaybook {
   source: 'database' | 'file';
 }
 
+/** Escape special regex characters so a string can be used literally in a RegExp. */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
- * Classify a user message against cached playbooks using keyword substring matching.
+ * Test whether a keyword matches in a message using word-boundary regex.
+ * Falls back to simple substring matching if the keyword starts/ends with
+ * non-word characters (where \b cannot anchor) or if regex construction fails.
+ */
+function matchesKeyword(lowerMessage: string, keyword: string): boolean {
+  if (!/^\w/.test(keyword) || !/\w$/.test(keyword)) {
+    return lowerMessage.includes(keyword);
+  }
+  try {
+    const pattern = new RegExp('\\b' + escapeRegex(keyword) + '\\b', 'i');
+    return pattern.test(lowerMessage);
+  } catch {
+    return lowerMessage.includes(keyword);
+  }
+}
+
+/**
+ * Classify a user message against cached playbooks using word-boundary keyword matching.
  * Returns matching playbooks sorted by priority (highest first).
  * Multiple playbooks can match a single message.
  */
@@ -30,7 +52,7 @@ export function classifyMessage(
   const matched: CachedPlaybook[] = [];
 
   for (const pb of playbooks) {
-    if (pb.keywords.some((kw) => lower.includes(kw))) {
+    if (pb.keywords.some((kw) => matchesKeyword(lower, kw))) {
       matched.push(pb);
     }
   }

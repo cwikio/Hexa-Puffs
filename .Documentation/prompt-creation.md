@@ -620,35 +620,35 @@ For full session management details, see [sessions.md](sessions.md).
 
 **Location:** `loop.ts:407-409` (interactive) vs `loop.ts:1177` (proactive)
 
-### 2. DEFAULT_SYSTEM_PROMPT Hardcoded in loop.ts
+### ~~2. DEFAULT_SYSTEM_PROMPT Hardcoded in loop.ts~~ :white_check_mark:
 
-**Issue:** The ~150-line default system prompt is a string constant at the top of `loop.ts`. Editing it requires modifying TypeScript source, rebuilding, and restarting.
+~~**Issue:** The ~150-line default system prompt is a string constant at the top of `loop.ts`. Editing it requires modifying TypeScript source, rebuilding, and restarting.~~
 
-**Suggestion:** Extract to a separate file (e.g., `Thinker/prompts/default.md`) and load at startup, similar to how persona files work. This makes prompt iteration faster and doesn't require TypeScript changes.
+**Done:** Extracted to `Thinker/prompts/default-system-prompt.md`, loaded at startup in `initialize()`. Hardcoded constant kept as ultimate fallback. Configurable via `THINKER_DEFAULT_SYSTEM_PROMPT_PATH` env var.
 
-### 3. No Validation of Playbook required_tools
+### ~~3. No Validation of Playbook required_tools~~ :white_check_mark:
 
-**Issue:** When playbooks declare `required_tools`, those tools are force-injected after selection (`loop.ts:554-565`). But there's no validation that the tool actually exists in `this.tools`. If a playbook references a tool that's not currently registered (e.g., the MCP is down), the tool is silently skipped.
+~~**Issue:** When playbooks declare `required_tools`, those tools are force-injected after selection (`loop.ts:554-565`). But there's no validation that the tool actually exists in `this.tools`. If a playbook references a tool that's not currently registered (e.g., the MCP is down), the tool is silently skipped.~~
 
-**Suggestion:** Log a warning when a required tool can't be found, and consider disabling the playbook if critical tools are missing (similar to how the Inngest scheduler auto-disables skills whose tools are unavailable).
+**Done:** Added `logger.warn()` when a required tool is not found in `this.tools` — logs `[playbook-tools] Required tool '{name}' not found (MCP may be down)`.
 
-### 4. Fact Extraction Prompt Not Parameterized
+### ~~4. Fact Extraction Prompt Not Parameterized~~ :white_check_mark:
 
-**Issue:** The fact extraction prompt in `fact-extractor.ts` is hardcoded. Unlike the main prompt (which has a priority chain with file overrides), the extraction prompt can only be changed by editing source code.
+~~**Issue:** The fact extraction prompt in `fact-extractor.ts` is hardcoded. Unlike the main prompt (which has a priority chain with file overrides), the extraction prompt can only be changed by editing source code.~~
 
-**Suggestion:** This is low-priority since the extraction prompt is specialized and rarely needs changes. But for consistency, it could read from a configurable file.
+**Done:** Template extracted to `Thinker/prompts/fact-extraction-prompt.md` with `{{KNOWN_FACTS}}` / `{{CONVERSATION}}` placeholders. Loaded at startup via `loadExtractionPromptTemplate()`. Falls back to hardcoded prompt if file not found. Configurable via `THINKER_FACT_EXTRACTION_PROMPT_PATH` env var.
 
-### 5. No Observability on Assembled Prompt Size
+### ~~5. No Observability on Assembled Prompt Size~~ :white_check_mark:
 
-**Issue:** The system logs tool selection results (count, method, scores) but does not log the total assembled system prompt size in tokens. This makes it harder to debug token budget issues.
+~~**Issue:** The system logs tool selection results (count, method, scores) but does not log the total assembled system prompt size in tokens. This makes it harder to debug token budget issues.~~
 
-**Suggestion:** Log the approximate token count of the assembled system prompt (character count / 4 as a rough estimate) alongside the tool selection logs.
+**Done:** Added `[prompt-size]` log line after prompt assembly in both `buildContext()` and `processProactiveTask()`. Logs approximate token count (`chars / 4`) and character count.
 
-### 6. Playbook Keyword Matching is Brittle
+### ~~6. Playbook Keyword Matching is Brittle~~ :white_check_mark:
 
-**Issue:** `classifyMessage()` uses simple `message.toLowerCase().includes(keyword)` substring matching. This can produce false positives — e.g., the keyword `"file"` matches "profile", "meanwhile", etc.
+~~**Issue:** `classifyMessage()` uses simple `message.toLowerCase().includes(keyword)` substring matching. This can produce false positives — e.g., the keyword `"file"` matches "profile", "meanwhile", etc.~~
 
-**Suggestion:** Consider word-boundary matching or a lightweight scoring system. The embedding-based tool selector already handles semantic matching well — playbook classification could benefit from similar treatment.
+**Done:** `classifyMessage()` now uses word-boundary regex matching (`\bkeyword\b`) via `matchesKeyword()`. Falls back to `includes()` for keywords starting/ending with non-word characters (e.g. `"c++"`, `".net"`) or if regex construction fails. Prevents false positives like `"file"` matching `"profile"`.
 
 ### 7. Subagent Prompt Double-Delivery
 

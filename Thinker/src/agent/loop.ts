@@ -21,7 +21,7 @@ import { seedPlaybooks } from './playbook-seed.js';
 import { selectToolsWithFallback } from './tool-selection.js';
 import { EmbeddingToolSelector } from './embedding-tool-selector.js';
 import { createEmbeddingProviderFromEnv } from './embedding-config.js';
-import { extractFactsFromConversation } from './fact-extractor.js';
+import { extractFactsFromConversation, loadExtractionPromptTemplate } from './fact-extractor.js';
 import { detectLeakedToolCall, recoverLeakedToolCall } from '../utils/recover-tool-call.js';
 import { repairConversationHistory, truncateHistoryToolResults } from './history-repair.js';
 import { cosineSimilarity } from '@mcp/shared/Embeddings/math.js';
@@ -60,6 +60,7 @@ export class Agent {
   private playbookCache: PlaybookCache;
   private customSystemPrompt: string | null = null;
   private personaPrompt: string | null = null;
+  private defaultSystemPrompt: string = DEFAULT_SYSTEM_PROMPT;
 
   // Rate limiting
   private lastApiCallTime = 0;
@@ -134,6 +135,24 @@ export class Agent {
       logger.info(`Loaded persona from ${personaPath} (${this.personaPrompt.length} chars)`);
     } catch {
       logger.info(`No persona file at ${personaPath}, using defaults`);
+    }
+
+    // Load default system prompt from file (shipped with package or configured via env)
+    const defaultPromptPath = this.config.defaultSystemPromptPath
+      ?? resolve(import.meta.dirname, '../../prompts/default-system-prompt.md');
+    try {
+      const loaded = await readFile(defaultPromptPath, 'utf-8');
+      if (loaded.trim().length > 0) {
+        this.defaultSystemPrompt = loaded.trim();
+        logger.info(`Loaded default system prompt from ${defaultPromptPath} (${this.defaultSystemPrompt.length} chars)`);
+      }
+    } catch {
+      logger.info(`No default system prompt file at ${defaultPromptPath}, using built-in fallback`);
+    }
+
+    // Load fact extraction prompt template (non-fatal)
+    if (this.config.factExtraction.enabled) {
+      await loadExtractionPromptTemplate(this.config.factExtractionPromptPath);
     }
 
     // Check Orchestrator health
@@ -400,7 +419,7 @@ export class Agent {
 
     // Build system prompt with tool preamble at the very top for maximum attention.
     // Assembly order: TOOL_PREAMBLE → persona → datetime → chat_id → compaction → playbooks → skills → memories
-    const basePrompt = this.customSystemPrompt || this.personaPrompt || DEFAULT_SYSTEM_PROMPT;
+    const basePrompt = this.customSystemPrompt || this.personaPrompt || this.defaultSystemPrompt;
     let systemPrompt = TOOL_PREAMBLE + basePrompt;
 
     if (profile?.profile_data?.persona?.system_prompt) {
@@ -1186,7 +1205,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       await this.refreshToolsIfNeeded();
 
       // Build system prompt for autonomous task (same priority chain as buildContext)
-      const basePrompt = this.customSystemPrompt || this.personaPrompt || DEFAULT_SYSTEM_PROMPT;
+      const basePrompt = this.customSystemPrompt || this.personaPrompt || this.defaultSystemPrompt;
 
       // Inject current date/time so the LLM knows "today" (same as buildContext)
       const tz = this.config.userTimezone;
