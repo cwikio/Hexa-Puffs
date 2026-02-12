@@ -306,7 +306,7 @@ echo -e "  $(printf '%-14s' "Inngest:") http://localhost:8288"
 
 echo -e "\n${BOLD}Log files:${RESET}"
 echo -e "  $(printf '%-14s' "Orchestrator:") ~/.annabelle/logs/orchestrator.log"
-echo -e "  $(printf '%-14s' "Thinker:") ~/.annabelle/logs/thinker.log"
+echo -e "  $(printf '%-14s' "Thinker:") (inside orchestrator.log — grep '[thinker:annabelle]')"
 echo -e "  $(printf '%-14s' "Inngest:") ~/.annabelle/logs/inngest.log"
 
 echo -e "\n${BOLD}Process IDs:${RESET}"

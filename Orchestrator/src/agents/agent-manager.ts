@@ -207,8 +207,8 @@ export class AgentManager {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    // Pipe stdout/stderr with agent prefix
-    const prefix = `[agent:${agentId}]`;
+    // Pipe stdout/stderr with thinker prefix (agentId identifies which agent instance)
+    const prefix = `[thinker:${agentId}]`;
     child.stdout?.on('data', (data: Buffer) => {
       const lines = data.toString().split('\n').filter(Boolean);
       for (const line of lines) {
