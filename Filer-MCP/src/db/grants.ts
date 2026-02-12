@@ -3,7 +3,7 @@
  */
 
 import { getGrantsData, saveGrants, generateGrantId } from "./index.js";
-import { getConfig } from "../utils/config.js";
+import { getConfig, expandHome } from "../utils/config.js";
 
 export interface Grant {
   id: string;
@@ -144,6 +144,28 @@ export async function loadConfigGrants(): Promise<number> {
   }
 
   return loaded;
+}
+
+/**
+ * Ensure built-in system grants exist for Annabelle's own directories.
+ * Called on startup — idempotent (skips if grant already exists).
+ */
+export async function ensureSystemGrants(): Promise<number> {
+  const systemPaths = [
+    expandHome("~/.annabelle/documentation/"),
+    expandHome("~/.annabelle/logs/"),
+  ];
+
+  let created = 0;
+  for (const path of systemPaths) {
+    const existing = await findGrantForPath(path);
+    if (!existing) {
+      await createGrant(path, "read", "system_setup", "permanent");
+      created++;
+    }
+  }
+
+  return created;
 }
 
 /**

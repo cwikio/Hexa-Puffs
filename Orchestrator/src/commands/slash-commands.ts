@@ -16,6 +16,7 @@ import type { JobDefinition, TaskDefinition } from '../jobs/types.js';
 import { getConfig } from '../config/index.js';
 import { Cron } from 'croner';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
+import { runDiagnosticChecks, formatDiagnosticOutput } from './diagnostic-checks.js';
 
 export interface SlashCommandResult {
   handled: boolean;
@@ -129,6 +130,9 @@ export class SlashCommandHandler {
 
         case '/browser':
           return { handled: true, response: await this.handleBrowser() };
+
+        case '/diagnose':
+          return { handled: true, response: await this.handleDiagnose() };
 
         default:
           return { handled: false };
@@ -692,6 +696,20 @@ Keep it concise. No markdown formatting — plain text only.`;
     return output;
   }
 
+  // ─── /diagnose ───────────────────────────────────────────────
+
+  private async handleDiagnose(): Promise<string> {
+    const status = this.orchestrator.getStatus();
+    const ctx = {
+      orchestrator: this.orchestrator,
+      toolRouter: this.toolRouter,
+      status,
+    };
+
+    const result = await runDiagnosticChecks(ctx);
+    return formatDiagnosticOutput(result);
+  }
+
   /**
    * Extract raw text from an MCP tool result (for tools that return plain text, not StandardResponse JSON).
    */
@@ -945,6 +963,7 @@ Keep it concise. No markdown formatting — plain text only.`;
     output += 'Commands:\n';
     output += '  /status — System status (MCPs, agents, uptime)\n';
     output += '  /status summary — AI health audit (logs, security, memory, cron)\n';
+    output += '  /diagnose — Deep system diagnosis (22 automated checks with actionable findings)\n';
     output += '  /help — This info page (commands, tools, skills)\n';
     output += '  /delete — Delete messages (today | yesterday | week | <N>h | <N>)\n';
     output += '  /security — Guardian status & scan config\n';

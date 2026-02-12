@@ -119,6 +119,23 @@ fi
 echo -e "  ${BLUE}✓ Skills directory ready at $SKILLS_DIR${RESET}"
 echo ""
 
+# ─── Documentation Sync ─────────────────────────────────────────────────────
+echo -e "${BOLD}${CYAN}=== Syncing Documentation ===${RESET}"
+
+DOCS_DIR="$HOME/.annabelle/documentation"
+DOC_SRC="$SCRIPT_DIR/.documentation"
+mkdir -p "$DOCS_DIR"
+
+if [ -d "$DOC_SRC" ]; then
+  cp "$DOC_SRC"/*.md "$DOCS_DIR/" 2>/dev/null
+  DOC_COUNT=$(ls -1 "$DOCS_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+  echo -e "  ${GREEN}✓ Synced $DOC_COUNT documentation files to $DOCS_DIR${RESET}"
+else
+  echo -e "  ${YELLOW}⚠ Documentation source not found at $DOC_SRC${RESET}"
+fi
+
+echo ""
+
 # ─── Inngest Dev Server ──────────────────────────────────────────────────────
 echo -e "${BOLD}Starting Inngest Dev Server (port 8288)...${RESET}"
 cd "$SCRIPT_DIR/Orchestrator"
@@ -255,6 +272,19 @@ if echo "$THINKER_HEALTH" | grep -q "ok"; then
 else
   echo -e "${YELLOW}⚠ Thinker agent not responding (may still be starting)${RESET}"
   echo -e "  ${YELLOW}Check logs: tail -f ~/.annabelle/logs/orchestrator.log${RESET}"
+fi
+
+# ─── System Snapshot ──────────────────────────────────────────────────────────
+echo -e "\n${BOLD}Generating system snapshot...${RESET}"
+SNAPSHOT_SCRIPT="$SCRIPT_DIR/_scripts/generate-system-snapshot.ts"
+if [ -f "$SNAPSHOT_SCRIPT" ]; then
+  ORCHESTRATOR_URL=http://localhost:8010 ANNABELLE_TOKEN="$ANNABELLE_TOKEN" \
+    npx tsx "$SNAPSHOT_SCRIPT" >> ~/.annabelle/logs/snapshot.log 2>&1 &
+  SNAPSHOT_PID=$!
+  echo -e "${GREEN}✓ Snapshot generation started in background (PID: $SNAPSHOT_PID)${RESET}"
+  echo -e "  ${BLUE}Output: ~/.annabelle/documentation/system-snapshot.md${RESET}"
+else
+  echo -e "${YELLOW}⚠ Snapshot script not found at $SNAPSHOT_SCRIPT — skipping${RESET}"
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
