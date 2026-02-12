@@ -586,12 +586,45 @@ export class Agent {
       // Capture completed steps via onStepFinish so we can recover tool results
       // if generateText() fails mid-loop (e.g., tools execute but the follow-up LLM call errors)
       interface CapturedStep {
-        toolCalls: Array<{ toolName: string; args: unknown }>;
-        toolResults: Array<{ result: unknown }>;
+        toolCalls: Array<{ toolCallId: string; toolName: string; args: unknown }>;
+        toolResults: Array<{ toolCallId: string; toolName: string; result: unknown }>;
         text: string;
       }
       const capturedSteps: CapturedStep[] = [];
       const onStepFinish = (step: CapturedStep) => { capturedSteps.push(step); };
+
+      // Convert captured steps into CoreMessage pairs (assistant tool-call + tool result)
+      // so retries can continue from where the previous attempt left off
+      const buildRetryMessages = (stepsCount: number, userText?: string): CoreMessage[] => {
+        const msgs: CoreMessage[] = [
+          ...context.conversationHistory,
+          { role: 'user' as const, content: userText ?? message.text },
+        ];
+        for (let i = 0; i < stepsCount; i++) {
+          const step = capturedSteps[i];
+          if (step.toolCalls.length > 0) {
+            msgs.push({
+              role: 'assistant' as const,
+              content: step.toolCalls.map(tc => ({
+                type: 'tool-call' as const,
+                toolCallId: tc.toolCallId,
+                toolName: tc.toolName,
+                args: tc.args as Record<string, unknown>,
+              })),
+            });
+            msgs.push({
+              role: 'tool' as const,
+              content: step.toolResults.map(tr => ({
+                type: 'tool-result' as const,
+                toolCallId: tr.toolCallId,
+                toolName: tr.toolName,
+                result: tr.result,
+              })),
+            });
+          }
+        }
+        return msgs;
+      };
 
       try {
         result = await generateText({
@@ -617,12 +650,17 @@ export class Agent {
           logger.warn(`Tool call failed, retrying once with tools: ${toolErrorMsg}`);
 
           try {
-            // First retry: reduce complexity and nudge temperature for a different response path
+            // First retry: include captured step results so the model continues from where it left off
+            // instead of repeating the same tool calls from scratch
+            const stepsSnapshot = capturedSteps.length;
+            if (stepsSnapshot > 0) {
+              logger.info(`[retry] Including ${stepsSnapshot} captured step(s) in retry context`);
+            }
             const retryTemp = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
             result = await generateText({
               model: this.modelFactory.getModel(),
               system: context.systemPrompt,
-              messages: [...context.conversationHistory, { role: 'user', content: message.text }],
+              messages: buildRetryMessages(stepsSnapshot),
               tools: selectedTools,
               toolChoice: 'auto',
               maxSteps: 4,
@@ -641,12 +679,13 @@ export class Agent {
             if (lastAssistantMsg && typeof lastAssistantMsg.content === 'string') {
               const rephrasedText = `Context from the previous response: "${lastAssistantMsg.content.substring(0, 300)}"\n\nThe user is now asking: ${message.text}`;
               try {
-                logger.warn('Trying rephrased message with tools...');
+                const stepsSnapshot2 = capturedSteps.length;
+                logger.warn(`Trying rephrased message with tools (${stepsSnapshot2} prior steps)...`);
                 const retryTemp2 = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
                 result = await generateText({
                   model: this.modelFactory.getModel(),
                   system: context.systemPrompt,
-                  messages: [...context.conversationHistory, { role: 'user', content: rephrasedText }],
+                  messages: buildRetryMessages(stepsSnapshot2, rephrasedText),
                   tools: selectedTools,
                   toolChoice: 'auto',
                   maxSteps: 4,
