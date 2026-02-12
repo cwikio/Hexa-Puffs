@@ -718,10 +718,12 @@ export class Orchestrator {
     const externalCount = this.externalMCPNames.size;
     const total = this.stdioClients.size;
 
-    // Build tool count per MCP
-    const toolCountByMCP = new Map<string, number>();
+    // Build tool names per MCP
+    const toolsByMCP = new Map<string, string[]>();
     for (const route of this.toolRouter.getAllRoutes()) {
-      toolCountByMCP.set(route.mcpName, (toolCountByMCP.get(route.mcpName) ?? 0) + 1);
+      const list = toolsByMCP.get(route.mcpName) ?? [];
+      list.push(route.originalName);
+      toolsByMCP.set(route.mcpName, list);
     }
 
     const lines: string[] = [
@@ -732,9 +734,12 @@ export class Orchestrator {
     if (externalCount > 0) {
       lines.push('', 'External:');
       for (const name of this.externalMCPNames) {
-        const toolCount = toolCountByMCP.get(name) ?? 0;
+        const tools = toolsByMCP.get(name) ?? [];
         const desc = this.config.mcpServersStdio?.[name]?.description;
-        lines.push(desc ? `  ${name}: ${toolCount} tools — ${desc}` : `  ${name}: ${toolCount} tools`);
+        lines.push(desc ? `  ${name}: ${tools.length} tools — ${desc}` : `  ${name}: ${tools.length} tools`);
+        for (const tool of tools) {
+          lines.push(`    • ${tool}`);
+        }
       }
     }
 
@@ -885,10 +890,13 @@ export class Orchestrator {
     const lines: string[] = ['External MCPs changed:'];
 
     for (const [name, entry] of added) {
-      const toolCount = this.toolRouter.getAllRoutes().filter((r) => r.mcpName === name).length;
+      const tools = this.toolRouter.getAllRoutes().filter((r) => r.mcpName === name);
       lines.push(entry.description
-        ? `  + ${name}: ${toolCount} tools — ${entry.description}`
-        : `  + ${name}: ${toolCount} tools`);
+        ? `  + ${name}: ${tools.length} tools — ${entry.description}`
+        : `  + ${name}: ${tools.length} tools`);
+      for (const tool of tools) {
+        lines.push(`    • ${tool.originalName}`);
+      }
     }
     for (const name of removed) {
       lines.push(`  - ${name}`);
