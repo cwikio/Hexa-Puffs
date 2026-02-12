@@ -629,7 +629,7 @@ describe('SlashCommandHandler', () => {
 
     describe('status (no args)', () => {
       it('should list log files with sizes and age', async () => {
-        mockReaddir.mockResolvedValue(['orchestrator.log', 'thinker.log', 'build-Shared.log']);
+        mockReaddir.mockResolvedValue(['orchestrator.log', 'gmail.log', 'build-Shared.log']);
         mockStat.mockImplementation(async (path: string) => {
           if (path.includes('orchestrator')) {
             return { size: 75_000, mtime: new Date(Date.now() - 60_000) };
@@ -643,7 +643,7 @@ describe('SlashCommandHandler', () => {
         expect(result.handled).toBe(true);
         expect(result.response).toContain('System Logs');
         expect(result.response).toContain('orchestrator.log');
-        expect(result.response).toContain('thinker.log');
+        expect(result.response).toContain('gmail.log');
         // build logs should be filtered out
         expect(result.response).not.toContain('build-Shared');
         expect(result.response).toContain('Total:');

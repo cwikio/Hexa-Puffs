@@ -53,10 +53,11 @@ const MCP_DISPLAY_NAMES: Record<string, string> = {
   web: 'Browser',
 };
 
-/** Service log files to scan for /logs N (WARN/ERROR filtering) */
+/** Service log files to scan for /logs N (WARN/ERROR filtering).
+ * Note: Thinker logs go to orchestrator.log (prefixed [thinker:<id>]) since
+ * the Orchestrator spawns Thinker as a child process. No separate thinker.log. */
 const SERVICE_LOG_FILES = [
   'orchestrator.log',
-  'thinker.log',
   'gmail.log',
   'telegram.log',
   'searcher.log',

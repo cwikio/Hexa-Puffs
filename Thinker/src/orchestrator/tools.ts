@@ -49,6 +49,29 @@ function coerceStringBooleans(args: Record<string, unknown>): Record<string, unk
 }
 
 /**
+ * Parameters to strip from specific tool prefixes.
+ * LLMs (especially Llama 3.3) hallucinate values for optional params like teamId/slug
+ * in Vercel tools, causing 403 Forbidden errors. The API token handles scoping
+ * automatically — these params are never needed for personal accounts.
+ * Mutates the args object in-place.
+ */
+const STRIP_PARAMS: Record<string, string[]> = {
+  vercel_: ['teamId', 'slug'],
+};
+
+function stripHallucinatedParams(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
+  for (const [prefix, params] of Object.entries(STRIP_PARAMS)) {
+    if (toolName.startsWith(prefix)) {
+      for (const param of params) {
+        delete args[param];
+      }
+      break;
+    }
+  }
+  return args;
+}
+
+/**
  * Create Vercel AI SDK tools from Orchestrator tools.
  *
  * Uses `jsonSchema()` to pass the MCP's original JSON Schema directly to the
@@ -81,7 +104,11 @@ export function createToolsFromOrchestrator(
       execute: async (args) => {
         // Normalize null/undefined args to empty object (for tools with no parameters)
         // Coerce string booleans from Groq/Llama ("true"→true, "false"→false)
-        const normalizedArgs = coerceStringBooleans((args ?? {}) as Record<string, unknown>);
+        // Strip hallucinated params (e.g. teamId/slug from vercel_ tools)
+        const normalizedArgs = stripHallucinatedParams(
+          orchTool.name,
+          coerceStringBooleans((args ?? {}) as Record<string, unknown>)
+        );
         const trace = getTrace();
         const startTime = Date.now();
 

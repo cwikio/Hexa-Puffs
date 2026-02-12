@@ -18,136 +18,36 @@ import type { IncomingMessage, ProcessingResult, AgentContext, AgentState } from
 import { PlaybookCache } from './playbook-cache.js';
 import { classifyMessage } from './playbook-classifier.js';
 import { seedPlaybooks } from './playbook-seed.js';
-import { selectToolsWithFallback } from './tool-selection.js';
+import { selectToolsWithFallback, CORE_TOOL_NAMES } from './tool-selection.js';
 import { EmbeddingToolSelector } from './embedding-tool-selector.js';
 import { createEmbeddingProviderFromEnv } from './embedding-config.js';
-import { extractFactsFromConversation } from './fact-extractor.js';
+import { extractFactsFromConversation, loadExtractionPromptTemplate } from './fact-extractor.js';
 import { detectLeakedToolCall, recoverLeakedToolCall } from '../utils/recover-tool-call.js';
 import { repairConversationHistory, truncateHistoryToolResults } from './history-repair.js';
+import { cosineSimilarity } from '@mcp/shared/Embeddings/math.js';
 import { Logger } from '@mcp/shared/Utils/logger.js';
 
 const logger = new Logger('thinker:agent');
 
+const STICKY_TOOLS_LOOKBACK = parseInt(process.env.THINKER_STICKY_TOOLS_LOOKBACK ?? '3', 10);
+const STICKY_TOOLS_MAX = parseInt(process.env.THINKER_STICKY_TOOLS_MAX ?? '8', 10);
+
 /**
- * Default system prompt for the agent
+ * Tool calling preamble — prepended before persona to enforce structured tool use.
+ * LLMs attend most strongly to the beginning and end of the system prompt.
+ */
+const TOOL_PREAMBLE = `## TOOL CALLING RULES
+Always use the structured function calling API. NEVER write tool calls as text/JSON/XML. You CANNOT perform actions without calling tools — text claims without tool calls are lies. If a tool fails, retry once or explain honestly.
+ONLY call tools that are in the provided tool list. Do NOT invent or hallucinate tool names — if a tool does not exist in the list, it is not available. Use the closest available tool instead.
+
+`;
+
+/**
+ * Default system prompt for the agent (used when no persona file is loaded)
  */
 const DEFAULT_SYSTEM_PROMPT = `You are Annabelle, a helpful AI assistant communicating via Telegram.
 
-Be friendly, concise, and conversational. Keep responses short — this is a chat, not an essay.
-
-## Your Memory System
-You have a persistent memory system (Memorizer) that stores facts, conversations, and a user profile. Use it!
-- To recall something the user told you: use memory_retrieve_memories or search_memories with a relevant query.
-- To remember something new: use store_fact with a category (preference, background, pattern, project, contact, decision).
-- To check all stored facts: use memory_list_facts.
-- To look up past conversations: use memory_search_conversations.
-- To check or update the user's profile: use memory_get_profile / memory_update_profile.
-When the user says "remember this", "check your memory", "what do you know about me", etc. — ALWAYS use your memory tools.
-
-## Handling "About Me" Questions
-When the user asks about themselves — e.g., "what do you know about me", "tell me about myself", "co o mnie wiesz", "co o mnie pamietasz", "what have you learned about me", or similar — you MUST:
-1. Call memory_list_facts (with no category filter) to retrieve ALL stored facts.
-2. Also call memory_get_profile to get their profile.
-3. Present an organized summary of everything you know, grouped by category.
-4. Do NOT ask clarifying questions like "what specifically would you like to know?" — just show everything.
-This is a non-negotiable rule: self-referential questions always get a full memory dump.
-
-## Proactive Learning
-Pay attention to what the user tells you and proactively store important details using store_fact — do NOT wait to be asked.
-Examples of things to remember automatically:
-- Preferences ("I prefer dark mode", "I like Python over JS") → store_fact with category "preference"
-- Personal details ("I live in Krakow", "I'm a software engineer") → category "background"
-- Contacts ("My manager is Anna") → category "contact"
-- Projects ("I'm working on an MCP orchestrator") → category "project"
-- Decisions ("Let's use PostgreSQL for this") → category "decision"
-- Schedules ("I have a meeting next Friday") → category "pattern"
-If the user shares something personal or important, quietly store it. You don't need to announce that you're saving it every time — just do it naturally.
-
-## Status & Health Queries
-When the user asks about your status or system status — call get_status for a quick overview.
-For a deeper check (are services actually responding?), use system_health_check. It pings every connected MCP and reports per-service health, classified as internal or external.
-
-## External Services
-In addition to built-in MCPs (memory, search, email, Telegram, etc.), external services can be connected by adding entries to external-mcps.json in the project root. External MCPs are loaded when the Orchestrator starts — changes to the config file are picked up automatically without a restart. Use system_health_check to see what's currently connected. If the user asks about connecting a new service, tell them it can be added to external-mcps.json.
-
-### Using External Service Tools
-When working with external service tools (e.g., vercel_*, posthog_*, neon_*), always follow a discover-then-act pattern:
-1. **List first** — call the list/search tool (e.g., vercel_list_projects, vercel_list_teams) before trying to access a specific resource. Never guess IDs or slugs.
-2. **Use IDs from responses** — take the exact project ID, team ID, or deployment ID from the list response and pass it to detail/action tools.
-3. **Chain calls** — for logs or details, you typically need: list_projects → get_project → list_deployments → get_deployment_build_logs. Don't skip steps.
-4. **Include required context** — many tools need a teamId or projectId parameter. Get these from the list calls, don't omit them.
-
-## Action-First Rule
-When the user asks you to DO something (search, send, schedule, browse, etc.), just do it and confirm briefly.
-- WRONG: "I'll set up a cron job using the create_job tool with expression '*/1 * * * *' and maxRuns: 3..."
-- RIGHT: *[does it]* "Done — you'll get an article every minute for 3 minutes."
-Never explain the tools you're using, the parameters you're passing, or the internal mechanics. The user wants results, not a narration of your workflow.
-
-## Tool Use Guidelines
-- When the user explicitly asks you to use a specific tool or capability (e.g., "ask a subagent", "search for", "send an email"), ALWAYS use that tool — even if you could answer without it.
-- Answer general knowledge questions from your own knowledge ONLY when the user has NOT requested a specific tool.
-- Use tools when the task genuinely requires them — memory, file operations, web search, sending messages.
-- Do NOT call tools that aren't in your available tools list.
-- When a tool IS needed, use it without asking for permission (unless destructive).
-- CRITICAL: Always use the structured function calling API to invoke tools. NEVER write tool calls as JSON text in your response (e.g. {"name": "tool", "parameters": {...}}). If you want to call a tool, call it — don't describe the call.
-- CRITICAL: You CANNOT perform real-world actions (create events, send emails, search the web, manage files, store memories) without calling tools. If you respond with text claiming you did something but did not call a tool, that action DID NOT HAPPEN — you would be lying to the user. When the user asks you to DO something, you MUST call the appropriate tool. A text response alone is NEVER sufficient for actions.
-- IMPORTANT: Your final text response is automatically delivered to the user via Telegram — do NOT call send_telegram to deliver your response. Only use send_telegram when you need to send a SEPARATE message (e.g., sending to a different chat, or sending media). For normal replies, just write your response text.
-
-## Web Search Tool
-When you need current information (weather, sports scores, news, real-time data), use the searcher_web_search tool:
-- query: Your search query (required)
-- count: Number of results, default 10 (optional)
-- freshness: Time filter - use "24h" for today's info (optional)
-Do NOT include freshness unless specifically needed for recent results.
-
-## Image Search
-MANDATORY: When the user asks for photos, pictures, images, logos, or anything visual — you MUST call searcher_image_search. NEVER respond with text only for image requests. This is non-negotiable.
-- Call searcher_image_search with the search query
-- It returns direct image URLs (image_url) and thumbnails (thumbnail_url)
-- Send the images via telegram_send_media — it accepts URLs, not just local files
-- For multiple images, send each one separately with telegram_send_media
-- Do NOT describe images in text — actually search and send them
-
-## Source Citations
-When your response includes information obtained from web searches, news searches, or any online data:
-- ALWAYS include source links at the end of your response
-- Format as a simple list: "Sources:" followed by clickable URLs
-- Keep it compact — just title + link, no extra commentary
-- Example:
-  Sources:
-  - Title of Article: https://example.com/article
-  - Another Source: https://example.com/other
-- This applies to ALL online data — web search, news, image search results
-- For image searches, include the source page URL alongside the image
-
-## Email (Gmail)
-You can send, read, and manage emails via Gmail. Key tools:
-- gmail_send_email: Send a new email (to, subject, body required; cc, bcc optional)
-- gmail_reply_email: Reply to an existing email
-- gmail_list_emails: List/search emails (supports Gmail search syntax like from:, to:, subject:, is:unread)
-- gmail_get_email: Get full email details by ID
-- gmail_create_draft / gmail_send_draft: Create and send email drafts
-When the user asks to send an email, check an email, or anything email-related, use these tools.
-
-## Calendar (Google Calendar)
-You can view, create, and manage calendar events. Key tools:
-- gmail_list_events: List upcoming events (supports time_min/time_max date range, query search, calendar_id)
-- gmail_get_event: Get full event details by event ID
-- gmail_create_event: Create a new event (summary required; start_date_time or start_date, end time, location, attendees, recurrence, reminders optional)
-- gmail_update_event: Update an existing event (only provide fields to change)
-- gmail_delete_event: Delete an event by ID
-- gmail_quick_add_event: Create an event from natural language (e.g., "Meeting with John tomorrow at 3pm")
-- gmail_find_free_time: Check free/busy slots for a time range
-- gmail_list_calendars: List all available calendars
-When the user asks about their schedule, meetings, appointments, or anything calendar-related, use these tools. Use ISO 8601 datetime format (e.g., '2026-01-15T09:00:00Z') for time parameters.
-
-## Response Format Rules
-CRITICAL: NEVER include raw function calls, tool invocations, or technical syntax in your responses.
-- Do NOT write <function=...>, <tool_call>, or similar tags
-- Do NOT output JSON like {"tool_call": ...} or {"function": ...}
-- Do NOT include thinking tags like <think>...</think>
-- When you use a tool, the system handles it automatically — never write it out
-- Your responses should be natural language only`;
+Be friendly, concise, and conversational. Keep responses short — this is a chat, not an essay.`;
 
 /**
  * Agent that processes messages using ReAct pattern
@@ -163,6 +63,7 @@ export class Agent {
   private playbookCache: PlaybookCache;
   private customSystemPrompt: string | null = null;
   private personaPrompt: string | null = null;
+  private defaultSystemPrompt: string = DEFAULT_SYSTEM_PROMPT;
 
   // Rate limiting
   private lastApiCallTime = 0;
@@ -237,6 +138,24 @@ export class Agent {
       logger.info(`Loaded persona from ${personaPath} (${this.personaPrompt.length} chars)`);
     } catch {
       logger.info(`No persona file at ${personaPath}, using defaults`);
+    }
+
+    // Load default system prompt from file (shipped with package or configured via env)
+    const defaultPromptPath = this.config.defaultSystemPromptPath
+      ?? resolve(import.meta.dirname, '../../prompts/default-system-prompt.md');
+    try {
+      const loaded = await readFile(defaultPromptPath, 'utf-8');
+      if (loaded.trim().length > 0) {
+        this.defaultSystemPrompt = loaded.trim();
+        logger.info(`Loaded default system prompt from ${defaultPromptPath} (${this.defaultSystemPrompt.length} chars)`);
+      }
+    } catch {
+      logger.info(`No default system prompt file at ${defaultPromptPath}, using built-in fallback`);
+    }
+
+    // Load fact extraction prompt template (non-fatal)
+    if (this.config.factExtraction.enabled) {
+      await loadExtractionPromptTemplate(this.config.factExtractionPromptPath);
     }
 
     // Check Orchestrator health
@@ -356,13 +275,15 @@ export class Agent {
     // Try loading from disk
     let messages: CoreMessage[] = [];
     let compactionSummary: string | undefined;
+    let recentToolsByTurn: Array<{ turnIndex: number; tools: string[] }> = [];
 
     if (this.config.sessionConfig.enabled) {
       try {
-        const saved = await this.sessionStore.loadSession(chatId);
+        const saved = await this.sessionStore.loadSession(chatId, STICKY_TOOLS_LOOKBACK);
         if (saved) {
           messages = saved.messages;
           compactionSummary = saved.compactionSummary;
+          recentToolsByTurn = saved.recentToolsByTurn;
           logger.info(`Restored session ${chatId} from disk (${saved.turnCount} turns${compactionSummary ? ', with compaction summary' : ''})`);
         }
       } catch (error) {
@@ -375,9 +296,110 @@ export class Agent {
       messages,
       lastActivity: Date.now(),
       compactionSummary,
+      recentToolsByTurn,
     };
     this.conversationStates.set(chatId, state);
     return state;
+  }
+
+  /**
+   * Select relevant history messages using embedding similarity.
+   * Always includes the last 3 exchanges (6 messages) for recency.
+   * Older messages are scored by cosine similarity to the current message
+   * and included if above threshold. Cap total at 20 messages.
+   */
+  private async selectRelevantHistory(
+    userMessage: string,
+    allMessages: CoreMessage[],
+  ): Promise<CoreMessage[]> {
+    const RECENT_EXCHANGES = 3; // always include last N exchanges
+    const RECENT_MESSAGES = RECENT_EXCHANGES * 2;
+    const MAX_TOTAL = 20;
+    const threshold = Number(process.env.HISTORY_RELEVANCE_THRESHOLD) || 0.45;
+
+    // If we don't have enough messages to bother filtering, return all
+    if (allMessages.length <= RECENT_MESSAGES) {
+      return allMessages;
+    }
+
+    // Check if embedding provider is available
+    if (!this.embeddingSelector?.isInitialized()) {
+      // Fallback: just return the last 20
+      return allMessages.slice(-MAX_TOTAL);
+    }
+
+    const provider = this.embeddingSelector.getProvider();
+
+    // Split into older candidates and guaranteed recent
+    const olderMessages = allMessages.slice(0, -RECENT_MESSAGES);
+    const recentMessages = allMessages.slice(-RECENT_MESSAGES);
+
+    // Extract user-turn texts from older messages with their indices
+    const olderUserTurns: Array<{ text: string; pairStart: number }> = [];
+    for (let i = 0; i < olderMessages.length; i++) {
+      const msg = olderMessages[i];
+      if (msg.role === 'user' && typeof msg.content === 'string') {
+        olderUserTurns.push({ text: msg.content, pairStart: i });
+      }
+    }
+
+    if (olderUserTurns.length === 0) {
+      return recentMessages.slice(-MAX_TOTAL);
+    }
+
+    try {
+      // Embed current message and all older user turns in one batch
+      const textsToEmbed = [userMessage, ...olderUserTurns.map(t => t.text)];
+      const embeddings = await provider.embedBatch(textsToEmbed);
+      const currentEmbedding = embeddings[0];
+
+      // Score each older user turn
+      const scored: Array<{ pairStart: number; score: number }> = [];
+      for (let i = 0; i < olderUserTurns.length; i++) {
+        const score = cosineSimilarity(currentEmbedding, embeddings[i + 1]);
+        if (score >= threshold) {
+          scored.push({ pairStart: olderUserTurns[i].pairStart, score });
+        }
+      }
+
+      // Sort by score descending, then pick top ones within budget
+      scored.sort((a, b) => b.score - a.score);
+
+      // Budget: how many older messages can we include
+      const budget = MAX_TOTAL - recentMessages.length;
+      const selectedOlderMessages: CoreMessage[] = [];
+
+      for (const { pairStart } of scored) {
+        if (selectedOlderMessages.length >= budget) break;
+
+        // Include the user message and the next message (assistant response) as a pair
+        selectedOlderMessages.push(olderMessages[pairStart]);
+        if (pairStart + 1 < olderMessages.length) {
+          selectedOlderMessages.push(olderMessages[pairStart + 1]);
+        }
+      }
+
+      // Sort selected older messages by original index to maintain chronological order
+      // (they're already in order from the original array since pairStart is monotonic within scored)
+      // Actually, scored is sorted by score — re-sort by pairStart
+      selectedOlderMessages.sort((a, b) => {
+        const idxA = olderMessages.indexOf(a);
+        const idxB = olderMessages.indexOf(b);
+        return idxA - idxB;
+      });
+
+      const result = [...selectedOlderMessages, ...recentMessages];
+
+      logger.info(
+        `[history-select] Selected ${result.length}/${allMessages.length} messages ` +
+        `(${scored.length} relevant older exchanges, threshold=${threshold})`
+      );
+
+      return result;
+    } catch (error) {
+      logger.warn('[history-select] Embedding failed, falling back to slice:', error);
+      return allMessages.slice(-MAX_TOTAL);
+    }
   }
 
   /**
@@ -401,39 +423,13 @@ export class Agent {
 
     await this.logger.logContextLoaded(trace, memories.facts.length, !!profile);
 
-    // Build system prompt (priority: custom file > persona file > built-in default)
-    let systemPrompt = this.customSystemPrompt || this.personaPrompt || DEFAULT_SYSTEM_PROMPT;
+    // Build system prompt with tool preamble at the very top for maximum attention.
+    // Assembly order: TOOL_PREAMBLE → persona → datetime → chat_id → compaction → playbooks → skills → memories
+    const basePrompt = this.customSystemPrompt || this.personaPrompt || this.defaultSystemPrompt;
+    let systemPrompt = TOOL_PREAMBLE + basePrompt;
 
     if (profile?.profile_data?.persona?.system_prompt) {
-      systemPrompt = profile.profile_data.persona.system_prompt;
-    }
-
-    // Note: tool schemas are passed to the LLM via Vercel AI SDK, no need to list them in the prompt
-
-    // Inject matching domain playbooks
-    await this.playbookCache.refreshIfNeeded(trace);
-    const matchedPlaybooks = classifyMessage(userMessage, this.playbookCache.getPlaybooks());
-    const playbookRequiredTools: string[] = [];
-    if (matchedPlaybooks.length > 0) {
-      const section = matchedPlaybooks
-        .map((pb) => `### Playbook: ${pb.name}\n${pb.instructions}`)
-        .join('\n\n');
-      systemPrompt += `\n\n## Workflow Guidance\nFollow these steps when relevant:\n\n${section}`;
-      for (const pb of matchedPlaybooks) {
-        playbookRequiredTools.push(...pb.requiredTools);
-      }
-    }
-
-    // Inject available skills for progressive disclosure (keyword-less file-based skills)
-    const descriptionOnlySkills = this.playbookCache.getDescriptionOnlySkills();
-    if (descriptionOnlySkills.length > 0) {
-      const skillsXml = descriptionOnlySkills
-        .map(
-          (s) =>
-            `  <skill>\n    <name>${s.name}</name>\n    <description>${s.description ?? ''}</description>\n  </skill>`,
-        )
-        .join('\n');
-      systemPrompt += `\n\n<available_skills>\n${skillsXml}\n</available_skills>`;
+      systemPrompt = TOOL_PREAMBLE + profile.profile_data.persona.system_prompt;
     }
 
     // Add current date/time context
@@ -459,7 +455,33 @@ export class Agent {
       systemPrompt += `\n\n## Previous Conversation Context\n${state.compactionSummary}`;
     }
 
-    // Add context to system prompt
+    // Inject matching domain playbooks (closer to end for recency attention)
+    await this.playbookCache.refreshIfNeeded(trace);
+    const matchedPlaybooks = classifyMessage(userMessage, this.playbookCache.getPlaybooks());
+    const playbookRequiredTools: string[] = [];
+    if (matchedPlaybooks.length > 0) {
+      const section = matchedPlaybooks
+        .map((pb) => `### Playbook: ${pb.name}\n${pb.instructions}`)
+        .join('\n\n');
+      systemPrompt += `\n\n## Workflow Guidance\nFollow these steps when relevant:\n\n${section}`;
+      for (const pb of matchedPlaybooks) {
+        playbookRequiredTools.push(...pb.requiredTools);
+      }
+    }
+
+    // Inject available skills for progressive disclosure (keyword-less file-based skills)
+    const descriptionOnlySkills = this.playbookCache.getDescriptionOnlySkills();
+    if (descriptionOnlySkills.length > 0) {
+      const skillsXml = descriptionOnlySkills
+        .map(
+          (s) =>
+            `  <skill>\n    <name>${s.name}</name>\n    <description>${s.description ?? ''}</description>\n  </skill>`,
+        )
+        .join('\n');
+      systemPrompt += `\n\n<available_skills>\n${skillsXml}\n</available_skills>`;
+    }
+
+    // Add memories at the very end (strong recency attention)
     if (memories.facts.length > 0) {
       const factsText = memories.facts
         .map((f) => `- ${f.fact} (${f.category})`)
@@ -467,10 +489,15 @@ export class Agent {
       systemPrompt += `\n\nRelevant memories about the user:\n${factsText}`;
     }
 
+    const promptChars = systemPrompt.length;
+    logger.info(`[prompt-size] System prompt: ~${Math.ceil(promptChars / 4)} tokens (${promptChars} chars)`);
+
     return {
       systemPrompt,
       conversationHistory: truncateHistoryToolResults(
-        repairConversationHistory(state.messages.slice(-50)),
+        repairConversationHistory(
+          await this.selectRelevantHistory(userMessage, state.messages.slice(-30))
+        ),
         2,
       ),
       facts: memories.facts.map((f) => ({ fact: f.fact, category: f.category })),
@@ -557,10 +584,42 @@ export class Agent {
           if (!selectedTools[name] && this.tools[name]) {
             selectedTools[name] = this.tools[name];
             injected++;
+          } else if (!this.tools[name]) {
+            logger.warn(`[playbook-tools] Required tool '${name}' not found (MCP may be down)`);
           }
         }
         if (injected > 0) {
           logger.info(`[playbook-tools] Injected ${injected} required tool(s) from matched playbook(s)`);
+        }
+      }
+
+      // Sticky tools: inject tools used in recent turns so follow-up messages
+      // ("what about the other one?") can still call them even when the embedding
+      // selector doesn't match them for the current message.
+      if (state.recentToolsByTurn.length > 0) {
+        const coreSet = new Set(CORE_TOOL_NAMES);
+        const stickyNames: string[] = [];
+
+        // Iterate newest turn first so most recent tools get priority
+        for (let i = state.recentToolsByTurn.length - 1; i >= 0; i--) {
+          for (const name of state.recentToolsByTurn[i].tools) {
+            if (
+              !selectedTools[name] &&
+              this.tools[name] &&
+              !coreSet.has(name) &&
+              !stickyNames.includes(name)
+            ) {
+              stickyNames.push(name);
+            }
+          }
+        }
+
+        const toInject = stickyNames.slice(0, STICKY_TOOLS_MAX);
+        for (const name of toInject) {
+          selectedTools[name] = this.tools[name];
+        }
+        if (toInject.length > 0) {
+          logger.info(`[sticky-tools] Injected ${toInject.length} tool(s) from recent turns: ${toInject.join(', ')}`);
         }
       }
 
@@ -594,11 +653,15 @@ export class Agent {
 
       // Convert captured steps into CoreMessage pairs (assistant tool-call + tool result)
       // so retries can continue from where the previous attempt left off
-      const buildRetryMessages = (stepsCount: number, userText?: string): CoreMessage[] => {
+      const buildRetryMessages = (stepsCount: number, userText?: string, errorContext?: string): CoreMessage[] => {
         const msgs: CoreMessage[] = [
           ...context.conversationHistory,
           { role: 'user' as const, content: userText ?? message.text },
         ];
+        if (errorContext) {
+          msgs.push({ role: 'assistant' as const, content: errorContext });
+          msgs.push({ role: 'user' as const, content: 'Please try again using only the tools available to you.' });
+        }
         for (let i = 0; i < stepsCount; i++) {
           const step = capturedSteps[i];
           if (step.toolCalls.length > 0) {
@@ -650,16 +713,20 @@ export class Agent {
 
           try {
             // First retry: include captured step results so the model continues from where it left off
-            // instead of repeating the same tool calls from scratch
+            // instead of repeating the same tool calls from scratch.
+            // Also inject the error message so the model knows what went wrong.
             const stepsSnapshot = capturedSteps.length;
             if (stepsSnapshot > 0) {
               logger.info(`[retry] Including ${stepsSnapshot} captured step(s) in retry context`);
             }
+            const errorHint = toolErrorMsg.includes('was not in request.tools')
+              ? `I tried to call a tool that doesn't exist: ${toolErrorMsg}. I need to use only the tools provided to me.`
+              : undefined;
             const retryTemp = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
             result = await generateText({
               model: this.modelFactory.getModel(),
               system: context.systemPrompt,
-              messages: buildRetryMessages(stepsSnapshot),
+              messages: buildRetryMessages(stepsSnapshot, undefined, errorHint),
               tools: selectedTools,
               toolChoice: 'auto',
               maxSteps: 4,
@@ -1061,6 +1128,20 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
         ? ['(text-only fallback)']
         : [...new Set([...resultToolNames, ...capturedToolNames, ...recoveredTools])];
 
+      // Update sticky tools sliding window — track non-core tools used this turn
+      const coreSet = new Set(CORE_TOOL_NAMES);
+      const stickyToolsThisTurn = toolsUsed.filter(
+        (t) => t !== '(text-only fallback)' && !coreSet.has(t),
+      );
+      if (stickyToolsThisTurn.length > 0) {
+        const turnIndex = (state.recentToolsByTurn.at(-1)?.turnIndex ?? 0) + 1;
+        state.recentToolsByTurn.push({ turnIndex, tools: stickyToolsThisTurn });
+        // Trim to lookback window
+        if (state.recentToolsByTurn.length > STICKY_TOOLS_LOOKBACK) {
+          state.recentToolsByTurn = state.recentToolsByTurn.slice(-STICKY_TOOLS_LOOKBACK);
+        }
+      }
+
       // Send response to Telegram and store conversation
       // (skip when Orchestrator handles delivery — sendResponseDirectly=false)
       if (this.config.sendResponseDirectly) {
@@ -1174,7 +1255,13 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       await this.refreshToolsIfNeeded();
 
       // Build system prompt for autonomous task (same priority chain as buildContext)
-      const basePrompt = this.customSystemPrompt || this.personaPrompt || DEFAULT_SYSTEM_PROMPT;
+      let basePrompt = this.customSystemPrompt || this.personaPrompt || this.defaultSystemPrompt;
+
+      // Apply profile persona override (same as buildContext)
+      const profile = await this.orchestrator.getProfile(this.config.thinkerAgentId, trace);
+      if (profile?.profile_data?.persona?.system_prompt) {
+        basePrompt = profile.profile_data.persona.system_prompt;
+      }
 
       // Inject current date/time so the LLM knows "today" (same as buildContext)
       const tz = this.config.userTimezone;
@@ -1214,6 +1301,9 @@ Complete the task step by step, using your available tools. When done, provide a
           .join('\n');
         systemPromptWithContext += `\n\nRelevant memories:\n${factsText}`;
       }
+
+      const promptChars = systemPromptWithContext.length;
+      logger.info(`[prompt-size] Proactive task prompt: ~${Math.ceil(promptChars / 4)} tokens (${promptChars} chars)`);
 
       // Run the LLM with task instructions as the "user message"
       // For proactive tasks, exclude send_telegram — notifications are handled post-completion via notifyChatId
@@ -1470,6 +1560,26 @@ Complete the task step by step, using your available tools. When done, provide a
   }
 
   // ─── Session Persistence API ─────────────────────────────────────
+
+  /**
+   * Clear a session entirely — deletes JSONL file, clears in-memory state,
+   * and cancels any pending fact extraction timer.
+   */
+  async clearSession(chatId: string): Promise<void> {
+    // Clear in-memory conversation state
+    this.conversationStates.delete(chatId);
+
+    // Clear pending extraction timer
+    const timer = this.extractionTimers.get(chatId);
+    if (timer) {
+      clearTimeout(timer);
+      this.extractionTimers.delete(chatId);
+    }
+
+    // Clear persisted session
+    await this.sessionStore.clearSession(chatId);
+    logger.info(`Session cleared for chat ${chatId}`);
+  }
 
   /**
    * Clean up session JSONL files older than the configured max age.

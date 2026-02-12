@@ -18,10 +18,11 @@ const LOGS_DIR = join(homedir(), '.annabelle', 'logs');
 /** Number of hours to keep in the rolling window. */
 const ROLLING_HOURS = 168; // 7 days
 
-/** Service log files to scan (same list as slash-commands.ts). */
+/** Service log files to scan (same list as slash-commands.ts).
+ * Note: Thinker logs go to orchestrator.log (prefixed [thinker:<id>]) since
+ * the Orchestrator spawns Thinker as a child process. No separate thinker.log. */
 const SERVICE_LOG_FILES = [
   'orchestrator.log',
-  'thinker.log',
   'gmail.log',
   'telegram.log',
   'searcher.log',

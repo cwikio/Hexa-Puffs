@@ -1,7 +1,7 @@
 {
   "vercel": {
     "command": "npx",
-    "args": ["-y", "mcp-remote", "https://mcp.vercel.com"],
+    "args": ["-y", "vercel-mcp", "VERCEL_API_KEY=${VERCEL_API_KEY}"],
     "description": "Vercel project management and deployments"
   }
 }

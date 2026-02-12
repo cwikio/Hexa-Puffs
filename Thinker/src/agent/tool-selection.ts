@@ -8,7 +8,7 @@ const logger = new Logger('thinker:tool-selection');
 const MAX_TOOLS = parseInt(process.env.TOOL_SELECTOR_MAX_TOOLS ?? '25', 10);
 
 /** Core tools that are always included regardless of selection method */
-const CORE_TOOL_NAMES = [
+export const CORE_TOOL_NAMES = [
   'send_telegram',
   'store_fact',
   'search_memories',

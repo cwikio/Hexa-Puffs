@@ -189,6 +189,31 @@ function createServer(config: Config, startTime: number) {
     }
   });
 
+  // Clear session endpoint — wipe conversation history for a chat
+  app.post('/clear-session', async (req: Request, res: Response) => {
+    if (!agentRef) {
+      res.status(503).json({ success: false, error: 'Agent is still initializing' });
+      return;
+    }
+
+    const { chatId } = req.body;
+    if (!chatId) {
+      res.status(400).json({ success: false, error: 'chatId is required' });
+      return;
+    }
+
+    try {
+      await agentRef.clearSession(chatId);
+      res.json({ success: true, message: `Session cleared for chat ${chatId}` });
+    } catch (error) {
+      logger.error('Error clearing session:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
   // Cost control endpoints
   app.get('/cost-status', (_req: Request, res: Response) => {
     if (!agentRef) {

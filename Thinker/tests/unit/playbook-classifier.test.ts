@@ -74,10 +74,27 @@ describe('classifyMessage', () => {
     expect(result[0].name).toBe('daily-briefing');
   });
 
-  it('should match substring keywords within longer words', () => {
+  it('should match keywords that appear as whole words in the message', () => {
     const result = classifyMessage('I need to schedule something', playbooks);
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe('schedule-meeting');
+  });
+
+  it('should NOT match keyword as substring of another word', () => {
+    const pbWithFile: CachedPlaybook[] = [
+      makePlaybook({ id: 10, name: 'file-ops', keywords: ['file'], priority: 5 }),
+    ];
+    expect(classifyMessage('update my profile settings', pbWithFile)).toHaveLength(0);
+    expect(classifyMessage('meanwhile I was busy', pbWithFile)).toHaveLength(0);
+  });
+
+  it('should handle keywords with non-word-boundary characters via includes() fallback', () => {
+    const pbSpecial: CachedPlaybook[] = [
+      makePlaybook({ id: 20, name: 'special', keywords: ['c++', '.net'], priority: 5 }),
+    ];
+    // These keywords start/end with non-word chars — matchesKeyword falls back to includes()
+    expect(classifyMessage('I am learning c++ today', pbSpecial)).toHaveLength(1);
+    expect(classifyMessage('deploy to .net framework', pbSpecial)).toHaveLength(1);
   });
 });
 

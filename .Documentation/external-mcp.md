@@ -428,7 +428,8 @@ The Thinker has a 10-minute TTL cache for the tool list fetched from the Orchest
 ## Thinker System Prompt
 
 ```
-Thinker/src/agent/loop.ts — DEFAULT_SYSTEM_PROMPT
+Thinker/prompts/default-system-prompt.md (file-based, loaded at startup)
+Thinker/src/agent/loop.ts:45-47 — DEFAULT_SYSTEM_PROMPT (hardcoded fallback)
 ```
 
 The Thinker's system prompt includes two sections relevant to external MCPs:

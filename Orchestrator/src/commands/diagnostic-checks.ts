@@ -214,7 +214,7 @@ async function checkAgentHealth(ctx: DiagnosticContext): Promise<DiagnosticFindi
     summary: issues.join('; '),
     recommendation: hasCritical
       ? 'Use /resume to unpause or check agent logs'
-      : 'High restart count may indicate instability — check thinker.log',
+      : 'High restart count may indicate instability — check orchestrator.log for [thinker:] entries',
   };
 }
 

@@ -11,7 +11,9 @@
  * Prerequisites: Full stack running (Orchestrator + Thinker agent configured in agents.json)
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { execSync } from 'child_process';
+import { join } from 'path';
 import {
   createOrchestratorClient,
   log,
@@ -80,6 +82,35 @@ describe('Workflow: Subagent Spawning E2E', () => {
 
     log(`Orchestrator: ${orchestratorAvailable ? 'UP' : 'DOWN'}`, orchestratorAvailable ? 'success' : 'error');
     log(`Thinker: ${thinkerAvailable ? 'UP' : 'DOWN'}`, thinkerAvailable ? 'success' : 'warn');
+  });
+
+  afterAll(() => {
+    // Clean up skills duplicated into subagent and test agent_ids.
+    // When subagents spawn, Memorizer auto-copies parent skills to the new agent_id.
+    // These orphaned copies persist after the subagent terminates.
+    const dbPath = join(process.env.HOME || '~', '.annabelle/data/memory.db');
+    const patterns = ['annabelle-sub-%', 'test-skills-%'];
+
+    for (const pattern of patterns) {
+      try {
+        const output = execSync(
+          `sqlite3 "${dbPath}" "SELECT changes() FROM (DELETE FROM skills WHERE agent_id LIKE '${pattern}');"`,
+          { encoding: 'utf-8', timeout: 5000 },
+        ).trim();
+        log(`Cleaned up skills matching '${pattern}' (${output || '0'} deleted)`, 'debug');
+      } catch {
+        // sqlite3 may not support subquery syntax — try plain DELETE
+        try {
+          execSync(
+            `sqlite3 "${dbPath}" "DELETE FROM skills WHERE agent_id LIKE '${pattern}';"`,
+            { encoding: 'utf-8', timeout: 5000 },
+          );
+          log(`Cleaned up skills matching '${pattern}'`, 'debug');
+        } catch (e) {
+          log(`Failed to cleanup skills for '${pattern}': ${e}`, 'warn');
+        }
+      }
+    }
   });
 
   describe('spawn_subagent tool discovery', () => {
