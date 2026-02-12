@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the orchestrator module
-const mockCheckMCPHealth = vi.fn();
+// vi.hoisted ensures this variable is available when vi.mock factory runs (hoisted)
+const mockCheckMCPHealth = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/core/orchestrator.js', () => ({
   getOrchestrator: vi.fn().mockResolvedValue({
