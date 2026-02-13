@@ -13,7 +13,11 @@ Thinker is a passive AI reasoning engine that receives messages from Orchestrato
 - **Centralized tracing** with trace_id in Shared library
 - **Persona stored in Memorizer** profiles
 - **Embedding-based tool selection** - cosine similarity selects relevant tools per message, with regex fallback, persistent cache across restarts, and hot-reload when tools change
-- **Playbook seeding** - 12 default playbooks seeded on first startup
+- **Sliding tools** - tools from recent turns auto-injected into follow-ups ("what about the other one?")
+- **Post-conversation fact extraction** - idle timer triggers memory capture after user goes quiet
+- **Hallucination guard** - detects action claims without tool calls, retries with forced tool use
+- **Tool recovery** - detects tool calls leaked as text by LLMs and executes them
+- **Playbook seeding** - 15 default playbooks seeded on first startup, with per-playbook required tool injection
 - **Port 8006** for default agent; **port 0** for subagents (OS-assigned dynamic port)
 - **Lazy-spawn** - Orchestrator registers agents at startup, spawns only on first message
 - **Subagent support** - agents can spawn temporary Thinker subprocesses via `spawn_subagent`
@@ -289,6 +293,53 @@ The cache stores base64-encoded `Float32Array` embeddings keyed by `"toolName: d
 | `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text` | Ollama embedding model |
 | `LMSTUDIO_EMBEDDING_MODEL` | (auto) | LM Studio embedding model |
 | `EMBEDDING_CACHE_DIR` | `~/.annabelle/data` | Directory for cache file |
+
+**Tool groups:** Keyword routes map message patterns to tool groups (search, email, calendar, files, passwords, browser, jobs, codexec, linkedin). LinkedIn route matches patterns like `linkedin|connection request|professional network|linkedin message`.
+
+### 4b. Sliding Tools (Sticky Tool Injection)
+
+Follow-up messages like "what about the other one?" often reference tools from a recent turn that the embedding selector won't match for the new message. Sliding tools solve this by tracking non-core tools used in the last N turns and auto-injecting them.
+
+**Configuration:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `THINKER_STICKY_TOOLS_LOOKBACK` | `3` | Number of recent turns to look back |
+| `THINKER_STICKY_TOOLS_MAX` | `8` | Max sticky tools to inject |
+
+Core tools (`send_telegram`, `store_fact`, `search_memories`, `get_status`, `spawn_subagent`) are exempt — they're always included anyway. Sticky tools are persisted across session restarts via the `recentToolsByTurn` field in session JSONL files.
+
+### 4c. Post-Conversation Fact Extraction
+
+After the user goes idle, Thinker automatically reviews recent conversation turns and extracts facts for long-term memory storage. This catches information that wasn't explicitly stored during the conversation.
+
+**How it works:**
+
+1. Each new message resets an idle timer
+2. When the timer fires (user has been quiet), `runFactExtraction()` reviews the last N turns
+3. Uses a cheap LLM model (compaction model) to minimize cost
+4. Extracts facts with categories (preference, background, contact, project, decision, pattern)
+5. Deduplicates against existing facts before storing
+6. Only stores facts above the confidence threshold
+
+**Configuration:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `factExtraction.enabled` | `false` | Enable post-conversation extraction |
+| `factExtraction.idleMs` | `300000` | Idle timeout before extraction (ms) |
+| `factExtraction.maxTurns` | `10` | Number of recent turns to review |
+| `factExtraction.confidenceThreshold` | `0.7` | Minimum confidence for stored facts |
+
+### 4d. Conversation Loop Resilience
+
+**Tool Recovery:** Some LLMs (Groq/Llama) emit tool calls as text instead of structured JSON (e.g. "I'll call `linkedin_send_message`..."). The agent detects these patterns and executes the recovered tool call.
+
+**Hallucination Guard:** Detects when the model claims to have performed an action ("I've sent the email") but called no tools. Retries the turn with `toolChoice: 'required'` to force actual tool use.
+
+**Temperature Modulation:** When the embedding selector has high confidence (>0.6), the LLM temperature is lowered to 0.3 for more reliable tool-calling behavior.
+
+**Playbook Tool Injection:** Each playbook can declare `required_tools: string[]`. These tools are force-included in the tool set even if the embedding selector wouldn't match them, ensuring playbook actions always have access to the tools they need.
 
 ### 5. Context Manager
 

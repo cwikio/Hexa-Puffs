@@ -3,6 +3,48 @@
 All notable changes to the Annabelle MCP ecosystem are documented here.
 Organized by system version with per-package sections.
 
+## [1.1.0] - 2026-02-12
+
+### LinkedIn-MCP (NEW)
+- First non-Node MCP — Python 3.11+ using FastMCP and `linkedin-api`
+- Tools: `get_profile`, `get_own_profile`, `get_conversations`, `get_conversation`, `send_message`, `get_feed`, `create_post`, `search_people`, `search_companies`, `get_connections`, `send_connection_request`
+- Conversation participant resolution fallback via `_resolve_via_conversations()` when search API is rate-limited
+- Auto-discovered by Orchestrator via `command: ".venv/bin/python"` in manifest
+
+### Memorizer-MCP
+- Added `query_timeline` tool — cross-source temporal queries ("what happened last week?") across facts, conversations, profile changes, skills, contacts, and projects
+- Added `create_contact`, `list_contacts`, `update_contact` tools
+- Added `create_project`, `list_projects`, `update_project` tools
+
+### Thinker
+- **Sliding tools** — tools used in recent turns are "sticky" and auto-injected into follow-up messages, enabling context like "what about the other one?" (`THINKER_STICKY_TOOLS_LOOKBACK`, `THINKER_STICKY_TOOLS_MAX`)
+- **Post-conversation fact extraction** — idle timer triggers automatic fact extraction from recent turns after user goes quiet (`factExtraction.idleMs`, `factExtraction.confidenceThreshold`)
+- **Hallucination guard** — detects when LLM claims action without calling tools, retries with `toolChoice: 'required'`
+- **Tool recovery** — detects tool calls leaked as text by LLMs (common with Groq/Llama) and executes them
+- **Temperature modulation** — lowers temperature to 0.3 when embedding selector has high confidence
+- **Playbook tool injection** — playbooks declare `required_tools` that are force-included even if embedding selector would miss them
+- Added `vercel-deployments` and updated `email-classify`, `cron-scheduling`, `web-browsing` playbooks (now 15 total)
+- LinkedIn keyword route added to tool selector
+
+### Orchestrator
+- **External MCP system** — third-party MCPs declared in `external-mcps.json`, loaded at startup, hot-reloaded via `ExternalMCPWatcher` file watcher
+- **`/diagnose` command** — 22 automated diagnostic checks (MCP health, Ollama connectivity, disk space, error baselines, cron health, etc.)
+- **Startup diff notification** — detects MCP/tool changes since last boot and sends summary via Telegram
+- Added LinkedIn and CodeExec to Guardian scanning config
+- Updated tool router with LinkedIn tool group
+
+### Gmail-MCP
+- `modify_labels` now accepts label names (case-insensitive) in addition to label IDs, with automatic name-to-ID resolution
+
+### Shared
+- Added `command` and `commandArgs` fields to `AnnabelleManifest` for non-Node MCP support
+- Added `external-loader.ts` and `external-config.ts` for loading external MCP configs
+
+### Guardian
+- Updated scanning table: LinkedIn (`input: false, output: false`), CodeExec (`input: true, output: false`)
+
+---
+
 ## [1.0.0] - 2026-02-10
 
 First versioned release. Establishes baseline after completing architecture review items S1-S5, P1-P5, R1-R4, A5-A7.

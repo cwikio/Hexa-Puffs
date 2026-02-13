@@ -59,8 +59,12 @@ The central orchestration layer for Annabelle AI Assistant. The Orchestrator act
 │  │(stdio) │ │(stdio) │          │  │  │ (:8008)  │          │
 │  └────────┘ └────────┘          │  │  └──────────┘          │
 │  ┌────────┐                      │  │                        │
-│  │Memory  │                      │  │                        │
-│  │(stdio) │                      │  │                        │
+│  │Memory  │ ┌────────┐           │  │                        │
+│  │(stdio) │ │CodeExec│           │  │                        │
+│  └────────┘ │(stdio) │           │  │                        │
+│  ┌────────┐ └────────┘           │  │                        │
+│  │LinkedIn│                      │  │                        │
+│  │(python)│                      │  │                        │
 │  └────────┘                      │  │                        │
 └──────────────────────────────────┘  └────────────────────────┘
 ```
@@ -422,7 +426,9 @@ Telegram messages starting with `/` are intercepted by the Orchestrator before r
 
 See [command-list.md](../command-list.md) for the full command reference.
 
-**Key commands:** `/status`, `/status summary`, `/kill`, `/resume`, `/cron`, `/security`, `/logs`, `/delete`, `/help`
+**Key commands:** `/status`, `/status summary`, `/kill`, `/resume`, `/cron`, `/security`, `/logs`, `/delete`, `/diagnose`, `/help`
+
+The `/diagnose` command runs 22 automated health checks (MCP health, Ollama connectivity, disk space, error baselines, cron schedules, etc.) and returns a categorized report with severity levels and actionable recommendations.
 
 **Source:** `Orchestrator/src/core/slash-commands.ts`
 
@@ -840,6 +846,8 @@ Caller → Orchestrator → [GuardedMCPClient] → Guardian scan → Downstream 
 | Gmail | Yes | Yes | Scan email content both ways |
 | Memory | Yes | No | Protect stored facts from injection |
 | Searcher | No | No | Search queries are low-risk |
+| LinkedIn | No | No | Public data, low injection risk |
+| CodeExec | Yes | No | Code args are high-risk; output follows |
 
 ### Per-Agent Guardian Overrides
 
@@ -893,6 +901,18 @@ Content-Type: application/json
 - `resetWindow: true` — resume and clear all token history (fresh start)
 
 Returns `{ "success": true, "message": "Agent \"annabelle\" resumed" }` on success.
+
+## External MCP System
+
+Third-party MCP servers (e.g. PostHog, Vercel) can be integrated without modifying the core codebase. They are declared in `external-mcps.json` in the project root and loaded alongside internal MCPs at startup.
+
+- Config file: `external-mcps.json` — JSON map of `name → { command, args, env }`
+- Loaded via `Shared/Discovery/external-loader.ts`
+- Hot-reloaded via `ExternalMCPWatcher` — editing the config file applies changes without restart
+- Never `required` — a failed external MCP does not block startup
+- Not scanned by Guardian by default
+
+See `.documentation/external-mcp.md` for the full integration guide.
 
 ## Future Enhancements
 

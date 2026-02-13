@@ -330,6 +330,7 @@ output: {
 | Searcher   | No             | Yes             | Queries are low-risk; web results untrusted |
 | Gmail      | Yes            | Yes             | Emails are the primary injection vector     |
 | CodeExec   | Yes            | No              | Code args are high-risk; output follows     |
+| LinkedIn   | No             | No              | Public data, low injection risk             |
 | (unknown)  | Yes            | Yes             | New/external MCPs scanned both ways         |
 
 ## Architecture
