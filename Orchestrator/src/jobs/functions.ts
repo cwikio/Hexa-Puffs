@@ -605,6 +605,52 @@ export const skillSchedulerFunction = inngest.createFunction(
         }
       }
 
+      // Pre-flight: skip meeting-related skills when calendar is empty
+      const requiredToolsRaw = typeof skill.required_tools === 'string'
+        ? (() => { try { return JSON.parse(skill.required_tools); } catch { return []; } })()
+        : Array.isArray(skill.required_tools) ? skill.required_tools : [];
+      const isMeetingSkill = requiredToolsRaw.includes('gmail_list_events')
+        && /meeting|prep/i.test(skill.name);
+
+      if (isMeetingSkill) {
+        const shouldSkip = await step.run(`preflight-calendar-${skill.id}`, async () => {
+          try {
+            const { getOrchestrator } = await import('../core/orchestrator.js');
+            const orchestrator = await getOrchestrator();
+            const toolRouter = orchestrator.getToolRouter();
+
+            const now = new Date();
+            const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+            const result = await toolRouter.routeToolCall('gmail_list_events', {
+              time_min: now.toISOString(),
+              time_max: endOfDay.toISOString(),
+            });
+
+            if (!result.success) return false; // Don't skip on error — let the skill run
+
+            const mcpResponse = result.content as { content?: Array<{ type: string; text?: string }> };
+            const rawText = mcpResponse?.content?.[0]?.text;
+            if (!rawText) return true; // No text = no events
+
+            const data = JSON.parse(rawText);
+            const events = data?.data?.events || data?.events || [];
+            return events.length === 0;
+          } catch (error) {
+            logger.warn('Calendar pre-check failed, letting skill run', { error });
+            return false; // Don't skip on error
+          }
+        });
+
+        if (shouldSkip) {
+          logger.info('Skipping skill — no upcoming calendar events', {
+            skillId: skill.id,
+            name: skill.name,
+          });
+          continue;
+        }
+      }
+
       // Execute the skill via Thinker (discovered through AgentManager)
       await step.run(`execute-skill-${skill.id}`, async () => {
         try {
