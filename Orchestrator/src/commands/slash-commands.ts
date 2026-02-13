@@ -18,6 +18,8 @@ import { Cron } from 'croner';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 import { runDiagnosticChecks, formatDiagnosticOutput } from './diagnostic-checks.js';
 
+const SYSTEM_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 export interface SlashCommandResult {
   handled: boolean;
   response?: string;
@@ -590,7 +592,7 @@ Keep it concise. No markdown formatting — plain text only.`;
       for (const job of enabledCrons) {
         const name = job.name.slice(0, 20).padEnd(20);
         const expr = (job.cronExpression ?? '').padEnd(14);
-        const tz = (job.timezone ?? 'UTC').padEnd(16);
+        const tz = (job.timezone ?? SYSTEM_TIMEZONE).padEnd(16);
         const lastRun = job.lastRunAt ? this.formatTimeAgo(new Date(job.lastRunAt)).padEnd(10) : 'never'.padEnd(10);
         const nextRun = this.formatNextCronRun(job.cronExpression, job.timezone);
         output += `  ${name} ${expr} ${tz} ${lastRun} ${nextRun}\n`;
@@ -736,7 +738,7 @@ Keep it concise. No markdown formatting — plain text only.`;
   private formatNextCronRun(cronExpr?: string, timezone?: string): string {
     if (!cronExpr) return '';
     try {
-      const cron = new Cron(cronExpr, { timezone: timezone ?? 'UTC' });
+      const cron = new Cron(cronExpr, { timezone: timezone ?? SYSTEM_TIMEZONE });
       const next = cron.nextRun();
       if (!next) return '';
       const hours = String(next.getHours()).padStart(2, '0');

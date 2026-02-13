@@ -34,6 +34,9 @@ async function storeErrorFact(fact: string): Promise<void> {
 
 const storage = new JobStorage();
 
+/** System timezone auto-detected from the OS. Used as default for cron jobs/skills. */
+const SYSTEM_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 // Background job executor
 export const backgroundJobFunction = inngest.createFunction(
   {
@@ -236,7 +239,7 @@ export const cronJobPollerFunction = inngest.createFunction(
       // If that falls within the current minute, the job is due.
       let isDue = false;
       try {
-        const cron = new Cron(job.cronExpression!, { timezone: job.timezone || 'UTC' });
+        const cron = new Cron(job.cronExpression!, { timezone: job.timezone || SYSTEM_TIMEZONE });
         const minuteStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0);
         const prevMinuteStart = new Date(minuteStart.getTime() - 60000);
         const nextFromPrev = cron.nextRun(prevMinuteStart);
@@ -555,7 +558,7 @@ export const skillSchedulerFunction = inngest.createFunction(
         // Cron expression mode — use croner to check if the schedule fires this minute
         try {
           const cron = new Cron(triggerConfig.schedule, {
-            timezone: triggerConfig.timezone || 'UTC',
+            timezone: triggerConfig.timezone || SYSTEM_TIMEZONE,
           });
           const minuteStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0);
           const prevMinuteStart = new Date(minuteStart.getTime() - 60000);

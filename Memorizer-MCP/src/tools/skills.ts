@@ -69,7 +69,7 @@ export const storeSkillToolDefinition = {
       },
       trigger_config: {
         type: 'object',
-        description: 'For cron trigger_type, use EITHER: (1) Cron expression: { "schedule": "0 9 * * *", "timezone": "Europe/Warsaw" } for precise scheduling (e.g., 9am daily), OR (2) Interval: { "interval_minutes": 60 } for every-N-minutes execution. Default if omitted: runs once daily.',
+        description: 'For cron trigger_type, use EITHER: (1) Cron expression: { "schedule": "0 9 * * *" } for precise scheduling (e.g., 9am daily), OR (2) Interval: { "interval_minutes": 60 } for every-N-minutes execution. Default if omitted: runs once daily. Timezone is auto-detected from the system — only specify timezone if the user explicitly requests a different one.',
       },
       instructions: {
         type: 'string',
@@ -244,6 +244,12 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
     instructions, required_tools, max_steps, notify_on_completion, enabled,
   } = parseResult.data;
 
+  // Auto-inject system timezone into cron trigger_config if not specified
+  if (trigger_config && 'schedule' in trigger_config && !trigger_config.timezone) {
+    trigger_config.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    logger.debug('Auto-injected system timezone into trigger_config', { timezone: trigger_config.timezone });
+  }
+
   try {
     const db = getDatabase();
 
@@ -375,6 +381,12 @@ export async function handleUpdateSkill(args: unknown): Promise<StandardResponse
   }
 
   const { skill_id, ...updates } = parseResult.data;
+
+  // Auto-inject system timezone into cron trigger_config if not specified
+  if (updates.trigger_config && 'schedule' in updates.trigger_config && !updates.trigger_config.timezone) {
+    updates.trigger_config.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    logger.debug('Auto-injected system timezone into updated trigger_config', { timezone: updates.trigger_config.timezone });
+  }
 
   try {
     const db = getDatabase();

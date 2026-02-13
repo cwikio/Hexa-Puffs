@@ -6,6 +6,8 @@ import { JobDefinition, TaskDefinition } from '../jobs/types.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import type { StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
 
+const SYSTEM_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 function isValidCronExpression(expression: string): boolean {
   try {
     new Cron(expression);
@@ -48,7 +50,7 @@ const CreateJobSchema = z.object({
   name: z.string().min(1),
   type: z.enum(['cron', 'scheduled', 'recurring']),
   cronExpression: z.string().optional(),
-  timezone: z.string().default('UTC'),
+  timezone: z.string().default(SYSTEM_TIMEZONE),
   scheduledAt: z.string().optional(),
   action: JobActionSchema,
   enabled: z.boolean().default(true),
@@ -235,7 +237,7 @@ export async function handleCreateJob(args: unknown): Promise<StandardResponse> 
     if (job.type === 'cron' && job.cronExpression) {
       // Compute next run time for informational purposes
       try {
-        const cron = new Cron(job.cronExpression, { timezone: job.timezone || 'UTC' });
+        const cron = new Cron(job.cronExpression, { timezone: job.timezone || SYSTEM_TIMEZONE });
         const nextRun = cron.nextRun();
         if (nextRun) {
           job.nextRunAt = nextRun.toISOString();

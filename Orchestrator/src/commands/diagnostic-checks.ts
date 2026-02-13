@@ -22,6 +22,8 @@ import {
   type ErrorBaseline,
 } from './error-baseline.js';
 
+const SYSTEM_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 // ─── Types ──────────────────────────────────────────────────
 
 export type Severity = 'critical' | 'warning' | 'info';
@@ -445,7 +447,7 @@ async function checkStaleCronJobs(_ctx: DiagnosticContext): Promise<DiagnosticFi
 
       // Calculate expected interval from cron expression
       try {
-        const cron = new Cron(job.cronExpression!, { timezone: job.timezone || 'UTC' });
+        const cron = new Cron(job.cronExpression!, { timezone: job.timezone || SYSTEM_TIMEZONE });
         const lastRun = new Date(job.lastRunAt);
         const nextExpected = cron.nextRun(lastRun);
         if (nextExpected) {

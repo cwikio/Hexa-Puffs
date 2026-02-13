@@ -461,8 +461,8 @@ Examples: "classify my emails daily", "prune/organize my inbox every morning", "
    - "every Monday at 8am" → "0 8 * * 1"
    - "every weekday at 9am" → "0 9 * * 1-5"
 2. Determine the action — usually telegram_send_message with the reminder text
-3. Confirm with user: "I'll create a cron job that sends you '[message]' every day at 9:00 AM (Europe/Warsaw). OK?"
-4. Call create_job with type "cron", the cron expression, timezone "Europe/Warsaw", and the action
+3. Confirm with user: "I'll create a cron job that sends you '[message]' every day at 9:00 AM. OK?"
+4. Call create_job with type "cron", the cron expression, and the action. Do NOT specify timezone — it is auto-detected by the system.
 
 ## STEPS FOR SCHEDULED SKILLS (Option B)
 1. Parse the schedule (same cron expression rules as above)
@@ -470,7 +470,7 @@ Examples: "classify my emails daily", "prune/organize my inbox every morning", "
 3. Confirm with user
 4. Call memory_store_skill with:
    - trigger_type: "cron"
-   - trigger_config: { "schedule": "<cron>", "timezone": "Europe/Warsaw" }
+   - trigger_config: { "schedule": "<cron>" }  (timezone is auto-injected by the system)
    - instructions: the natural language task description
    - agent_id: "thinker"
 
@@ -482,7 +482,7 @@ Examples: "classify my emails daily", "prune/organize my inbox every morning", "
 - Omit both for permanent cron jobs
 
 ## NOTES
-- Default timezone: Europe/Warsaw (user's timezone)
+- Timezone is auto-detected by the system — do NOT specify timezone unless the user explicitly requests a different one
 - Use list_jobs to show existing cron jobs, memory_list_skills for existing skills
 - Cron format: "minute hour day month weekday" (e.g., "0 9 * * *" = 9:00 AM daily)
 - Always confirm the schedule before creating — mistakes are hard to undo
