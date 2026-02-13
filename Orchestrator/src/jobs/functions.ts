@@ -4,6 +4,9 @@ import { executeAction } from './executor.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { getHaltManager } from '../core/halt-manager.js';
 import { Cron } from 'croner';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 /** Send a Telegram notification via the tool router. */
 async function notifyTelegram(message: string): Promise<void> {
@@ -390,6 +393,62 @@ export const skillSchedulerFunction = inngest.createFunction(
       } catch (error) {
         // Non-fatal — just log and continue with the normal scheduler
         logger.warn('Auto-enable check failed', { error });
+      }
+    });
+
+    // 0.5. Rate-limited Ollama health check — notify via Telegram if down
+    await step.run('check-ollama', async () => {
+      const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(`${ollamaUrl}/api/tags`, { signal: controller.signal });
+        clearTimeout(timeout);
+
+        if (res.ok) {
+          // Ollama is up — clear any previous alert state
+          const stateDir = join(homedir(), '.annabelle', 'data');
+          const statePath = join(stateDir, 'ollama-alert-state.json');
+          try {
+            const state = JSON.parse(await readFile(statePath, 'utf-8'));
+            if (state.down) {
+              await writeFile(statePath, JSON.stringify({ down: false, lastNotified: null }));
+              await notifyTelegram('✅ Ollama is back online — vector search restored.');
+            }
+          } catch {
+            // No state file — Ollama was never flagged as down, nothing to do
+          }
+          return;
+        }
+      } catch {
+        // Ollama unreachable — fall through to notify
+      }
+
+      // Notify only once — skip if already flagged as down
+      const stateDir = join(homedir(), '.annabelle', 'data');
+      const statePath = join(stateDir, 'ollama-alert-state.json');
+
+      let alreadyNotified = false;
+      try {
+        const state = JSON.parse(await readFile(statePath, 'utf-8'));
+        if (state.down) {
+          alreadyNotified = true;
+        }
+      } catch {
+        // No state file — first time detecting Ollama down
+      }
+
+      if (!alreadyNotified) {
+        try {
+          await mkdir(stateDir, { recursive: true });
+          await writeFile(statePath, JSON.stringify({ down: true, since: new Date().toISOString() }));
+          await notifyTelegram(
+            `⚠️ Ollama is unreachable at ${ollamaUrl}\n\nMemorizer vector search has degraded to text-only mode. Start Ollama or check OLLAMA_URL.`,
+          );
+          logger.warn('Ollama unreachable — Telegram notification sent');
+        } catch (notifyErr) {
+          logger.error('Failed to send Ollama alert', { error: notifyErr });
+        }
       }
     });
 
