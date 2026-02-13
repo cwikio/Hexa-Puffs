@@ -209,10 +209,10 @@ export async function startTransport(
         });
       };
 
-      process.on('SIGINT', () => {
+      process.once('SIGINT', () => {
         shutdown().then(() => process.exit(0));
       });
-      process.on('SIGTERM', () => {
+      process.once('SIGTERM', () => {
         shutdown().then(() => process.exit(0));
       });
 
