@@ -1,5 +1,5 @@
 Analyze this conversation and extract NEW facts about the user that are not already known.
-{{KNOWN_FACTS}}
+{{USER_IDENTITY}}{{KNOWN_FACTS}}
 Conversation:
 {{CONVERSATION}}
 
@@ -18,6 +18,9 @@ Rules:
 - Skip facts that overlap with the already known facts listed above
 - Maximum 5 facts per extraction
 - Confidence: 0.9+ for explicitly stated facts, 0.7-0.9 for strongly implied
+- Temporal facts (meetings, appointments, schedules) should use LOW confidence (0.5-0.6) — they expire quickly
+- If a new fact contradicts a known fact, extract the correction with HIGH confidence (0.9+)
+- Prefer extracting durable contact details (email, phone, role, company) over transient schedule data
 
 Return ONLY valid JSON in this exact format:
 {

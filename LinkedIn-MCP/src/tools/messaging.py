@@ -196,11 +196,18 @@ def handle_send_message(
                     )
                 resolved_recipients.append(urn_id)
 
-        api.send_message(
+        # send_message returns True if an error occurred (status != 201)
+        send_error = api.send_message(
             message_body=message_body,
             conversation_urn_id=conversation_urn_id,
             recipients=resolved_recipients,
         )
+        if send_error:
+            return error_response(
+                "LinkedIn rejected the message (API returned non-201 status). "
+                "The account may be restricted or rate-limited.",
+                "LINKEDIN_SEND_FAILED",
+            )
         return success_response({
             "sent": True,
             "resolvedRecipients": resolved_recipients,

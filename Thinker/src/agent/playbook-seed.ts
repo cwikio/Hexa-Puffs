@@ -233,22 +233,24 @@ User asks for a daily briefing, morning summary, or general overview.
     description: 'Find information about a person across memory and contacts',
     trigger_type: 'event',
     trigger_config: {
-      keywords: ['who is', 'contact', 'about him', 'about her', 'colleague', 'manager', 'person'],
+      keywords: ['who is', 'contact', 'about him', 'about her', 'colleague', 'manager', 'person', 'his email', 'her email'],
       priority: 10,
     },
     instructions: `## WHEN TO USE
-User asks about a person — who they are, their contact info, or context.
+User asks about a person — who they are, their contact info, email, or context.
 
 ## STEPS
 1. retrieve_memories with the person's name — check stored facts
-2. list_contacts or search_users — find contact details
-3. search_conversations — find past conversations mentioning them
-4. Present a combined profile of what you know
+2. gmail_list_emails with from:[name] or to:[name] — find email address from correspondence
+3. list_contacts or search_users — find contact details on Telegram
+4. search_conversations — find past conversations mentioning them
+5. Present a combined profile of what you know
 
 ## NOTES
-- Cross-reference across memory, contacts, and conversations
+- Cross-reference across memory, Gmail, contacts, and conversations
+- Gmail is the best source for finding someone's email address — search for emails from/to them
 - If nothing found, say so clearly rather than guessing`,
-    required_tools: ['memory_retrieve_memories', 'telegram_list_contacts', 'memory_search_conversations'],
+    required_tools: ['memory_retrieve_memories', 'gmail_list_emails', 'telegram_list_contacts', 'memory_search_conversations'],
     max_steps: 8,
     notify_on_completion: false,
   },

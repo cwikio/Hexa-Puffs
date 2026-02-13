@@ -1532,11 +1532,15 @@ Complete the task step by step, using your available tools. When done, provide a
 
       // Run extraction with the cheap compaction model
       const model = this.modelFactory.getCompactionModel();
+      const userIdentity = this.config.userName
+        ? { name: this.config.userName, email: this.config.userEmail }
+        : undefined;
       const facts = await extractFactsFromConversation(
         model,
         recentMessages,
         knownFactStrings,
         this.config.factExtraction.confidenceThreshold,
+        userIdentity,
       );
 
       if (facts.length === 0) {

@@ -51,7 +51,7 @@ const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
   { pattern: /password|secret|credential|vault|1password/i,
     groups: ['passwords'] },
   { pattern: /remember|memory|forget|what do you know|about me|fact|contact|ignore|pamiet|wiesz o mnie/i,
-    groups: ['memory'] },
+    groups: ['memory', 'email'] },
   { pattern: /telegram|message|chat|group/i,
     groups: ['telegram'] },
   { pattern: /browse|website|navigate|webpage|screenshot|login.*site|fill.*form|open.*page|scrape|web.*page|visit.*site|www\.\w|https?:\/\/|go\s+to\s+\S+\.\S/i,

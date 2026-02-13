@@ -60,12 +60,18 @@ export async function loadExtractionPromptTemplate(filePath?: string): Promise<v
   }
 }
 
+export interface UserIdentity {
+  name?: string;
+  email?: string;
+}
+
 /**
  * Build the extraction prompt with conversation context and known facts
  */
 function buildExtractionPrompt(
   recentMessages: Array<{ role: string; content: string }>,
   knownFacts: string[],
+  userIdentity?: UserIdentity,
 ): string {
   const conversationText = recentMessages
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
@@ -76,15 +82,20 @@ function buildExtractionPrompt(
       ? `\nAlready known facts (DO NOT extract these again):\n${knownFacts.map((f) => `- ${f}`).join('\n')}\n`
       : '\nNo facts currently stored.\n';
 
+  const identityText = userIdentity?.name
+    ? `\nThe user is "${userIdentity.name}"${userIdentity.email ? ` (email: ${userIdentity.email})` : ''}. When extracting contact facts about meetings or interactions, identify the OTHER party — not the user themselves. Do NOT store facts like "meeting with ${userIdentity.name}" — instead identify who the meeting is with.\n`
+    : '';
+
   // Use file-based template if loaded, otherwise fall back to hardcoded prompt
   if (cachedTemplate) {
     return cachedTemplate
       .replace('{{KNOWN_FACTS}}', knownFactsText)
+      .replace('{{USER_IDENTITY}}', identityText)
       .replace('{{CONVERSATION}}', conversationText);
   }
 
   return `Analyze this conversation and extract NEW facts about the user that are not already known.
-${knownFactsText}
+${identityText}${knownFactsText}
 Conversation:
 ${conversationText}
 
@@ -103,6 +114,9 @@ Rules:
 - Skip facts that overlap with the already known facts listed above
 - Maximum 5 facts per extraction
 - Confidence: 0.9+ for explicitly stated facts, 0.7-0.9 for strongly implied
+- Temporal facts (meetings, appointments, schedules) should use LOW confidence (0.5-0.6) — they expire quickly
+- If a new fact contradicts a known fact, extract the correction with HIGH confidence (0.9+)
+- Prefer extracting durable contact details (email, phone, role, company) over transient schedule data
 
 Return ONLY valid JSON in this exact format:
 {
@@ -125,6 +139,7 @@ If no NEW facts can be extracted, return: {"facts": []}`;
  * @param recentMessages - Recent conversation turns to analyze
  * @param knownFacts - Already-known fact strings for deduplication
  * @param confidenceThreshold - Minimum confidence to include a fact (default 0.7)
+ * @param userIdentity - Optional user name/email to avoid extracting "meeting with self" facts
  * @returns Extracted facts, or empty array on any error
  */
 export async function extractFactsFromConversation(
@@ -132,6 +147,7 @@ export async function extractFactsFromConversation(
   recentMessages: Array<{ role: string; content: string }>,
   knownFacts: string[],
   confidenceThreshold: number = 0.7,
+  userIdentity?: UserIdentity,
 ): Promise<ExtractedFact[]> {
   if (recentMessages.length < 4) {
     // Need at least 2 exchanges (4 messages) to extract meaningful facts
@@ -139,7 +155,7 @@ export async function extractFactsFromConversation(
   }
 
   try {
-    const prompt = buildExtractionPrompt(recentMessages, knownFacts);
+    const prompt = buildExtractionPrompt(recentMessages, knownFacts, userIdentity);
 
     const result = await generateText({
       model,

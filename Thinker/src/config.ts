@@ -107,6 +107,8 @@ export const ConfigSchema = z.object({
 
   // User context
   userTimezone: z.string().default('America/New_York'),
+  userName: z.string().optional(),
+  userEmail: z.string().optional(),
 
   // Logging
   logLevel: LogLevelSchema.default('info'),
@@ -187,6 +189,8 @@ export function loadConfig(): Config {
     proactiveTasksEnabled: parseBoolean(process.env.PROACTIVE_TASKS_ENABLED, true),
     defaultNotifyChatId: process.env.DEFAULT_NOTIFY_CHAT_ID || undefined,
     userTimezone: process.env.USER_TIMEZONE || 'America/New_York',
+    userName: process.env.USER_NAME || undefined,
+    userEmail: process.env.USER_EMAIL || undefined,
     logLevel: process.env.LOG_LEVEL || 'info',
     traceLogPath: process.env.TRACE_LOG_PATH || '~/.annabelle/logs/traces.jsonl',
 
