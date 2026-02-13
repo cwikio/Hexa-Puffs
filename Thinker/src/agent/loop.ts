@@ -1215,6 +1215,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
     notifyChatId?: string,
     noTools?: boolean,
     requiredTools?: string[],
+    skillName?: string,
   ): Promise<ProcessingResult & { summary: string }> {
     const trace = createTrace('thinker-skill');
     this.currentTrace = trace;
@@ -1434,7 +1435,7 @@ Complete the task step by step, using your available tools. When done, provide a
 
       if (notifyChatId && !isTrivial) {
         try {
-          const notificationText = `📋 Skill completed:\n\n${responseText}`;
+          const notificationText = `📋 ${skillName || 'Skill completed'}:\n\n${responseText}`;
           await this.orchestrator.sendTelegramMessage(notifyChatId, notificationText, undefined, trace);
         } catch (notifyError) {
           logger.error('Failed to send skill completion notification:', notifyError);

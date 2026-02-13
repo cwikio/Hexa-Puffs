@@ -150,7 +150,7 @@ function createServer(config: Config, startTime: number) {
       return;
     }
 
-    const { skillId, instructions, maxSteps, notifyOnCompletion, noTools, notifyChatId: explicitChatId, requiredTools } = req.body;
+    const { skillId, skillName, instructions, maxSteps, notifyOnCompletion, noTools, notifyChatId: explicitChatId, requiredTools } = req.body;
 
     if (!instructions) {
       res.status(400).json({ success: false, error: 'instructions is required' });
@@ -169,6 +169,7 @@ function createServer(config: Config, startTime: number) {
         notifyChatId,
         noTools,
         requiredTools,
+        skillName,
       );
 
       res.json({
