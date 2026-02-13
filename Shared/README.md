@@ -58,6 +58,8 @@ MCP auto-discovery system used by Orchestrator to find sibling MCP packages at s
 | `types.ts` | `AnnabelleManifest`, `DiscoveredMCP`, `ChannelManifestConfig` type definitions |
 | `format.ts` | `formatPipe()` — formatting utilities for discovery output |
 | `cli.ts` | CLI entry point for running discovery as a standalone command |
+| `external-loader.ts` | `loadExternalMCPs()` — loads third-party MCP configs from `external-mcps.json` |
+| `external-config.ts` | Type definitions and validation for external MCP entries |
 
 ### Transport
 

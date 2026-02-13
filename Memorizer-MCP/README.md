@@ -91,6 +91,28 @@ AI_MAX_TOKENS=500
 | `update_skill` | Modify a skill |
 | `delete_skill` | Remove a skill |
 
+### Contacts
+
+| Tool | Description |
+|------|-------------|
+| `create_contact` | Create a contact record for a person |
+| `list_contacts` | List stored contacts |
+| `update_contact` | Update contact details |
+
+### Projects
+
+| Tool | Description |
+|------|-------------|
+| `create_project` | Create a project record |
+| `list_projects` | List stored projects |
+| `update_project` | Update project details |
+
+### Timeline
+
+| Tool | Description |
+|------|-------------|
+| `query_timeline` | Query what happened across a time range — searches facts, conversations, profile changes, skills, contacts, and projects within given dates |
+
 ### Memory & Stats
 
 | Tool | Description |
