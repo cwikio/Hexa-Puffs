@@ -45,11 +45,13 @@ import {
   handleTriggerBackfill,
   spawnSubagentToolDefinition,
   handleSpawnSubagent,
+  getToolCatalogToolDefinition,
+  handleGetToolCatalog,
   type StandardResponse,
 } from '../tools/index.js';
 
 // Custom tools that are not passthrough (orchestrator-specific)
-const customToolDefinitions = [statusToolDefinition, ...jobToolDefinitions, spawnSubagentToolDefinition];
+const customToolDefinitions = [statusToolDefinition, ...jobToolDefinitions, spawnSubagentToolDefinition, getToolCatalogToolDefinition];
 
 // Custom tool handlers (simple tools that don't need caller context)
 const customToolHandlers: Record<
@@ -63,6 +65,7 @@ const customToolHandlers: Record<
   get_job_status: handleGetJobStatus,
   delete_job: handleDeleteJob,
   trigger_backfill: handleTriggerBackfill,
+  get_tool_catalog: handleGetToolCatalog,
 };
 
 // Context-aware tool handlers (need callerAgentId)
@@ -175,7 +178,24 @@ export async function handleCallTool(
           const mcpResponse = callResult.content as {
             content?: Array<{ type: string; text?: string }>;
           };
-          const innerText = mcpResponse?.content?.[0]?.text;
+          let innerText = mcpResponse?.content?.[0]?.text;
+
+          // Validate required_tools when storing a skill
+          if (innerText && name === 'memory_store_skill') {
+            const reqTools = args?.required_tools;
+            if (Array.isArray(reqTools) && reqTools.length > 0) {
+              const unknown = reqTools.filter((t) => typeof t === 'string' && !toolRouter.hasRoute(t) && !customToolHandlers[t]);
+              if (unknown.length > 0) {
+                logger.warn('Skill created with unknown required_tools', { unknown });
+                try {
+                  const parsed = JSON.parse(innerText);
+                  parsed.warning = `These required_tools were not found and the skill may fail: ${unknown.join(', ')}`;
+                  innerText = JSON.stringify(parsed);
+                } catch { /* non-JSON response, skip */ }
+              }
+            }
+          }
+
           if (innerText) {
             const enriched = enrichWithHints(innerText, toolRouter, name);
             res.writeHead(200, { 'Content-Type': 'application/json' });

@@ -78,7 +78,7 @@ export const storeSkillToolDefinition = {
       required_tools: {
         type: 'array',
         items: { type: 'string' },
-        description: 'List of tool names this skill needs',
+        description: 'List of tool names this skill needs. Use exact tool names from get_tool_catalog — do not guess.',
       },
       max_steps: {
         type: 'number',

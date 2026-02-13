@@ -29,11 +29,52 @@ There are two ways to create a skill:
 
 **1. Ask the Thinker via Telegram** (recommended):
 Tell the Thinker what you want scheduled and it will create the skill for you. Examples:
-- "Create a skill that checks my inbox every 30 minutes and notifies me of urgent emails"
-- "Set up a daily morning briefing at 6am that summarizes my calendar and email"
-- "I want a weekly digest every Sunday evening"
 
-The Thinker uses the `cron-scheduling` playbook to parse your request, pick the right trigger type, write the instructions, and call `memory_store_skill`.
+- "Check my inbox every 30 minutes and notify me of urgent emails"
+- "Set up a daily morning briefing at 6am that summarizes my calendar and email"
+- "Remind me to drink water every hour"
+
+The Thinker uses the `cron-scheduling` playbook, which follows a structured decision flow:
+
+```
+User: "Check my email every 3 hours"
+         │
+    ┌────▼────────────────────────────────────────────┐
+    │  THINKER (cron-scheduling playbook)              │
+    │                                                  │
+    │  Step 1: Classify — cron job or skill?           │
+    │    • Fixed action, no decisions → CRON JOB       │
+    │    • Reads data, makes decisions → SKILL         │
+    │                                                  │
+    │  CRON JOB path:                                  │
+    │    → Parse schedule → create_job                 │
+    │                                                  │
+    │  SKILL path:                                     │
+    │    → Call get_tool_catalog (discover tools)       │
+    │    → Select required tools from catalog           │
+    │    → Parse schedule, write instructions           │
+    │    → Call memory_store_skill                      │
+    └──────────────────────┬───────────────────────────┘
+                           │
+    ┌──────────────────────▼───────────────────────────┐
+    │  ORCHESTRATOR                                     │
+    │                                                  │
+    │  get_tool_catalog: returns all tools grouped      │
+    │  by MCP (name + short description only)           │
+    │                                                  │
+    │  Validation: when memory_store_skill is called,   │
+    │  checks required_tools against ToolRouter.        │
+    │  Warns on unknown tools (still stores the skill). │
+    └──────────────────────────────────────────────────┘
+```
+
+The key steps for skill creation:
+
+1. **Classify**: The playbook decides if the request needs an LLM (skill) or is a simple fixed action (cron job)
+2. **Discover tools**: Calls `get_tool_catalog` to get all available tools grouped by MCP with short descriptions
+3. **Select tools**: Picks the exact tool names needed from the catalog (no guessing)
+4. **Create**: Calls `memory_store_skill` with validated `required_tools`
+5. **Validate**: The Orchestrator checks that all `required_tools` actually exist and warns if any are unknown
 
 **2. Call the tool directly** (from any MCP client):
 ```
@@ -53,7 +94,7 @@ memory_store_skill({
 
 **Optional fields**:
 - `trigger_config` — schedule or interval (see formats below). Omit for manual/event skills.
-- `required_tools` — tool names the skill needs. Used for auto-enable logic.
+- `required_tools` — exact tool names from `get_tool_catalog`. Used for auto-enable logic and validated at creation time.
 - `max_steps` — max LLM reasoning steps (default: 10)
 - `notify_on_completion` — send Telegram notification when done (default: true)
 - `agent_id` — which agent owns the skill (default: "main", most cron skills use "thinker")

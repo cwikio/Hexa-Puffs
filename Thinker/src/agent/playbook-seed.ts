@@ -430,30 +430,25 @@ User asks to interact with a website: fill forms, click buttons, take screenshot
     instructions: `## WHEN TO USE
 User wants to set up a recurring task, reminder, or scheduled job.
 
-## CHOOSING THE RIGHT TOOL
-There are two options — pick based on complexity:
+## STEP 1: CLASSIFY — CRON JOB OR SKILL?
 
-**Option A: Cron Job (create_job)** — ONLY for fixed, single-step actions where the exact same tool call runs every time.
-Examples: "remind me to drink water at 9am", "send me 'good morning' every day"
-- Runs ONE tool call with the exact same parameters every time
-- The result is NOT sent to the user — so the action itself must deliver (e.g., telegram_send_message)
-- Zero cost per execution (no LLM tokens)
+Before doing anything, decide which type to create:
 
-**Option B: Scheduled Skill (memory_store_skill with trigger_type "cron")** — for ANYTHING that needs reading, deciding, classifying, summarizing, or multiple steps.
-Examples: "classify my emails daily", "prune/organize my inbox every morning", "send me an article from onet.pl every hour", "every morning summarize my unread emails", "weekly review of my calendar", "archive old newsletters daily"
-- A full AI reasoning loop runs each execution — can search, read, decide, and SEND results
-- Use this whenever the task involves fetching data AND making decisions about it
-- Costs LLM tokens per execution
+**CRON JOB (create_job)** — Use when ALL of these are true:
+- The action is a fixed message or a single tool call with hardcoded parameters
+- No data reading, no decisions, no multi-step logic
+- Examples: "remind me to drink water", "send me good morning at 9am", "tell me happy birthday on March 5th"
 
-**IMPORTANT — ALWAYS use scheduled skill (Option B) for:**
-- Email operations: classify, prune, organize, archive, label, sort, triage, clean up
-- Anything that reads data and makes decisions based on content
-- Tasks where different inputs produce different actions each run
-- Multi-step workflows (list → read → decide → act)
+**SKILL (memory_store_skill)** — Use when ANY of these are true:
+- The task reads data and acts on it (emails, calendar, search results, news)
+- The task involves multiple steps or decisions
+- The response depends on what the data contains
+- Examples: "check my email", "summarize my calendar", "organize my inbox", "send me an article from onet.pl", "weekly review of my calendar"
 
-**Only use cron job (Option A) for:** fixed reminders, static notifications, single deterministic tool calls with hardcoded parameters.
+**ALWAYS use skill for:** email operations (classify, prune, organize, archive, label, sort, triage), anything that reads data, multi-step workflows.
+**ONLY use cron job for:** fixed reminders, static notifications, single deterministic tool calls.
 
-## STEPS FOR CRON JOBS (Option A)
+## STEP 2A: IF CRON JOB
 1. Parse the user's schedule into a cron expression:
    - "every day at 9am" → "0 9 * * *"
    - "every hour" → "0 * * * *"
@@ -464,17 +459,22 @@ Examples: "classify my emails daily", "prune/organize my inbox every morning", "
 3. Confirm with user: "I'll create a cron job that sends you '[message]' every day at 9:00 AM. OK?"
 4. Call create_job with type "cron", the cron expression, and the action. Do NOT specify timezone — it is auto-detected by the system.
 
-## STEPS FOR SCHEDULED SKILLS (Option B)
-1. Parse the schedule (same cron expression rules as above)
-2. Write clear natural language instructions describing what the AI should do each run
-3. Confirm with user
-4. Call memory_store_skill with:
+## STEP 2B: IF SKILL
+1. **Call get_tool_catalog** to discover all available tools in the system
+2. **Select the tools** needed for this task from the catalog — use EXACT names from the catalog
+3. Parse the schedule into a cron expression or interval:
+   - Cron: { "schedule": "0 9 * * *" } — for specific times
+   - Interval: { "interval_minutes": 30 } — for every-N-minutes
+4. Write clear natural language instructions describing what the AI should do each run
+5. Confirm with user
+6. Call memory_store_skill with:
    - trigger_type: "cron"
-   - trigger_config: { "schedule": "<cron>" }  (timezone is auto-injected by the system)
+   - trigger_config: the schedule object (timezone is auto-injected by the system)
    - instructions: the natural language task description
+   - required_tools: EXACT tool names from get_tool_catalog — do NOT guess tool names
    - agent_id: "thinker"
 
-## AUTO-EXPIRATION
+## AUTO-EXPIRATION (for cron jobs only)
 - For limited runs: set maxRuns (e.g., "5 times" → maxRuns: 5)
 - For date limits: set expiresAt as ISO date (e.g., "until Friday" → compute the ISO date for next Friday midnight)
 - For duration: compute expiresAt from now + duration (e.g., "for 20 days" → now + 20 days as ISO)
@@ -482,13 +482,12 @@ Examples: "classify my emails daily", "prune/organize my inbox every morning", "
 - Omit both for permanent cron jobs
 
 ## NOTES
-- Timezone is auto-detected by the system — do NOT specify timezone unless the user explicitly requests a different one
+- Timezone is auto-detected — do NOT specify timezone unless the user explicitly requests a different one
 - Use list_jobs to show existing cron jobs, memory_list_skills for existing skills
 - Cron format: "minute hour day month weekday" (e.g., "0 9 * * *" = 9:00 AM daily)
-- Always confirm the schedule before creating — mistakes are hard to undo
-- If the task only sends a fixed message → cron job. Otherwise → scheduled skill.`,
-    required_tools: ['create_job', 'list_jobs', 'delete_job', 'memory_store_skill', 'memory_list_skills'],
-    max_steps: 6,
+- Always confirm the schedule before creating — mistakes are hard to undo`,
+    required_tools: ['create_job', 'list_jobs', 'delete_job', 'memory_store_skill', 'memory_list_skills', 'get_tool_catalog'],
+    max_steps: 8,
     notify_on_completion: false,
   },
   {
