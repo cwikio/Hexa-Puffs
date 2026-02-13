@@ -182,9 +182,45 @@ def test_send_message_resolves_name_via_first_last_split(mock_client):
     assert mock_client.search_people.call_count == 2
 
 
-def test_send_message_name_not_found(mock_client):
-    """All search strategies fail → RECIPIENT_NOT_FOUND."""
+def test_send_message_resolves_name_via_conversation(mock_client):
+    """Strategy 4: all search strategies fail, but found in conversations."""
     mock_client.search_people.return_value = []
+    mock_client.get_conversations.return_value = [
+        {
+            "entityUrn": "urn:li:fs_conversation:conv999",
+            "participants": [
+                {
+                    "com.linkedin.voyager.messaging.MessagingMember": {
+                        "miniProfile": {
+                            "firstName": "Tomasz",
+                            "lastName": "Cwik",
+                            "entityUrn": "urn:li:fs_miniProfile:ACoAABconv42",
+                        }
+                    }
+                }
+            ],
+        }
+    ]
+
+    from src.tools.messaging import handle_send_message
+
+    result = handle_send_message("Hi!", recipients=["Tomasz Cwik"])
+
+    assert result["success"] is True
+    assert result["data"]["resolvedRecipients"] == ["ACoAABconv42"]
+    mock_client.send_message.assert_called_once_with(
+        message_body="Hi!",
+        conversation_urn_id=None,
+        recipients=["ACoAABconv42"],
+    )
+    # All 3 search strategies tried before conversation fallback
+    assert mock_client.search_people.call_count == 3
+
+
+def test_send_message_name_not_found(mock_client):
+    """All strategies (search + conversations) fail → RECIPIENT_NOT_FOUND."""
+    mock_client.search_people.return_value = []
+    mock_client.get_conversations.return_value = []
 
     from src.tools.messaging import handle_send_message
 
@@ -193,15 +229,16 @@ def test_send_message_name_not_found(mock_client):
     assert result["success"] is False
     assert result["errorCode"] == "RECIPIENT_NOT_FOUND"
     mock_client.send_message.assert_not_called()
-    # All 3 strategies tried
+    # All 3 search strategies tried + conversation scan
     assert mock_client.search_people.call_count == 3
 
 
 def test_send_message_name_resolved_but_no_urn(mock_client):
-    """Search finds a person but urn_id is None on all strategies → error."""
+    """Search finds a person but urn_id is None on all strategies → falls through to conversations → error."""
     mock_client.search_people.return_value = [
         {"urn_id": None, "name": "Ghost User"}
     ]
+    mock_client.get_conversations.return_value = []
 
     from src.tools.messaging import handle_send_message
 
