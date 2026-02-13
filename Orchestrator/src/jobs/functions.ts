@@ -605,7 +605,10 @@ export const skillSchedulerFunction = inngest.createFunction(
         }
       }
 
-      // Pre-flight: skip meeting-related skills when calendar is empty
+      // Pre-flight: calendar-aware scheduling for meeting-related skills
+      // - First check of the day with no events → send "no events today" once
+      // - Subsequent checks with no events → skip silently
+      // - Events found → let the skill run (full Thinker prep)
       const requiredToolsRaw = typeof skill.required_tools === 'string'
         ? (() => { try { return JSON.parse(skill.required_tools); } catch { return []; } })()
         : Array.isArray(skill.required_tools) ? skill.required_tools : [];
@@ -635,7 +638,31 @@ export const skillSchedulerFunction = inngest.createFunction(
 
             const data = JSON.parse(rawText);
             const events = data?.data?.events || data?.events || [];
-            return events.length === 0;
+
+            if (events.length > 0) return false; // Events found — run the skill
+
+            // No events — check if we already sent the daily "no events" notification
+            const stateDir = join(homedir(), '.annabelle', 'data');
+            const statePath = join(stateDir, 'calendar-check-state.json');
+            const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+
+            let alreadyNotifiedToday = false;
+            try {
+              const state = JSON.parse(await readFile(statePath, 'utf-8'));
+              alreadyNotifiedToday = state.lastNoEventsDate === todayStr;
+            } catch {
+              // No state file — first check ever
+            }
+
+            if (!alreadyNotifiedToday) {
+              // First check of the day with no events — send one-time daily update
+              await mkdir(stateDir, { recursive: true });
+              await writeFile(statePath, JSON.stringify({ lastNoEventsDate: todayStr }));
+              await notifyTelegram('📅 Calendar update: No upcoming events for the rest of today.');
+              logger.info('Sent daily calendar update — no events today', { skillId: skill.id });
+            }
+
+            return true; // Skip the full skill either way
           } catch (error) {
             logger.warn('Calendar pre-check failed, letting skill run', { error });
             return false; // Don't skip on error
@@ -643,10 +670,6 @@ export const skillSchedulerFunction = inngest.createFunction(
         });
 
         if (shouldSkip) {
-          logger.info('Skipping skill — no upcoming calendar events', {
-            skillId: skill.id,
-            name: skill.name,
-          });
           continue;
         }
       }
