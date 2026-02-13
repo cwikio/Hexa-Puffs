@@ -7,6 +7,7 @@ import {
   trashEmail,
   markRead,
   modifyLabels,
+  listLabels,
 } from "../gmail/client.js";
 import { getNewEmails, clearNewEmails } from "../gmail/polling.js";
 import { logger } from "../utils/logger.js";
@@ -347,7 +348,7 @@ export async function handleMarkRead(
 
 export const modifyLabelsTool = {
   name: "modify_labels",
-  description: "Add or remove labels from an email",
+  description: "Add or remove labels from an email. Accepts label IDs (e.g. 'CATEGORY_SOCIAL', 'Label_123') or label names (e.g. 'Work', 'Personal') — names are automatically resolved to IDs.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -358,12 +359,12 @@ export const modifyLabelsTool = {
       add_label_ids: {
         type: "array",
         items: { type: "string" },
-        description: "Label IDs to add",
+        description: "Label IDs or names to add",
       },
       remove_label_ids: {
         type: "array",
         items: { type: "string" },
-        description: "Label IDs to remove",
+        description: "Label IDs or names to remove",
       },
     },
     required: ["message_id"],
@@ -375,6 +376,40 @@ export const ModifyLabelsInputSchema = z.object({
   add_label_ids: z.array(z.string()).optional(),
   remove_label_ids: z.array(z.string()).optional(),
 });
+
+/**
+ * Resolve an array of label IDs or names to actual Gmail label IDs.
+ * If a value matches an existing label ID, it's used as-is.
+ * Otherwise, it's matched by name (case-insensitive).
+ * Unresolved values are returned as errors.
+ */
+async function resolveLabels(
+  values: string[] | undefined
+): Promise<{ resolved: string[]; errors: string[] }> {
+  if (!values || values.length === 0) return { resolved: [], errors: [] };
+
+  const labels = await listLabels();
+  const idSet = new Set(labels.map((l) => l.id));
+  const nameToId = new Map(labels.map((l) => [l.name.toLowerCase(), l.id]));
+
+  const resolved: string[] = [];
+  const errors: string[] = [];
+
+  for (const val of values) {
+    if (idSet.has(val)) {
+      resolved.push(val);
+    } else {
+      const id = nameToId.get(val.toLowerCase());
+      if (id) {
+        resolved.push(id);
+      } else {
+        errors.push(val);
+      }
+    }
+  }
+
+  return { resolved, errors };
+}
 
 export async function handleModifyLabels(
   args: unknown
@@ -388,7 +423,19 @@ export async function handleModifyLabels(
   const { message_id, add_label_ids, remove_label_ids } = parseResult.data;
 
   try {
-    await modifyLabels(message_id, add_label_ids, remove_label_ids);
+    const [addResult, removeResult] = await Promise.all([
+      resolveLabels(add_label_ids),
+      resolveLabels(remove_label_ids),
+    ]);
+
+    const allErrors = [...addResult.errors, ...removeResult.errors];
+    if (allErrors.length > 0) {
+      return createError(
+        `Unknown labels (not found by ID or name): ${allErrors.join(", ")}. Use list_labels to see available labels, or create_label to create new ones.`
+      );
+    }
+
+    await modifyLabels(message_id, addResult.resolved, removeResult.resolved);
     return createSuccess({ modified: true });
   } catch (error) {
     logger.error("Failed to modify labels", { error });

@@ -19,5 +19,8 @@ def mock_client():
     """
     with patch("src.linkedin_client.get_client") as mock_get:
         client = MagicMock()
+        # linkedin-api send_message returns False on success (status == 201)
+        # and True on error (status != 201). Default mock to success.
+        client.send_message.return_value = False
         mock_get.return_value = client
         yield client

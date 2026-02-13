@@ -269,6 +269,18 @@ def test_send_message_no_target(mock_client):
     mock_client.send_message.assert_not_called()
 
 
+def test_send_message_rejected_by_linkedin(mock_client):
+    """Library returns True when status != 201 (e.g. account restricted)."""
+    mock_client.send_message.return_value = True
+
+    from src.tools.messaging import handle_send_message
+
+    result = handle_send_message("Hello!", conversation_urn_id="conv123")
+
+    assert result["success"] is False
+    assert result["errorCode"] == "LINKEDIN_SEND_FAILED"
+
+
 def test_send_message_handles_error(mock_client):
     mock_client.send_message.side_effect = Exception("Recipient not found")
 

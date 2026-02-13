@@ -49,7 +49,7 @@ export const guardianConfig = {
     memory: true,
     filer: true,
     searcher: false,
-    gmail: true,
+    gmail: false,
     codexec: true,
     linkedin: false,
   } as Record<string, boolean>,
