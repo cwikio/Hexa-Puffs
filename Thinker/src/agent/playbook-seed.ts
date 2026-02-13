@@ -233,7 +233,7 @@ User asks for a daily briefing, morning summary, or general overview.
     description: 'Find information about a person across memory and contacts',
     trigger_type: 'event',
     trigger_config: {
-      keywords: ['who is', 'contact', 'about him', 'about her', 'colleague', 'manager', 'person', 'his email', 'her email'],
+      keywords: ['who is', 'contact', 'about him', 'about her', 'colleague', 'manager', 'person', 'his email', 'her email', 'email address', 'email of', "'s email", 'find email', 'email'],
       priority: 10,
     },
     instructions: `## WHEN TO USE
@@ -262,26 +262,22 @@ User asks about a person — who they are, their contact info, email, or context
       keywords: ['classify email', 'label email', 'organize inbox', 'sort email', 'categorize email', 'tag email', 'organize email'],
       priority: 10,
     },
-    instructions: `## WHEN TO USE
-User asks to classify, label, organize, sort, or categorize their emails.
+    instructions: `You MUST follow these steps exactly. Do NOT skip steps. Do NOT store skills or facts. Do NOT send multiple messages.
 
-## STEPS
-1. list_labels — get existing labels to reuse before creating new ones
-2. list_emails with query "is:unread" or a user-specified filter — get emails to classify
-3. For each email, call get_email to read subject, sender, and body
-4. Decide the appropriate label based on content (e.g., Work, Personal, Finance, Newsletters, Notifications, Receipts)
-5. create_label only if a suitable label doesn't exist yet
-6. modify_labels to apply the chosen label to each email
-7. Summarize what was classified: count per label, any emails that were unclear
+STEP 1: Call gmail_list_labels to get all existing labels (you need their IDs).
+STEP 2: Call gmail_list_emails with query "is:unread" (or user-specified filter), max_results 20.
+STEP 3: For each email, call gmail_modify_labels with the label NAME that best fits (the tool resolves names to IDs automatically). Use categories: Work, Personal, Finance, Newsletters, Notifications, Social. Prefer existing labels from step 1.
+STEP 4: Call gmail_create_label ONLY if no existing label fits.
+STEP 5: Send ONE short Telegram summary: "Classified X emails: Y Work, Z Personal, ..." — no per-email details.
 
-## NOTES
-- Always check existing labels first — avoid creating duplicates
-- Ask the user for their preferred categories if this is the first time
-- Process in batches if there are many emails — summarize progress
-- Skip emails that already have user-applied labels unless asked to reclassify
-- This workflow can be scheduled as a recurring cron skill via memory_store_skill — use the cron-scheduling playbook for that`,
+CONSTRAINTS:
+- Do NOT call memory_store_skill or memory_store_fact
+- Do NOT send more than ONE Telegram message
+- Do NOT list or summarize individual email contents
+- Skip emails that already have user-applied labels
+- If you need to read an email's body to decide, call gmail_get_email — but prefer classifying by subject/sender/snippet alone`,
     required_tools: ['gmail_list_labels', 'gmail_list_emails', 'gmail_get_email', 'gmail_create_label', 'gmail_modify_labels'],
-    max_steps: 10,
+    max_steps: 6,
     notify_on_completion: false,
   },
   {
