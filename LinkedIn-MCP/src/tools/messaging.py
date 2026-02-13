@@ -17,6 +17,14 @@ def handle_get_conversations(limit: int = 20) -> dict[str, Any]:
         api = linkedin_client.get_client()
         raw = api.get_conversations()
 
+        # Detect API error responses (e.g. {"status": 401})
+        if isinstance(raw, dict) and "status" in raw and "elements" not in raw:
+            return error_response(
+                f"LinkedIn conversations API returned status {raw['status']}. "
+                "The account session may be expired or restricted.",
+                "LINKEDIN_API_RESTRICTED",
+            )
+
         # get_conversations returns res.json() — may be a dict with "elements" or a list
         if isinstance(raw, dict):
             conv_list = raw.get("elements", [])
@@ -222,6 +230,14 @@ def handle_get_conversation(conversation_urn_id: str) -> dict[str, Any]:
     try:
         api = linkedin_client.get_client()
         raw = api.get_conversation(conversation_urn_id)
+
+        # Detect API error responses
+        if isinstance(raw, dict) and "status" in raw and "events" not in raw:
+            return error_response(
+                f"LinkedIn conversation API returned status {raw['status']}. "
+                "The account session may be expired or restricted.",
+                "LINKEDIN_API_RESTRICTED",
+            )
 
         messages = []
         for event in raw.get("events", []):
