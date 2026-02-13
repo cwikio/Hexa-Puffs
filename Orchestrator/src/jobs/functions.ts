@@ -625,21 +625,48 @@ export const skillSchedulerFunction = inngest.createFunction(
             const now = new Date();
             const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
-            const result = await toolRouter.routeToolCall('gmail_list_events', {
+            // Step 1: List all calendars to get their IDs
+            let calendarIds = ['primary'];
+            const calResult = await toolRouter.routeToolCall('gmail_list_calendars', {});
+            if (calResult.success) {
+              const calResponse = calResult.content as { content?: Array<{ type: string; text?: string }> };
+              const calText = calResponse?.content?.[0]?.text;
+              if (calText) {
+                const calData = JSON.parse(calText);
+                const calendars = calData?.data || calData || [];
+                if (Array.isArray(calendars) && calendars.length > 0) {
+                  calendarIds = calendars.map((c: { id: string }) => c.id);
+                }
+              }
+            }
+
+            // Step 2: Use free/busy to check ALL calendars in one call
+            const fbResult = await toolRouter.routeToolCall('gmail_find_free_time', {
               time_min: now.toISOString(),
               time_max: endOfDay.toISOString(),
+              calendar_ids: calendarIds,
             });
 
-            if (!result.success) return false; // Don't skip on error — let the skill run
+            let hasEvents = false;
+            if (fbResult.success) {
+              const fbResponse = fbResult.content as { content?: Array<{ type: string; text?: string }> };
+              const fbText = fbResponse?.content?.[0]?.text;
+              if (fbText) {
+                const fbData = JSON.parse(fbText);
+                const calendars = fbData?.data?.calendars || fbData?.calendars || {};
+                // Any calendar with at least one busy slot = there are meetings
+                for (const cal of Object.values(calendars) as Array<{ busy?: unknown[] }>) {
+                  if (cal.busy && cal.busy.length > 0) {
+                    hasEvents = true;
+                    break;
+                  }
+                }
+              }
+            } else {
+              return false; // Don't skip on error — let the skill run
+            }
 
-            const mcpResponse = result.content as { content?: Array<{ type: string; text?: string }> };
-            const rawText = mcpResponse?.content?.[0]?.text;
-            if (!rawText) return true; // No text = no events
-
-            const data = JSON.parse(rawText);
-            const events = data?.data?.events || data?.events || [];
-
-            if (events.length > 0) return false; // Events found — run the skill
+            if (hasEvents) return false; // Meetings found — run the full skill
 
             // No events — check if we already sent the daily "no events" notification
             const stateDir = join(homedir(), '.annabelle', 'data');
@@ -655,7 +682,6 @@ export const skillSchedulerFunction = inngest.createFunction(
             }
 
             if (!alreadyNotifiedToday) {
-              // First check of the day with no events — send one-time daily update
               await mkdir(stateDir, { recursive: true });
               await writeFile(statePath, JSON.stringify({ lastNoEventsDate: todayStr }));
               await notifyTelegram('📅 Calendar update: No upcoming events for the rest of today.');
@@ -670,6 +696,17 @@ export const skillSchedulerFunction = inngest.createFunction(
         });
 
         if (shouldSkip) {
+          // Update last_run_at so the interval timer resets (prevents checking every minute)
+          try {
+            const { getOrchestrator } = await import('../core/orchestrator.js');
+            const orchestrator = await getOrchestrator();
+            await orchestrator.getToolRouter().routeToolCall('memory_update_skill', {
+              skill_id: skill.id,
+              last_run_at: new Date().toISOString(),
+              last_run_status: 'success',
+              last_run_summary: 'No upcoming events — skipped',
+            });
+          } catch { /* non-fatal */ }
           continue;
         }
       }
