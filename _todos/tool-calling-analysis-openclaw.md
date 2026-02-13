@@ -1,4 +1,4 @@
-# ~~Tool Calling Analysis: Annabelle vs OpenClaw~~ ✅
+# Tool Calling Analysis: Annabelle vs OpenClaw
 
 ## Summary
 
@@ -337,7 +337,7 @@ The system has ~300 lines of recovery code that patches over Issues 1 and 2:
 
 ## TODO List
 
-### Phase 1: Fix Names ✅
+### ~~Phase 1: Fix Names~~ ✅
 
 - [x] Fix all tool names in `playbook-seed.ts` — both `instructions` text AND `required_tools` arrays for all 13 broken playbooks
 - [x] Remove overlapping tool catalog sections from `instructions.md` to eliminate persona/playbook contradictions
