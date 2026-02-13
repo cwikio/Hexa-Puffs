@@ -46,7 +46,7 @@ export const guardianConfig = {
   input: {
     telegram: false,
     onepassword: true,
-    memory: true,
+    memory: false,
     filer: true,
     searcher: false,
     gmail: false,

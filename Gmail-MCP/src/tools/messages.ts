@@ -383,14 +383,12 @@ export const ModifyLabelsInputSchema = z.object({
  * Otherwise, it's matched by name (case-insensitive).
  * Unresolved values are returned as errors.
  */
-async function resolveLabels(
-  values: string[] | undefined
-): Promise<{ resolved: string[]; errors: string[] }> {
+function resolveLabelValues(
+  values: string[] | undefined,
+  idSet: Set<string>,
+  nameToId: Map<string, string>
+): { resolved: string[]; errors: string[] } {
   if (!values || values.length === 0) return { resolved: [], errors: [] };
-
-  const labels = await listLabels();
-  const idSet = new Set(labels.map((l) => l.id));
-  const nameToId = new Map(labels.map((l) => [l.name.toLowerCase(), l.id]));
 
   const resolved: string[] = [];
   const errors: string[] = [];
@@ -423,10 +421,12 @@ export async function handleModifyLabels(
   const { message_id, add_label_ids, remove_label_ids } = parseResult.data;
 
   try {
-    const [addResult, removeResult] = await Promise.all([
-      resolveLabels(add_label_ids),
-      resolveLabels(remove_label_ids),
-    ]);
+    const labels = await listLabels();
+    const idSet = new Set(labels.map((l) => l.id));
+    const nameToId = new Map(labels.map((l) => [l.name.toLowerCase(), l.id]));
+
+    const addResult = resolveLabelValues(add_label_ids, idSet, nameToId);
+    const removeResult = resolveLabelValues(remove_label_ids, idSet, nameToId);
 
     const allErrors = [...addResult.errors, ...removeResult.errors];
     if (allErrors.length > 0) {

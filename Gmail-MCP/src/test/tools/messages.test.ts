@@ -18,6 +18,7 @@ vi.mock("../../gmail/client.js", () => ({
   trashEmail: vi.fn(),
   markRead: vi.fn(),
   modifyLabels: vi.fn(),
+  listLabels: vi.fn(),
 }));
 
 vi.mock("../../gmail/polling.js", () => ({
@@ -44,6 +45,7 @@ import {
   trashEmail,
   markRead,
   modifyLabels,
+  listLabels,
 } from "../../gmail/client.js";
 
 import { getNewEmails, clearNewEmails } from "../../gmail/polling.js";
@@ -330,7 +332,15 @@ describe("handleMarkRead", () => {
 // ===========================================================================
 
 describe("handleModifyLabels", () => {
-  it("succeeds adding labels", async () => {
+  const MOCK_LABELS = [
+    { id: "STARRED", name: "STARRED", type: "system" as const },
+    { id: "IMPORTANT", name: "IMPORTANT", type: "system" as const },
+    { id: "UNREAD", name: "UNREAD", type: "system" as const },
+    { id: "Label_42", name: "Work", type: "user" as const },
+  ];
+
+  it("succeeds adding labels by ID", async () => {
+    (listLabels as Mock).mockResolvedValue(MOCK_LABELS);
     (modifyLabels as Mock).mockResolvedValue(undefined);
 
     const res = await handleModifyLabels({
@@ -343,11 +353,26 @@ describe("handleModifyLabels", () => {
     expect(modifyLabels).toHaveBeenCalledWith(
       "msg_lbl",
       ["STARRED", "IMPORTANT"],
-      undefined
+      []
     );
   });
 
+  it("succeeds adding labels by name", async () => {
+    (listLabels as Mock).mockResolvedValue(MOCK_LABELS);
+    (modifyLabels as Mock).mockResolvedValue(undefined);
+
+    const res = await handleModifyLabels({
+      message_id: "msg_lbl",
+      add_label_ids: ["Work"],
+    });
+    const data = expectSuccess(res);
+
+    expect(data).toEqual({ modified: true });
+    expect(modifyLabels).toHaveBeenCalledWith("msg_lbl", ["Label_42"], []);
+  });
+
   it("succeeds removing labels", async () => {
+    (listLabels as Mock).mockResolvedValue(MOCK_LABELS);
     (modifyLabels as Mock).mockResolvedValue(undefined);
 
     const res = await handleModifyLabels({
@@ -357,7 +382,18 @@ describe("handleModifyLabels", () => {
     const data = expectSuccess(res);
 
     expect(data).toEqual({ modified: true });
-    expect(modifyLabels).toHaveBeenCalledWith("msg_lbl", undefined, ["UNREAD"]);
+    expect(modifyLabels).toHaveBeenCalledWith("msg_lbl", [], ["UNREAD"]);
+  });
+
+  it("returns error for unknown label names", async () => {
+    (listLabels as Mock).mockResolvedValue(MOCK_LABELS);
+
+    const res = await handleModifyLabels({
+      message_id: "msg_lbl",
+      add_label_ids: ["NonExistent"],
+    });
+    expectError(res);
+    expect(modifyLabels).not.toHaveBeenCalled();
   });
 
   it("rejects missing message_id (validation)", async () => {
