@@ -438,15 +438,14 @@ export class Orchestrator {
 
     const result = await client.processMessage(msg);
 
-    // Handle cost-control pause signal from Thinker
-    if (result.paused) {
+    // Handle cost-control pause when agent was ALREADY paused (no response produced)
+    if (result.paused && !result.success) {
       this.logger.warn(`Agent "${targetAgentId}" paused by cost controls: ${result.error}`);
 
       if (this.agentManager) {
         this.agentManager.markPaused(targetAgentId, result.error || 'Cost limit exceeded');
       }
 
-      // Send notification to configured channel (or fall back to originating channel)
       const agentDef = this.agentDefinitions.get(targetAgentId);
       const notifyChannel = agentDef?.costControls?.notifyChannel || msg.channel;
       const notifyChatId = agentDef?.costControls?.notifyChatId || msg.chatId;
@@ -470,6 +469,21 @@ export class Orchestrator {
       this.logger.info(
         `Response delivered: chat=${msg.chatId}, steps=${result.totalSteps}, tools=${result.toolsUsed.join(', ') || 'none'}`
       );
+
+      // Cost monitor tripped DURING this request — deliver response first, then notify
+      if (result.paused) {
+        this.logger.warn(`Agent "${targetAgentId}" paused by cost controls after delivering response`);
+
+        if (this.agentManager) {
+          this.agentManager.markPaused(targetAgentId, 'Cost limit exceeded during request');
+        }
+
+        const agentDef = this.agentDefinitions.get(targetAgentId);
+        const notifyChannel = agentDef?.costControls?.notifyChannel || msg.channel;
+        const notifyChatId = agentDef?.costControls?.notifyChatId || msg.chatId;
+        await this.sendToChannel(notifyChannel, notifyChatId,
+          `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nThe agent will not process messages until resumed.`);
+      }
     } else {
       this.logger.error(`Agent processing failed: ${result.error}`);
       // Send brief error notification — adapter filters by botUserId + botMessagePatterns

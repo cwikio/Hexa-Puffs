@@ -1161,11 +1161,15 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       // Log completion
       await this.logger.logComplete(trace, toolsUsed, result.steps.length);
 
+      // Flag if cost monitor tripped during this loop (so upstream can notify)
+      const pausedDuringLoop = this.costMonitor?.paused ?? false;
+
       return {
         success: true,
         response: responseText,
         toolsUsed,
         totalSteps: result.steps.length,
+        ...(pausedDuringLoop && { paused: true }),
       };
     } catch (error) {
       let errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -1439,12 +1443,16 @@ Complete the task step by step, using your available tools. When done, provide a
         logger.info('Skipping notification for trivial skill result', { preview: responseText.substring(0, 80) });
       }
 
+      // Flag if cost monitor tripped during this loop (so upstream can notify)
+      const pausedDuringLoop = this.costMonitor?.paused ?? false;
+
       return {
         success: true,
         response: responseText,
         summary: responseText,
         toolsUsed,
         totalSteps: result.steps.length,
+        ...(pausedDuringLoop && { paused: true }),
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

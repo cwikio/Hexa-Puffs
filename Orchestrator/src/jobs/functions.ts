@@ -615,6 +615,29 @@ export const skillSchedulerFunction = inngest.createFunction(
             await notifySkillFailure(skill, result.error || 'Unknown error', triggerConfig);
           }
 
+          // Notify if cost monitor tripped (during or before this skill)
+          if (result.paused) {
+            try {
+              const agentDef = orchestrator.getAgentDefinition('annabelle');
+              const chatId = agentDef?.costControls?.notifyChatId || process.env.NOTIFY_CHAT_ID;
+              if (chatId) {
+                const agentManager = orchestrator.getAgentManager();
+                agentManager?.markPaused(
+                  agentManager.getDefaultAgentId() || 'annabelle',
+                  'Cost limit exceeded during skill execution',
+                );
+
+                const toolRouter = orchestrator.getToolRouter();
+                await toolRouter.routeToolCall('telegram_send_message', {
+                  chat_id: chatId,
+                  message: `Agent paused due to unusual token consumption (during skill "${skill.name}").\n\nThe agent will not process messages until resumed.`,
+                });
+              }
+            } catch (pauseNotifyError) {
+              logger.error('Failed to send cost-pause notification', { error: pauseNotifyError });
+            }
+          }
+
           return result;
         } catch (error) {
           logger.error('Failed to execute skill via Thinker', { skillId: skill.id, error });
