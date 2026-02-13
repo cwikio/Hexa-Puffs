@@ -1,0 +1,58 @@
+flowchart TB
+    U(["User via Telegram:\nCheck news on AI every 3 hours"])
+
+    subgraph Orchestrator["ORCHESTRATOR port 8010"]
+        CM["Channel Manager\npolls Telegram every 10s"]
+        AM["Agent Manager\nlazy-spawns Thinker"]
+        TR["ToolRouter\n148+ prefixed MCP tools"]
+        CAT["get_tool_catalog\ndynamic catalog from ToolRouter"]
+        VAL["required_tools validation\nchecks against ToolRouter\n+ custom handlers"]
+        POLL["Inngest Skill Poller\nevery 1 min\nloads skills from Memorizer\nchecks schedules via croner\nfailure cooldown\ncalendar pre-flight"]
+        EXEC["Skill Executor\ndispatches to Thinker\nvia AgentManager"]
+    end
+
+    subgraph Thinker["THINKER port 8006"]
+        PC["Playbook Classifier\nEMBEDDING similarity\nreplaces keyword matching"]
+        PB["cron-scheduling Playbook\nALL scheduling = SKILL\nno cron job path"]
+        LLM["LLM\nGroq llama-3.3-70b"]
+    end
+
+    subgraph Memorizer["MEMORIZER MCP"]
+        SKILL_SIMPLE["Simple Skill:\nname: Hello Reminder\nschedule: */1 * * * *\nmax_steps: 2\ninstructions: Send hello\nvia Telegram\nrequired_tools:\ntelegram_send_message"]
+        SKILL_COMPLEX["Complex Skill:\nname: AI News Monitor\nschedule: 0 */3 * * *\nmax_steps: 5\ninstructions: Search latest\nAI news, summarize,\nsend via Telegram\nrequired_tools:\nsearcher_news_search\ntelegram_send_message"]
+    end
+
+    subgraph ExecTime["SKILL EXECUTION AT FIRE TIME"]
+        LLM2["LLM reasons\nat execution time\nwith required_tools loaded"]
+        RESULT["Update skill:\nlast_run_at\nlast_run_status\nlast_run_summary"]
+        NOTIFY["Telegram notification\nif notify_on_completion"]
+    end
+
+    REMOVED["REMOVED:\ncreate_job\nlist_jobs\ndelete_job\nget_job_status\nJob Storage JSON files\nCron job poller loop\nBackward compat map\nSKILL vs CRON JOB\nclassification"]
+
+    U --> CM --> AM -->|"dispatch"| PC
+    PC -->|"embedding matches\nscheduling intent"| PB
+    PB -->|"force-includes\nget_tool_catalog\nmemory_store_skill"| LLM
+
+    LLM -->|"1: get_tool_catalog"| CAT
+    CAT -->|"148 tools by MCP"| LLM
+    LLM -->|"2: memory_store_skill\nwith required_tools\nfrom catalog"| VAL
+    VAL -->|"validated"| SKILL_SIMPLE
+    VAL -->|"validated"| SKILL_COMPLEX
+
+    POLL -->|"skill is due"| EXEC
+    EXEC -->|"dispatch to Thinker"| LLM2
+    LLM2 -->|"calls real tools"| TR
+    LLM2 --> RESULT
+    RESULT --> NOTIFY
+
+    style PC fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    style PB fill:#bbdefb,stroke:#1565c0,stroke-width:2px
+    style CAT fill:#bbdefb,stroke:#1565c0,stroke-width:2px
+    style VAL fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    style POLL fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    style LLM fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style LLM2 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style SKILL_SIMPLE fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style SKILL_COMPLEX fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style REMOVED fill:#ffcdd2,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5

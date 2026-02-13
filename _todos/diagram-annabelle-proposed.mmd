@@ -1,0 +1,59 @@
+flowchart TB
+    U(["User via Telegram:\nCheck news on AI every 3 hours"])
+
+    subgraph Orchestrator["ORCHESTRATOR port 8010"]
+        CM["Channel Manager\npolls Telegram every 10s"]
+        AM["Agent Manager\nlazy-spawns Thinker"]
+        TR["ToolRouter\n148+ prefixed MCP tools"]
+        CAT["get_tool_catalog\ndynamic catalog from ToolRouter"]
+        VAL_JOB["NEW: create_job validation\nchecks toolName against\nToolRouter + custom handlers"]
+        VAL_SKILL["required_tools validation\nchecked against ToolRouter"]
+        CJ_EXEC["NEW: Cron Executor\ntool_call = direct execution\nagentTurn = dispatch to Thinker"]
+        CJ_POLL["Inngest Cron Poller\nevery 1 min"]
+    end
+
+    subgraph Thinker["THINKER port 8006"]
+        PC["NEW: Playbook Classifier\nEMBEDDING similarity\nreplaces keyword matching"]
+        PB["cron-scheduling Playbook\nCLASSIFY: cron job or skill\ninjects get_tool_catalog\n+ memory_store_skill"]
+        ETS["Embedding Tool Selector\ntop-K by cosine similarity"]
+        LLM["LLM\nGroq llama-3.3-70b"]
+    end
+
+    subgraph Storage["STORAGE"]
+        JOB_SIMPLE["Simple Job tool_call:\ntelegram_send_message\nfor fixed actions"]
+        JOB_AGENT["NEW: Agent Job agentTurn:\nmessage: Search AI news\nfor reasoning tasks"]
+        SKILL["Skill in Memorizer:\nrequired_tools: validated\nschedule: 0 */3 * * *"]
+    end
+
+    subgraph ExecTime["EXECUTION AT FIRE TIME"]
+        LLM2["LLM reasons\nat execution time\nfull tool access"]
+    end
+
+    U --> CM --> AM -->|"dispatch"| PC
+    PC -->|"embedding matches\nscheduling intent"| PB
+    PB -->|"force-includes tools"| LLM
+
+    LLM -->|"SKILL path:\n1. get_tool_catalog\n2. pick tools from catalog\n3. memory_store_skill"| CAT
+    CAT -->|"148 tools grouped by MCP"| LLM
+    LLM -->|"store skill"| VAL_SKILL
+    VAL_SKILL --> SKILL
+
+    LLM -->|"CRON JOB path:\nsimple action"| VAL_JOB
+    VAL_JOB -->|"tool exists"| JOB_SIMPLE
+    LLM -->|"CRON JOB path:\nneeds reasoning"| JOB_AGENT
+
+    CJ_POLL --> CJ_EXEC
+    CJ_EXEC -->|"tool_call"| TR
+    CJ_EXEC -->|"agentTurn"| LLM2
+    LLM2 --> TR
+
+    style PC fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    style VAL_JOB fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    style VAL_SKILL fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    style CJ_EXEC fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    style JOB_AGENT fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px
+    style PB fill:#bbdefb,stroke:#1565c0,stroke-width:2px
+    style CAT fill:#bbdefb,stroke:#1565c0,stroke-width:2px
+    style SKILL fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    style LLM fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style LLM2 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px

@@ -1,0 +1,38 @@
+flowchart TB
+    U(["User: Check news on AI every 3 hours"])
+
+    subgraph Gateway["GATEWAY"]
+        CR["Channel Router"]
+        SP["System Prompt Builder\ninjects ALL tools + skill catalog"]
+    end
+
+    subgraph Agent["AGENT SESSION"]
+        LLM["LLM\nall tools always in context\nno intent classifier\ncron tool with rich schema"]
+    end
+
+    subgraph Cron["CRON SERVICE file-based"]
+        NZ["Normalizer\nfixes casing, flattened params"]
+        ST["File Store\nJSON5, atomic writes"]
+        TM["Timer Loop\n60s tick, mutex-locked"]
+    end
+
+    subgraph Exec["EXECUTION AT FIRE TIME"]
+        SE["systemEvent:\ninject text into main session"]
+        AT["agentTurn:\nspawn isolated agent session"]
+        LLM2["LLM reasons with\nfull tool access"]
+        TOOLS["web_search\nsend_message\netc."]
+    end
+
+    U --> CR --> SP --> LLM
+    LLM -->|"cron add:\nschedule: */3 * * * *\npayload: agentTurn\nmsg: search AI news"| NZ
+    NZ --> ST
+    TM -->|"job fires"| SE
+    TM -->|"job fires"| AT
+    AT --> LLM2
+    LLM2 -->|"decides tools at runtime"| TOOLS
+
+    style LLM fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style LLM2 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style NZ fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style AT fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style SP fill:#fff9c4,stroke:#f9a825,stroke-width:2px
