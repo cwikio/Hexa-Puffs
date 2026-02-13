@@ -36,9 +36,9 @@ const DEFAULT_PLAYBOOKS: PlaybookSeed[] = [
 User asks to check, read, triage, or summarize their inbox or emails.
 
 ## STEPS
-1. list_emails with query "is:unread" — get unread emails
+1. gmail_list_emails with query "is:unread" — get unread emails
 2. Scan subject lines and senders for urgency
-3. For important or urgent emails, call get_email for full details
+3. For important or urgent emails, call gmail_get_email for full details
 4. Present a summary: count of unread, key senders, urgent items
 5. Ask if the user wants to reply, archive, or take action on any
 
@@ -61,14 +61,14 @@ User asks to check, read, triage, or summarize their inbox or emails.
 User asks to write, send, or reply to an email.
 
 ## STEPS
-1. retrieve_memories — check for context about the recipient or topic
-2. create_draft with the composed content
+1. memory_retrieve_memories — check for context about the recipient or topic
+2. gmail_create_draft with the composed content
 3. Show the draft to the user and ask for confirmation
-4. send_draft only after user confirms
+4. gmail_send_draft only after user confirms
 
 ## NOTES
 - Never send without user confirmation
-- If replying, use reply_email instead of send_email
+- If replying, use gmail_reply_email instead of gmail_send_email
 - Match tone to context (formal for work, casual for friends)`,
     required_tools: ['gmail_create_draft', 'gmail_send_draft', 'gmail_reply_email'],
     max_steps: 8,
@@ -86,16 +86,17 @@ User asks to write, send, or reply to an email.
 User asks to schedule something, check their calendar, or find available time.
 
 ## STEPS
-1. retrieve_memories — check for context about the person or recurring meetings
-2. find_free_time or list_events — check current availability
-3. If scheduling: create_event with the agreed time
-4. If attendees involved: send_message or send_email to notify them
+1. memory_retrieve_memories — check for context about the person or recurring meetings
+2. gmail_find_free_time or gmail_list_events — check current availability
+3. If scheduling: gmail_create_event with the agreed time
+4. If attendees involved: telegram_send_message or gmail_send_email to notify them
 
 ## NOTES
 - Always confirm the time with the user before creating
-- Use quick_add_event for simple natural language requests
-- Check for conflicts before suggesting times`,
-    required_tools: ['memory_list_events', 'memory_find_free_time', 'memory_create_event'],
+- Use gmail_quick_add_event for simple natural language requests
+- Check for conflicts before suggesting times
+- Use ISO 8601 datetime format for time parameters (e.g., '2026-01-15T09:00:00Z')`,
+    required_tools: ['gmail_list_events', 'gmail_find_free_time', 'gmail_create_event'],
     max_steps: 8,
     notify_on_completion: false,
   },
@@ -111,16 +112,16 @@ User asks to schedule something, check their calendar, or find available time.
 User asks to search, research, or find information about a topic. Also when user provides a URL and wants to know what's on the page.
 
 ## STEPS
-1. If the user provides a specific URL: use web_fetch to read the page content directly
-2. If searching for a topic: web_search or news_search — find relevant information
-3. If search results have promising URLs: use web_fetch to read the full article content
+1. If the user provides a specific URL: use searcher_web_fetch to read the page content directly
+2. If searching for a topic: searcher_web_search or searcher_news_search — find relevant information
+3. If search results have promising URLs: use searcher_web_fetch to read the full article content
 4. Summarize the key findings concisely
 5. store_fact — save important findings to memory if they seem useful long-term
-6. If user wants to share: send_message or send_email with the summary
+6. If user wants to share: telegram_send_message or gmail_send_email with the summary
 
 ## NOTES
-- Use web_fetch (not browser) to read webpage content — it's much faster
-- Use news_search with freshness="24h" for current events
+- Use searcher_web_fetch (not browser) to read webpage content — it's much faster
+- Use searcher_news_search with freshness="24h" for current events
 - Don't overwhelm — present top 3-5 results, offer to dig deeper
 - Only fall back to browser tools if web_fetch returns empty or unusable content
 - ALWAYS include source URLs at the bottom of your response (Sources: section with clickable links)`,
@@ -140,11 +141,11 @@ User asks to search, research, or find information about a topic. Also when user
 User asks about Telegram messages or wants to reply to someone on Telegram.
 
 ## STEPS
-1. get_new_messages or get_messages — fetch recent messages
-2. retrieve_memories — check context about the conversation or person
+1. telegram_get_new_messages or telegram_get_messages — fetch recent messages
+2. memory_retrieve_memories — check context about the conversation or person
 3. Present messages to the user with context
-4. If replying: send_message with the user's response
-5. store_conversation — log the exchange
+4. If replying: telegram_send_message with the user's response
+5. memory_store_conversation — log the exchange
 
 ## NOTES
 - Mark messages as read after presenting them
@@ -165,9 +166,9 @@ User asks about Telegram messages or wants to reply to someone on Telegram.
 User asks what you remember, know, or have learned about them or a topic.
 
 ## STEPS
-1. list_facts with no category filter — get ALL stored facts
-2. get_profile — get the user's profile
-3. search_conversations — find relevant past conversations
+1. memory_list_facts with no category filter — get ALL stored facts
+2. memory_get_profile — get the user's profile
+3. memory_search_conversations — find relevant past conversations
 4. Present an organized summary grouped by category
 
 ## NOTES
@@ -190,15 +191,15 @@ User asks what you remember, know, or have learned about them or a topic.
 User asks to create, read, update, or manage files in the workspace.
 
 ## STEPS
-1. list_files or search_files — understand what exists
-2. read_file for existing files, create_file for new ones
-3. update_file for modifications
+1. filer_list_files or filer_search_files — understand what exists
+2. filer_read_file for existing files, filer_create_file for new ones
+3. filer_update_file for modifications
 4. Confirm the result to the user
 
 ## NOTES
-- Check grants before writing (check_grant / request_grant)
+- Check grants before writing (filer_check_grant / filer_request_grant)
 - Show file contents before overwriting
-- Use search_files to find files by content when the name is unknown`,
+- Use filer_search_files to find files by content when the name is unknown`,
     required_tools: ['filer_list_files', 'filer_read_file', 'filer_create_file', 'filer_update_file'],
     max_steps: 8,
     notify_on_completion: false,
@@ -215,9 +216,9 @@ User asks to create, read, update, or manage files in the workspace.
 User asks for a daily briefing, morning summary, or general overview.
 
 ## STEPS
-1. list_emails with query "is:unread" — summarize unread email count and key items
-2. list_events for today — show upcoming meetings and deadlines
-3. news_search for top headlines — brief news overview
+1. gmail_list_emails with query "is:unread" — summarize unread email count and key items
+2. gmail_list_events for today — show upcoming meetings and deadlines
+3. searcher_news_search for top headlines — brief news overview
 4. Present all three sections in a compact format
 
 ## NOTES
@@ -240,10 +241,10 @@ User asks for a daily briefing, morning summary, or general overview.
 User asks about a person — who they are, their contact info, email, or context.
 
 ## STEPS
-1. retrieve_memories with the person's name — check stored facts
+1. memory_retrieve_memories with the person's name — check stored facts
 2. gmail_list_emails with from:[name] or to:[name] — find email address from correspondence
-3. list_contacts or search_users — find contact details on Telegram
-4. search_conversations — find past conversations mentioning them
+3. telegram_list_contacts or telegram_search_users — find contact details on Telegram
+4. memory_search_conversations — find past conversations mentioning them
 5. Present a combined profile of what you know
 
 ## NOTES
@@ -349,7 +350,7 @@ User asks to clean up, delete, or purge messages from a Telegram chat.
 
 ## STEPS
 1. Ask the user for scope if not specified: how many messages, or what time range
-2. Call get_telegram_messages to fetch the messages in scope
+2. Call telegram_get_messages to fetch the messages in scope
 3. Confirm with the user how many messages will be deleted
 4. Call telegram_delete_messages with the message IDs
 5. Report how many were deleted
@@ -358,7 +359,7 @@ User asks to clean up, delete, or purge messages from a Telegram chat.
 - Always confirm before deleting
 - For large deletions, process in batches of 100
 - The /delete slash command is faster for deterministic deletions (e.g. /delete today, /delete 50)
-- get_telegram_messages max is 100 per call — paginate with offset_id if needed`,
+- telegram_get_messages max is 100 per call — paginate with offset_id if needed`,
     required_tools: ['telegram_get_messages', 'telegram_delete_messages'],
     max_steps: 8,
     notify_on_completion: false,

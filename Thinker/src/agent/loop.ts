@@ -33,16 +33,6 @@ const STICKY_TOOLS_LOOKBACK = parseInt(process.env.THINKER_STICKY_TOOLS_LOOKBACK
 const STICKY_TOOLS_MAX = parseInt(process.env.THINKER_STICKY_TOOLS_MAX ?? '8', 10);
 
 /**
- * Tool calling preamble — prepended before persona to enforce structured tool use.
- * LLMs attend most strongly to the beginning and end of the system prompt.
- */
-const TOOL_PREAMBLE = `## TOOL CALLING RULES
-Always use the structured function calling API. NEVER write tool calls as text/JSON/XML. You CANNOT perform actions without calling tools — text claims without tool calls are lies. If a tool fails, retry once or explain honestly.
-ONLY call tools that are in the provided tool list. Do NOT invent or hallucinate tool names — if a tool does not exist in the list, it is not available. Use the closest available tool instead.
-
-`;
-
-/**
  * Default system prompt for the agent (used when no persona file is loaded)
  */
 const DEFAULT_SYSTEM_PROMPT = `You are Annabelle, a helpful AI assistant communicating via Telegram.
@@ -423,13 +413,13 @@ export class Agent {
 
     await this.logger.logContextLoaded(trace, memories.facts.length, !!profile);
 
-    // Build system prompt with tool preamble at the very top for maximum attention.
-    // Assembly order: TOOL_PREAMBLE → persona → datetime → chat_id → compaction → playbooks → skills → memories
+    // Build system prompt: persona → datetime → chat_id → compaction → playbooks → skills → memories
+    // Tool calling rules are in the persona file (instructions.md) — single source of truth.
     const basePrompt = this.customSystemPrompt || this.personaPrompt || this.defaultSystemPrompt;
-    let systemPrompt = TOOL_PREAMBLE + basePrompt;
+    let systemPrompt = basePrompt;
 
     if (profile?.profile_data?.persona?.system_prompt) {
-      systemPrompt = TOOL_PREAMBLE + profile.profile_data.persona.system_prompt;
+      systemPrompt = profile.profile_data.persona.system_prompt;
     }
 
     // Add current date/time context
