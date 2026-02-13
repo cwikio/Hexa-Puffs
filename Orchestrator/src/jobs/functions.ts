@@ -12,7 +12,13 @@ import { homedir } from 'node:os';
 async function notifyTelegram(message: string): Promise<void> {
   const { getOrchestrator } = await import('../core/orchestrator.js');
   const orchestrator = await getOrchestrator();
-  await orchestrator.getToolRouter().routeToolCall('telegram_send_message', { message });
+  const agentDef = orchestrator.getAgentDefinition('annabelle');
+  const chatId = agentDef?.costControls?.notifyChatId || process.env.NOTIFY_CHAT_ID;
+  if (!chatId) {
+    logger.warn('Cannot send Telegram notification — no chat_id configured');
+    return;
+  }
+  await orchestrator.getToolRouter().routeToolCall('telegram_send_message', { chat_id: chatId, message });
 }
 
 /** Store a fact via the tool router. */
