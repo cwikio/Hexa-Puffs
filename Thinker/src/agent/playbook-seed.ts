@@ -23,7 +23,7 @@ interface PlaybookSeed {
   notify_on_completion: boolean;
 }
 
-const DEFAULT_PLAYBOOKS: PlaybookSeed[] = [
+export const DEFAULT_PLAYBOOKS: PlaybookSeed[] = [
   {
     name: 'email-triage',
     description: 'Check, read, and summarize unread emails',
