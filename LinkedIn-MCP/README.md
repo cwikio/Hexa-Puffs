@@ -59,21 +59,45 @@ The Orchestrator auto-discovers this MCP via the `"annabelle"` field in `package
 | `get_connections` | List your connections |
 | `send_connection_request` | Send a connection request to a user |
 
-## Configuration
+## Authentication
 
-Environment variables (`.env`):
+The MCP supports two auth modes, tried in order:
+
+### Option 1: Browser cookies (preferred)
+
+Extract `li_at` and `JSESSIONID` from your browser (DevTools → Application → Cookies → linkedin.com) and set them in `.env`:
 
 ```bash
-LINKEDIN_USERNAME=your_email@example.com
+LINKEDIN_COOKIES_LI_AT=<li_at value>
+LINKEDIN_COOKIES_JSESSIONID=<JSESSIONID value, without surrounding quotes>
+```
+
+**Important:** Browser cookies expire. When they do, all API calls fail with redirect loops. Re-extract from your browser and restart.
+
+### Option 2: Email/password
+
+```bash
+LINKEDIN_EMAIL=your_email@example.com
 LINKEDIN_PASSWORD=your_password
 ```
 
-Authentication uses the `linkedin-api` library which logs in via username/password and maintains a session cookie.
+Uses the `linkedin-api` library's Android-based login flow. LinkedIn actively detects this (Android auth headers vs Chrome API headers mismatch) and may restrict endpoints — messaging, feed, and profile views often return 401/403/999.
+
+### Session validation
+
+On first use, the client calls `/me` to verify the session is valid. If email/password auth loads stale cached cookies (from `~/.linkedin_api/cookies/`), they're auto-deleted and a fresh login is attempted.
+
+### Known limitations
+
+- **TLS fingerprinting:** LinkedIn uses Cloudflare bot management. Python `requests` has a distinctive TLS fingerprint (JA3/JA4) that doesn't match a real browser. This causes endpoint-specific failures even with valid cookies.
+- **Endpoint-specific detection:** `/me` may work while search, messaging, feed, and profile endpoints are blocked. Different endpoints fail in different ways (empty body, redirect loops, 999 bot detection).
+- **Cookie expiry:** Browser cookies are invalidated by LinkedIn after automated usage is detected. The `Set-Cookie: li_at=delete me` response confirms active revocation.
+- **Next step:** Migrate to Playwright-based browser automation (`@playwright/mcp` or similar) to get a real browser TLS fingerprint and automatic cookie management.
 
 ## Dependencies
 
 - **[FastMCP](https://github.com/jlowin/fastmcp)** >= 2.0.0 — Python MCP framework (stdio transport)
-- **[linkedin-api](https://github.com/tomquirk/linkedin-api)** >= 2.2.0 — Unofficial LinkedIn API client
+- **[linkedin-api](https://github.com/tomquirk/linkedin-api)** >= 2.2.0 — Unofficial LinkedIn API client (Voyager API wrapper)
 - **pydantic** >= 2.0.0 — Data validation
 - **python-dotenv** >= 1.0.0 — Environment loading
 
@@ -111,6 +135,10 @@ LinkedIn-MCP/
 
 ## Common Failures
 
-- **`LINKEDIN_API_RESTRICTED`** — LinkedIn session expired or account restricted. Re-authenticate by clearing cookies and restarting.
-- **Search returns empty** — LinkedIn aggressively rate-limits search. The messaging module has a `_resolve_via_conversations()` fallback that looks up participants from recent conversations.
-- **`status: 429`** — Rate limited. Wait and retry. Avoid rapid successive searches.
+- **Redirect loops / `TooManyRedirects`** — Browser cookies expired or revoked. LinkedIn responds with `Set-Cookie: li_at=delete me`. Re-extract cookies from browser.
+- **`LINKEDIN_API_RESTRICTED`** — Session expired or account restricted. Re-authenticate by clearing cookies and restarting.
+- **`status: 999`** — LinkedIn bot detection. Happens on `get_profile`. The `requests` library's TLS fingerprint doesn't match a real browser.
+- **`status: 401`** — Stale cached cookies. The client auto-deletes `~/.linkedin_api/cookies/*.jr` and retries.
+- **Search returns empty** — LinkedIn rate-limits search aggressively. The `send_message` tool has a 4-strategy resolution: keyword search → first/last name search → broad search → conversation participant scan.
+- **`LINKEDIN_SEND_FAILED`** — `send_message` returned non-201 status. Account may be restricted. Note: the library returns `True` for error, `False` for success (inverted convention).
+- **`status: 429`** — Rate limited. Wait and retry. The library adds a 2–5s random delay per request (`default_evade`).
