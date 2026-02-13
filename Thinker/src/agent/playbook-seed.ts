@@ -45,7 +45,7 @@ User asks to check, read, triage, or summarize their inbox or emails.
 ## NOTES
 - Don't read every email in full — summarize first, drill into details on request
 - Group by sender or topic when there are many`,
-    required_tools: ['memory_list_emails', 'memory_get_email', 'memory_reply_email'],
+    required_tools: ['gmail_list_emails', 'gmail_get_email', 'gmail_reply_email'],
     max_steps: 8,
     notify_on_completion: false,
   },
@@ -70,7 +70,7 @@ User asks to write, send, or reply to an email.
 - Never send without user confirmation
 - If replying, use reply_email instead of send_email
 - Match tone to context (formal for work, casual for friends)`,
-    required_tools: ['memory_create_draft', 'memory_send_draft', 'memory_reply_email'],
+    required_tools: ['gmail_create_draft', 'gmail_send_draft', 'gmail_reply_email'],
     max_steps: 8,
     notify_on_completion: false,
   },
