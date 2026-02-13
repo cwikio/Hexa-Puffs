@@ -1422,26 +1422,13 @@ Complete the task step by step, using your available tools. When done, provide a
       }
 
       // Optionally notify via Telegram (always via Orchestrator)
-      // Skip notification for trivial "nothing to report" results
-      const trivialPatterns = [
-        /no new emails/i,
-        /no meetings in the next/i,
-        /no upcoming meetings/i,
-        /no pending follow/i,
-        /all caught up/i,
-        /schedule looks manageable/i,
-      ];
-      const isTrivial = trivialPatterns.some(p => p.test(responseText));
-
-      if (notifyChatId && !isTrivial) {
+      if (notifyChatId) {
         try {
           const notificationText = `📋 ${skillName || 'Skill completed'}:\n\n${responseText}`;
           await this.orchestrator.sendTelegramMessage(notifyChatId, notificationText, undefined, trace);
         } catch (notifyError) {
           logger.error('Failed to send skill completion notification:', notifyError);
         }
-      } else if (notifyChatId && isTrivial) {
-        logger.info('Skipping notification for trivial skill result', { preview: responseText.substring(0, 80) });
       }
 
       // Flag if cost monitor tripped during this loop (so upstream can notify)
