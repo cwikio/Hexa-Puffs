@@ -4,6 +4,140 @@
 
 ---
 
+## Decision-Making Flowchart: How OpenClaw Processes a Request
+
+The flowchart below shows every decision point from the moment a message arrives on any platform to the final response delivery. Red nodes are rejection paths, purple is the streaming loop, and orange is the tool backfill cycle.
+
+```mermaid
+flowchart TD
+    A["📨 Inbound Message\n(WhatsApp / Telegram / Discord / Slack / ...)"] --> B["Channel Adapter\nNormalize to unified envelope"]
+    B --> C{"Sender\nKnown?"}
+    C -->|No| D["Pairing Gate\nSend approval code"]
+    D --> E["⛔ No Execution\nAwait pairing"]
+    C -->|Yes| F{"Access\nAllowed?"}
+    F -->|No| G["⛔ Blocked\nDM policy / allowlist deny"]
+    F -->|Yes| H{"Group Chat?"}
+    H -->|Yes| I{"Mention\nRequired?"}
+    I -->|Yes, not mentioned| J["⛔ Ignored\nNo @mention"]
+    I -->|No / Mentioned| K["Resolve Session"]
+    H -->|No / DM| K
+    K --> L{"Active Run\non Session?"}
+    L -->|Yes| M["Enqueue in Lane\nWait for current run"]
+    L -->|No| N["Dispatch to\nPiEmbeddedRunner"]
+    M --> N
+
+    N --> O["Phase 1: Load Session State\nJSONL from disk"]
+    O --> P["Phase 2: Assemble Context\nSOUL.md + AGENTS.md + TOOLS.md\n+ memory search + history"]
+    P --> Q["Phase 3: Stream Model Response\nTokens → User in real-time"]
+
+    Q --> R{"Tool Call\nDetected in Stream?"}
+    R -->|No| S{"Model\nDone?"}
+    S -->|No| Q
+    S -->|Yes| T["Phase 4: Persist State\nAppend to JSONL"]
+    T --> U["✅ Response Delivered\nvia Channel Adapter"]
+
+    R -->|Yes| V{"Tool\nAllowed by Policy?"}
+    V -->|No| W["Return Error\nto Model"]
+    W --> Q
+    V -->|Yes| X{"Sandbox\nMode?"}
+    X -->|Docker| Y["Execute in\nEphemeral Container"]
+    X -->|Host| Z["Execute on\nHost OS"]
+    Y --> AA["Backfill Result\ninto Stream"]
+    Z --> AA
+    AA --> Q
+
+    style A fill:#3498DB,stroke:#2C3E50,color:#fff
+    style E fill:#E74C3C,stroke:#C0392B,color:#fff
+    style G fill:#E74C3C,stroke:#C0392B,color:#fff
+    style J fill:#E74C3C,stroke:#C0392B,color:#fff
+    style U fill:#27AE60,stroke:#1E8449,color:#fff
+    style N fill:#1A5276,stroke:#154360,color:#fff
+    style Q fill:#8E44AD,stroke:#6C3483,color:#fff
+    style AA fill:#F39C12,stroke:#D68910,color:#fff
+```
+
+---
+
+## Waterfall Sequence Diagram: Request Flow Through Components Over Time
+
+The sequence diagram shows the temporal flow of a request across all ten system components — from the user through the channel adapter, Gateway, lane queue, agent runtime, context assembly, memory search, LLM streaming, tool policy enforcement, sandbox execution, and back.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant CH as Channel Adapter<br/>(Telegram/WhatsApp/...)
+    participant GW as Gateway<br/>(WS:18789)
+    participant Q as Lane Queue
+    participant PI as PiEmbeddedRunner
+    participant CTX as Context Assembler
+    participant MEM as SQLite Memory<br/>(BM25 + Vector)
+    participant LLM as LLM Provider<br/>(Claude/OpenAI)
+    participant TP as Tool Policy
+    participant SB as Sandbox<br/>(Docker/Host)
+
+    U->>CH: Send message
+    Note over CH: Normalize to<br/>unified envelope
+    CH->>GW: Envelope {body, sender, media}
+
+    Note over GW: Access Control
+    GW->>GW: Check pairing + DM policy
+    GW->>GW: Resolve session key
+    GW->>Q: Enqueue in session lane
+
+    Note over Q: Default Serial
+    Q->>Q: Wait if active run exists
+    Q->>PI: Dispatch when lane is free
+
+    rect rgb(230, 240, 250)
+        Note over PI,SB: Agent Runtime Loop (piembeddedrunner.ts)
+
+        PI->>PI: Phase 1: Load session<br/>state from JSONL
+
+        PI->>CTX: Phase 2: Assemble context
+        CTX->>CTX: Read SOUL.md + AGENTS.md<br/>+ TOOLS.md + IDENTITY.md
+        CTX->>MEM: Hybrid search (query)
+        MEM-->>CTX: BM25 + vector results<br/>(70/30 blend)
+        CTX->>CTX: Merge history +<br/>skill metadata
+        CTX-->>PI: Compiled system prompt
+
+        PI->>LLM: Phase 3: Stream request
+
+        loop Streaming Response
+            LLM-->>PI: Token stream
+            PI-->>CH: Forward tokens to user
+            CH-->>U: Real-time response
+
+            alt Tool call detected in stream
+                PI->>TP: Check tool policy
+                alt Tool denied
+                    TP-->>PI: Denied
+                    PI->>LLM: Error result → continue
+                else Tool allowed
+                    TP-->>PI: Allowed
+                    PI->>SB: Execute tool
+                    Note over SB: Docker container<br/>or host OS
+                    SB-->>PI: Tool result
+                    PI->>LLM: Backfill result → continue
+                end
+            end
+        end
+
+        Note over PI: Model signals done
+
+        PI->>PI: Phase 4: Persist state
+        PI->>MEM: Write new memories<br/>+ embeddings
+        PI->>PI: Append to JSONL
+    end
+
+    PI-->>GW: Run complete
+    GW->>Q: Release lane
+    GW-->>CH: Final response
+    CH-->>U: Delivery confirmation
+```
+
+---
+
 ## What OpenClaw Is
 
 OpenClaw is a self-hosted, local-first personal AI assistant built as a TypeScript monorepo (~40,000 lines, ~69 modules). It connects to 13+ messaging platforms (WhatsApp, Telegram, Discord, Slack, Signal, iMessage, Teams, Matrix, and more) through a single local Gateway process. The whole thing runs on your machine — no cloud dependency required.

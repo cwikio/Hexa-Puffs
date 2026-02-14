@@ -1,0 +1,71 @@
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant CH as Channel Adapter<br/>(Telegram/WhatsApp/...)
+    participant GW as Gateway<br/>(WS:18789)
+    participant Q as Lane Queue
+    participant PI as PiEmbeddedRunner
+    participant CTX as Context Assembler
+    participant MEM as SQLite Memory<br/>(BM25 + Vector)
+    participant LLM as LLM Provider<br/>(Claude/OpenAI)
+    participant TP as Tool Policy
+    participant SB as Sandbox<br/>(Docker/Host)
+
+    U->>CH: Send message
+    Note over CH: Normalize to<br/>unified envelope
+    CH->>GW: Envelope {body, sender, media}
+    
+    Note over GW: Access Control
+    GW->>GW: Check pairing + DM policy
+    GW->>GW: Resolve session key
+    GW->>Q: Enqueue in session lane
+    
+    Note over Q: Default Serial
+    Q->>Q: Wait if active run exists
+    Q->>PI: Dispatch when lane is free
+
+    rect rgb(230, 240, 250)
+        Note over PI,SB: Agent Runtime Loop (piembeddedrunner.ts)
+        
+        PI->>PI: Phase 1: Load session<br/>state from JSONL
+        
+        PI->>CTX: Phase 2: Assemble context
+        CTX->>CTX: Read SOUL.md + AGENTS.md<br/>+ TOOLS.md + IDENTITY.md
+        CTX->>MEM: Hybrid search (query)
+        MEM-->>CTX: BM25 + vector results<br/>(70/30 blend)
+        CTX->>CTX: Merge history +<br/>skill metadata
+        CTX-->>PI: Compiled system prompt
+
+        PI->>LLM: Phase 3: Stream request
+        
+        loop Streaming Response
+            LLM-->>PI: Token stream
+            PI-->>CH: Forward tokens to user
+            CH-->>U: Real-time response
+            
+            alt Tool call detected in stream
+                PI->>TP: Check tool policy
+                alt Tool denied
+                    TP-->>PI: Denied
+                    PI->>LLM: Error result → continue
+                else Tool allowed
+                    TP-->>PI: Allowed
+                    PI->>SB: Execute tool
+                    Note over SB: Docker container<br/>or host OS
+                    SB-->>PI: Tool result
+                    PI->>LLM: Backfill result → continue
+                end
+            end
+        end
+
+        Note over PI: Model signals done
+
+        PI->>PI: Phase 4: Persist state
+        PI->>MEM: Write new memories<br/>+ embeddings
+        PI->>PI: Append to JSONL
+    end
+
+    PI-->>GW: Run complete
+    GW->>Q: Release lane
+    GW-->>CH: Final response
+    CH-->>U: Delivery confirmation

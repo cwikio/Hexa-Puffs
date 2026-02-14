@@ -1,0 +1,45 @@
+flowchart TD
+    A["📨 Inbound Message\n(WhatsApp / Telegram / Discord / Slack / ...)"] --> B["Channel Adapter\nNormalize to unified envelope"]
+    B --> C{"Sender\nKnown?"}
+    C -->|No| D["Pairing Gate\nSend approval code"]
+    D --> E["⛔ No Execution\nAwait pairing"]
+    C -->|Yes| F{"Access\nAllowed?"}
+    F -->|No| G["⛔ Blocked\nDM policy / allowlist deny"]
+    F -->|Yes| H{"Group Chat?"}
+    H -->|Yes| I{"Mention\nRequired?"}
+    I -->|Yes, not mentioned| J["⛔ Ignored\nNo @mention"]
+    I -->|No / Mentioned| K["Resolve Session"]
+    H -->|No / DM| K
+    K --> L{"Active Run\non Session?"}
+    L -->|Yes| M["Enqueue in Lane\nWait for current run"]
+    L -->|No| N["Dispatch to\nPiEmbeddedRunner"]
+    M --> N
+
+    N --> O["Phase 1: Load Session State\nJSONL from disk"]
+    O --> P["Phase 2: Assemble Context\nSOUL.md + AGENTS.md + TOOLS.md\n+ memory search + history"]
+    P --> Q["Phase 3: Stream Model Response\nTokens → User in real-time"]
+
+    Q --> R{"Tool Call\nDetected in Stream?"}
+    R -->|No| S{"Model\nDone?"}
+    S -->|No| Q
+    S -->|Yes| T["Phase 4: Persist State\nAppend to JSONL"]
+    T --> U["✅ Response Delivered\nvia Channel Adapter"]
+
+    R -->|Yes| V{"Tool\nAllowed by Policy?"}
+    V -->|No| W["Return Error\nto Model"]
+    W --> Q
+    V -->|Yes| X{"Sandbox\nMode?"}
+    X -->|Docker| Y["Execute in\nEphemeral Container"]
+    X -->|Host| Z["Execute on\nHost OS"]
+    Y --> AA["Backfill Result\ninto Stream"]
+    Z --> AA
+    AA --> Q
+
+    style A fill:#3498DB,stroke:#2C3E50,color:#fff
+    style E fill:#E74C3C,stroke:#C0392B,color:#fff
+    style G fill:#E74C3C,stroke:#C0392B,color:#fff
+    style J fill:#E74C3C,stroke:#C0392B,color:#fff
+    style U fill:#27AE60,stroke:#1E8449,color:#fff
+    style N fill:#1A5276,stroke:#154360,color:#fff
+    style Q fill:#8E44AD,stroke:#6C3483,color:#fff
+    style AA fill:#F39C12,stroke:#D68910,color:#fff
