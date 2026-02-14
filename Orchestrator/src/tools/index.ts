@@ -2,6 +2,7 @@ export { statusToolDefinition, handleStatus } from './status.js';
 export {
   jobToolDefinitions,
   handleQueueTask,
+  handleGetJobStatus,
   handleTriggerBackfill,
 } from './jobs.js';
 export { spawnSubagentToolDefinition, handleSpawnSubagent } from './spawn-subagent.js';

@@ -12,6 +12,7 @@ import {
   handleStatus,
   jobToolDefinitions,
   handleQueueTask,
+  handleGetJobStatus,
   handleTriggerBackfill,
   spawnSubagentToolDefinition,
   handleSpawnSubagent,
@@ -32,6 +33,7 @@ const customToolHandlers: Record<
 > = {
   get_status: handleStatus,
   queue_task: handleQueueTask,
+  get_job_status: handleGetJobStatus,
   trigger_backfill: handleTriggerBackfill,
   system_health_check: handleHealthCheck,
   get_tool_catalog: handleGetToolCatalog,

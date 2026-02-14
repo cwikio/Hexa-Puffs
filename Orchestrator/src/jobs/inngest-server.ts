@@ -3,8 +3,6 @@ import express from 'express';
 import { createServer as createHttpServer } from 'http';
 import { inngest } from './inngest-client.js';
 import { backgroundJobFunction } from './background-job.js';
-import { cronJobFunction } from './cron-job.js';
-import { cronJobPollerFunction } from './cron-poller.js';
 import { skillSchedulerFunction } from './skill-scheduler.js';
 import { conversationBackfillFunction } from './backfill.js';
 import { memorySynthesisFunction } from './memory-synthesis.js';
@@ -13,8 +11,6 @@ import { logger } from '@mcp/shared/Utils/logger.js';
 
 const jobFunctions = [
   backgroundJobFunction,
-  cronJobFunction,
-  cronJobPollerFunction,
   skillSchedulerFunction,
   conversationBackfillFunction,
   memorySynthesisFunction,

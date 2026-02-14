@@ -160,11 +160,11 @@ describe('Workflow: Direct Execution Tier', () => {
 
     expect(toolNames).not.toContain('create_job');
     expect(toolNames).not.toContain('list_jobs');
-    expect(toolNames).not.toContain('get_job_status');
     expect(toolNames).not.toContain('delete_job');
 
     // These should still exist
     expect(toolNames).toContain('queue_task');
+    expect(toolNames).toContain('get_job_status');
     expect(toolNames).toContain('trigger_backfill');
 
     log('Old cron job tools correctly removed', 'success');

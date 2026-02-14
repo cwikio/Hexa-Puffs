@@ -326,8 +326,10 @@ describe('E2E: Skill Scheduler Full Loop', () => {
 
     expect(toolNames).not.toContain('create_job');
     expect(toolNames).not.toContain('list_jobs');
-    expect(toolNames).not.toContain('get_job_status');
     expect(toolNames).not.toContain('delete_job');
+
+    // get_job_status is still exposed — it's the companion to queue_task
+    expect(toolNames).toContain('get_job_status');
 
     log('Old cron job tools are gone from tool list', 'success');
   });
