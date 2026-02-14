@@ -243,6 +243,82 @@ describe('normalizeSkillInput', () => {
     expect(tc.schedule).toBe('0 9 * * *'); // original preserved
   });
 
+  it('should convert in_minutes inside trigger_config to one-shot at', () => {
+    const before = Date.now();
+    const input = {
+      name: 'water-reminder',
+      trigger_config: { in_minutes: 5 },
+      instructions: 'Drink water',
+    };
+    const result = normalizeSkillInput(input);
+    const tc = result.trigger_config as Record<string, unknown>;
+    const after = Date.now();
+
+    expect(tc.in_minutes).toBeUndefined();
+    expect(tc.at).toBeDefined();
+    const atTime = new Date(tc.at as string).getTime();
+    expect(atTime).toBeGreaterThanOrEqual(before + 5 * 60_000);
+    expect(atTime).toBeLessThanOrEqual(after + 5 * 60_000);
+  });
+
+  it('should convert in_hours inside trigger_config to one-shot at', () => {
+    const before = Date.now();
+    const input = {
+      name: 'meeting-reminder',
+      trigger_config: { in_hours: 2 },
+      instructions: 'Prep for meeting',
+    };
+    const result = normalizeSkillInput(input);
+    const tc = result.trigger_config as Record<string, unknown>;
+    const after = Date.now();
+
+    expect(tc.in_hours).toBeUndefined();
+    expect(tc.at).toBeDefined();
+    const atTime = new Date(tc.at as string).getTime();
+    expect(atTime).toBeGreaterThanOrEqual(before + 2 * 3_600_000);
+    expect(atTime).toBeLessThanOrEqual(after + 2 * 3_600_000);
+  });
+
+  it('should re-nest flattened in_minutes from root and convert to at', () => {
+    const before = Date.now();
+    const input = {
+      name: 'stretch-reminder',
+      in_minutes: 10,
+      instructions: 'Time to stretch',
+    };
+    const result = normalizeSkillInput(input);
+    const tc = result.trigger_config as Record<string, unknown>;
+    const after = Date.now();
+
+    expect(result.in_minutes).toBeUndefined();
+    expect(tc.at).toBeDefined();
+    const atTime = new Date(tc.at as string).getTime();
+    expect(atTime).toBeGreaterThanOrEqual(before + 10 * 60_000);
+    expect(atTime).toBeLessThanOrEqual(after + 10 * 60_000);
+  });
+
+  it('should infer trigger_type "cron" from in_minutes (via at conversion)', () => {
+    const input = {
+      name: 'test',
+      trigger_config: { in_minutes: 5 },
+      instructions: 'Test',
+    };
+    const result = normalizeSkillInput(input);
+    expect(result.trigger_type).toBe('cron');
+  });
+
+  it('should not overwrite existing at with in_minutes', () => {
+    const input = {
+      name: 'test',
+      trigger_config: { at: '2026-02-14T15:00:00', in_minutes: 5 },
+      instructions: 'Test',
+    };
+    const result = normalizeSkillInput(input);
+    const tc = result.trigger_config as Record<string, unknown>;
+    expect(tc.at).toBe('2026-02-14T15:00:00');
+    expect(tc.in_minutes).toBeUndefined();
+  });
+
   it('should handle empty required_tools string', () => {
     const input = {
       name: 'test',

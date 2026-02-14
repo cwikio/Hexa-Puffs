@@ -73,7 +73,7 @@ export const storeSkillToolDefinition = {
       },
       trigger_config: {
         type: 'object',
-        description: 'For cron trigger_type, use EITHER: (1) Cron expression: { "schedule": "0 9 * * *" } for precise scheduling (e.g., 9am daily), OR (2) Interval: { "interval_minutes": 60 } for every-N-minutes execution. Default if omitted: runs once daily. Timezone is auto-detected from the system — only specify timezone if the user explicitly requests a different one.',
+        description: 'Scheduling config for cron trigger_type. Four formats: (1) Cron expression: { "schedule": "0 9 * * *" } for precise recurring schedules (e.g., 9am daily). (2) Interval: { "interval_minutes": 60 } for every-N-minutes recurring execution. (3) One-shot absolute: { "at": "2026-02-14T15:00:00" } fires once at a specific time. (4) One-shot relative: { "in_minutes": N } fires once N minutes from now (auto-converted to "at"). IMPORTANT: "remind me IN 5 minutes" = one-shot { "in_minutes": 5 }. "remind me EVERY 5 minutes" = recurring { "schedule": "*/5 * * * *" }. Timezone is auto-detected — only specify if the user requests a different one.',
       },
       instructions: {
         type: 'string',

@@ -3,6 +3,7 @@
  *
  * Fixes common LLM mistakes when storing/updating skills:
  * - `trigger_config` flattened into root → re-nests
+ * - `in_minutes` / `in_hours` → computes one-shot `at` timestamp
  * - Missing `trigger_type` → infers from trigger_config
  * - `required_tools` as string → parses to array
  * - `max_steps` as string → parses to number
@@ -44,6 +45,16 @@ export function normalizeSkillInput(args: Record<string, unknown>): Record<strin
       delete result.at;
       hasNested = true;
     }
+    if (result.in_minutes !== undefined) {
+      nested.in_minutes = result.in_minutes;
+      delete result.in_minutes;
+      hasNested = true;
+    }
+    if (result.in_hours !== undefined) {
+      nested.in_hours = result.in_hours;
+      delete result.in_hours;
+      hasNested = true;
+    }
 
     if (hasNested) {
       result.trigger_config = nested;
@@ -64,6 +75,28 @@ export function normalizeSkillInput(args: Record<string, unknown>): Record<strin
     if (tc.intervalMinutes !== undefined && tc.interval_minutes === undefined) {
       tc.interval_minutes = tc.intervalMinutes;
       delete tc.intervalMinutes;
+    }
+
+    // in_minutes / in_hours → one-shot "at" timestamp
+    if (tc.in_minutes !== undefined) {
+      if (tc.at === undefined) {
+        const mins = Number(tc.in_minutes);
+        if (!isNaN(mins) && mins > 0) {
+          tc.at = new Date(Date.now() + mins * 60_000).toISOString();
+          logger.info('Converted in_minutes to one-shot at', { in_minutes: mins, at: tc.at });
+        }
+      }
+      delete tc.in_minutes;
+    }
+    if (tc.in_hours !== undefined) {
+      if (tc.at === undefined) {
+        const hrs = Number(tc.in_hours);
+        if (!isNaN(hrs) && hrs > 0) {
+          tc.at = new Date(Date.now() + hrs * 3_600_000).toISOString();
+          logger.info('Converted in_hours to one-shot at', { in_hours: hrs, at: tc.at });
+        }
+      }
+      delete tc.in_hours;
     }
   }
 

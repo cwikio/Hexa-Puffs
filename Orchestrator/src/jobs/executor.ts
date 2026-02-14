@@ -84,6 +84,15 @@ export async function executeToolCall(
   const orchestrator = await getOrchestrator();
   const toolRouter = orchestrator.getToolRouter();
 
+  // Safety net: auto-inject chat_id for telegram_send_message when missing
+  if (normalized === 'telegram_send_message' && parameters && !parameters.chat_id) {
+    const chatIds = orchestrator.getChannelManager()?.getAdapter('telegram')?.getMonitoredChatIds() ?? [];
+    if (chatIds.length > 0) {
+      parameters.chat_id = chatIds[0];
+      logger.info('Auto-injected chat_id for telegram_send_message', { chat_id: chatIds[0] });
+    }
+  }
+
   if (!toolRouter.hasRoute(normalized)) {
     throw new Error(`Unknown tool: ${normalized} (original: ${toolName}). Available tools: ${toolRouter.getToolDefinitions().map(t => t.name).join(', ')}`);
   }

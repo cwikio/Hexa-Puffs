@@ -432,6 +432,12 @@ User asks to interact with a website: fill forms, click buttons, take screenshot
 User wants to set up a recurring task, reminder, one-shot notification, or scheduled job.
 Everything is created as a **skill** via memory_store_skill. There are no separate "cron jobs".
 
+## CRITICAL: ONE-SHOT vs RECURRING
+- "remind me IN 5 minutes" / "in an hour" / "in 30 min" → ONE-SHOT: \`{ "in_minutes": N }\`
+- "remind me AT 3pm" / "tomorrow at 9am" → ONE-SHOT: \`{ "at": "<ISO datetime>" }\`
+- "remind me EVERY 5 minutes" / "every day at 9am" → RECURRING: \`{ "schedule": "cron expr" }\`
+- NEVER use \`*/N * * * *\` for "in N minutes" — that means EVERY N minutes forever!
+
 ## STEP 1: DISCOVER AVAILABLE TOOLS
 Call **get_tool_catalog** to see all available tools in the system. Use EXACT tool names from the catalog — do NOT guess.
 
@@ -453,23 +459,26 @@ Call **get_tool_catalog** to see all available tools in the system. Use EXACT to
 
 ## STEP 3A: IF SIMPLE — Create with execution_plan
 1. Parse the schedule:
-   - "every day at 9am" → \`{ "schedule": "0 9 * * *" }\`
-   - "every 5 minutes" → \`{ "schedule": "*/5 * * * *" }\`
-   - "remind me at 3pm" → \`{ "at": "2026-02-13T15:00:00" }\` (one-shot, compute the ISO datetime)
-2. Build the execution_plan — exactly one step:
-   \`[{ "id": "step1", "toolName": "telegram_send_message", "parameters": { "message": "Drink water!" } }]\`
-3. Confirm with user: "I'll create a skill that sends '[message]' every day at 9am. No LLM needed — runs instantly. OK?"
+   - "in 5 minutes" → \`{ "in_minutes": 5 }\` (one-shot, system computes the time)
+   - "in 2 hours" → \`{ "in_minutes": 120 }\` (one-shot)
+   - "at 3pm today" → \`{ "at": "2026-02-14T15:00:00" }\` (one-shot, compute ISO datetime)
+   - "every day at 9am" → \`{ "schedule": "0 9 * * *" }\` (recurring)
+   - "every 5 minutes" → \`{ "schedule": "*/5 * * * *" }\` (recurring)
+2. Build the execution_plan — exactly one step. ALWAYS include chat_id from the current conversation:
+   \`[{ "id": "step1", "toolName": "telegram_send_message", "parameters": { "chat_id": "<CURRENT_CHAT_ID>", "message": "Drink water!" } }]\`
+3. Confirm with user: "I'll create a skill that sends '[message]' [schedule description]. No LLM needed — runs instantly. OK?"
 4. Call memory_store_skill with:
    - name: descriptive name
    - trigger_type: "cron"
-   - trigger_config: the schedule/at object
+   - trigger_config: the schedule/at/in_minutes object
    - instructions: brief description of what the skill does (for display purposes)
    - required_tools: array with EXACT tool names from get_tool_catalog used in execution_plan
-   - execution_plan: the compiled steps array
+   - execution_plan: the compiled steps array (MUST include chat_id in telegram parameters)
+   - notify_on_completion: false (the execution_plan already sends the message)
    - agent_id: "thinker"
 
 ## STEP 3B: IF COMPLEX — Create with instructions
-1. Parse the schedule (same as above, but one-shot \`at\` is rare for complex tasks)
+1. Parse the schedule (same as above, but one-shot \`in_minutes\` / \`at\` is rare for complex tasks)
 2. Select required tools from the catalog
 3. Write clear natural language instructions describing what the AI should do each run
 4. Confirm with user
@@ -477,16 +486,21 @@ Call **get_tool_catalog** to see all available tools in the system. Use EXACT to
    - name: descriptive name
    - trigger_type: "cron"
    - trigger_config: the schedule object (timezone is auto-injected by the system)
-   - instructions: the natural language task description
+   - instructions: the natural language task description (include the user's chat_id if Telegram messaging is involved)
    - required_tools: EXACT tool names from get_tool_catalog
    - max_steps: appropriate limit (default 10, use lower for simpler tasks)
    - agent_id: "thinker"
 
 ## ONE-SHOT REMINDERS
+For "remind me in 5 minutes" or "in an hour":
+- Use trigger_config: { "in_minutes": N } — system auto-computes the ISO datetime
+- These fire once and auto-disable
+- Almost always SIMPLE (execution_plan with telegram_send_message + chat_id)
+
 For "remind me at 3pm" or "remind me tomorrow at 9am":
 - Use trigger_config: { "at": "<ISO datetime>" } — compute the correct datetime
-- These fire once and auto-delete
-- Almost always simple (execution_plan with telegram_send_message)
+- These fire once and auto-disable
+- Almost always SIMPLE (execution_plan with telegram_send_message + chat_id)
 
 ## NOTES
 - Timezone is auto-detected — do NOT specify timezone unless the user explicitly requests a different one
@@ -494,7 +508,8 @@ For "remind me at 3pm" or "remind me tomorrow at 9am":
 - Use memory_delete_skill to remove a skill
 - Cron format: "minute hour day month weekday" (e.g., "0 9 * * *" = 9:00 AM daily)
 - Always confirm the schedule before creating — mistakes are hard to undo
-- execution_plan tools MUST be a subset of required_tools — the system validates this`,
+- execution_plan tools MUST be a subset of required_tools — the system validates this
+- ALWAYS include the user's chat_id in execution_plan parameters for telegram_send_message`,
     required_tools: ['memory_store_skill', 'memory_list_skills', 'memory_delete_skill', 'get_tool_catalog'],
     max_steps: 8,
     notify_on_completion: false,
