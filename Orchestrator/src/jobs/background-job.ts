@@ -1,5 +1,5 @@
 import { inngest } from './inngest-client.js';
-import { storage, notifyTelegram, storeErrorFact } from './helpers.js';
+import { storage, storeErrorFact } from './helpers.js';
 import { executeAction } from './executor.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { getHaltManager } from '../core/halt-manager.js';
@@ -54,15 +54,6 @@ export const backgroundJobFunction = inngest.createFunction(
 
       logger.info('Background job completed', { taskId, duration });
 
-      // Send notification via Telegram
-      await step.run('notify-success', async () => {
-        try {
-          await notifyTelegram(`✅ Task "${task.name}" completed successfully in ${duration}ms`);
-        } catch (error) {
-          logger.error('Failed to send success notification', { error });
-        }
-      });
-
       return { success: true, result };
     } catch (error) {
       // Update task with failure
@@ -74,15 +65,6 @@ export const backgroundJobFunction = inngest.createFunction(
       await storage.saveTask(task);
 
       logger.error('Background job failed', { taskId, error });
-
-      // Send failure notification via Telegram
-      await step.run('notify-failure', async () => {
-        try {
-          await notifyTelegram(`❌ Task "${task.name}" failed after ${duration}ms: ${task.error}`);
-        } catch (notifyError) {
-          logger.error('Failed to send failure notification', { error: notifyError });
-        }
-      });
 
       // Store error in Memory MCP
       await step.run('log-error', async () => {
