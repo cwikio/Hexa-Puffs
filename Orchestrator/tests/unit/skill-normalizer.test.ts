@@ -195,6 +195,53 @@ describe('normalizeSkillInput', () => {
     expect(result).toEqual(input);
   });
 
+  it('should normalize cronExpression to schedule inside trigger_config', () => {
+    const input = {
+      name: 'test',
+      trigger_config: { cronExpression: '*/1 * * * *' },
+      instructions: 'Test',
+    };
+    const result = normalizeSkillInput(input);
+    const tc = result.trigger_config as Record<string, unknown>;
+    expect(tc.schedule).toBe('*/1 * * * *');
+    expect(tc.cronExpression).toBeUndefined();
+  });
+
+  it('should normalize cron_expression to schedule inside trigger_config', () => {
+    const input = {
+      name: 'test',
+      trigger_config: { cron_expression: '0 9 * * *' },
+      instructions: 'Test',
+    };
+    const result = normalizeSkillInput(input);
+    const tc = result.trigger_config as Record<string, unknown>;
+    expect(tc.schedule).toBe('0 9 * * *');
+    expect(tc.cron_expression).toBeUndefined();
+  });
+
+  it('should normalize intervalMinutes to interval_minutes inside trigger_config', () => {
+    const input = {
+      name: 'test',
+      trigger_config: { intervalMinutes: 30 },
+      instructions: 'Test',
+    };
+    const result = normalizeSkillInput(input);
+    const tc = result.trigger_config as Record<string, unknown>;
+    expect(tc.interval_minutes).toBe(30);
+    expect(tc.intervalMinutes).toBeUndefined();
+  });
+
+  it('should not overwrite existing schedule with cronExpression alias', () => {
+    const input = {
+      name: 'test',
+      trigger_config: { schedule: '0 9 * * *', cronExpression: '*/5 * * * *' },
+      instructions: 'Test',
+    };
+    const result = normalizeSkillInput(input);
+    const tc = result.trigger_config as Record<string, unknown>;
+    expect(tc.schedule).toBe('0 9 * * *'); // original preserved
+  });
+
   it('should handle empty required_tools string', () => {
     const input = {
       name: 'test',

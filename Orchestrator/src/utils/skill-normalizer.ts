@@ -50,7 +50,24 @@ export function normalizeSkillInput(args: Record<string, unknown>): Record<strin
     }
   }
 
-  // 2. Infer trigger_type from trigger_config
+  // 2. Normalize trigger_config field names (LLM mistakes)
+  if (result.trigger_config && typeof result.trigger_config === 'object') {
+    const tc = result.trigger_config as Record<string, unknown>;
+    // cronExpression / cron_expression / cron → schedule
+    for (const alias of ['cronExpression', 'cron_expression', 'cron']) {
+      if (tc[alias] !== undefined && tc.schedule === undefined) {
+        tc.schedule = tc[alias];
+        delete tc[alias];
+      }
+    }
+    // intervalMinutes → interval_minutes
+    if (tc.intervalMinutes !== undefined && tc.interval_minutes === undefined) {
+      tc.interval_minutes = tc.intervalMinutes;
+      delete tc.intervalMinutes;
+    }
+  }
+
+  // 3. Infer trigger_type from trigger_config
   if (!result.trigger_type && result.trigger_config) {
     const tc = result.trigger_config as Record<string, unknown>;
     if (tc.schedule || tc.interval_minutes) {
@@ -60,7 +77,7 @@ export function normalizeSkillInput(args: Record<string, unknown>): Record<strin
     }
   }
 
-  // 3. Parse required_tools
+  // 4. Parse required_tools
   if (typeof result.required_tools === 'string') {
     const str = result.required_tools.trim();
     if (str.startsWith('[')) {
@@ -76,7 +93,7 @@ export function normalizeSkillInput(args: Record<string, unknown>): Record<strin
     }
   }
 
-  // 4. Parse max_steps from string to number
+  // 5. Parse max_steps from string to number
   if (typeof result.max_steps === 'string') {
     const parsed = parseInt(result.max_steps, 10);
     if (!isNaN(parsed)) {
@@ -84,7 +101,7 @@ export function normalizeSkillInput(args: Record<string, unknown>): Record<strin
     }
   }
 
-  // 5. Parse notify_on_completion from string to boolean
+  // 6. Parse notify_on_completion from string to boolean
   if (typeof result.notify_on_completion === 'string') {
     result.notify_on_completion = result.notify_on_completion === 'true';
   }
