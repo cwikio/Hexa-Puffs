@@ -29,6 +29,9 @@ export function createGroqProvider(config: Config) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const json: any = await cloned.json();
+          if (json?.error) {
+            logger.debug(`[GROQ] Error: ${json.error.code || json.error.type} — ${json.error.message}`);
+          }
           const choice = json?.choices?.[0];
           if (choice) {
             logger.debug(`[GROQ] Response: finish_reason=${choice.finish_reason}, tool_calls=${!!choice.message?.tool_calls}, content_len=${choice.message?.content?.length ?? 0}`);

@@ -1349,20 +1349,39 @@ Complete the task step by step, using your available tools. When done, provide a
 
         if (isToolCallError && selectedTools) {
           logger.warn(`[proactive] Tool call failed, retrying once: ${genMsg}`);
-          // Lower temperature for tool-format errors (model embedding args in tool name)
           const isFormatError = genMsg.includes('was not in request.tools');
-          const retryTemp = isFormatError
-            ? Math.max((this.config.temperature ?? 0.7) - 0.2, 0.1)
-            : Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
-          const errorHint = isFormatError
-            ? '\n\nCRITICAL: Use tools by their exact name only. Do NOT embed parameters in the tool name — pass them as separate structured arguments.'
-            : '';
+          const isGenerationError = genMsg.includes('failed_generation');
+
+          // Retry strategy depends on error type:
+          // - Format error (args in tool name): lower temp + hint about tool name format
+          // - Generation error (Groq can't parse output): force 'required' tool choice
+          //   to enable grammar-constrained decoding + lower temp + limit steps
+          // - Other: slight temp increase
+          let retryTemp: number;
+          let retryToolChoice: 'auto' | 'required' = 'auto';
+          let retryMaxSteps = Math.min(maxSteps, 4);
+          let errorHint = '';
+
+          if (isFormatError) {
+            retryTemp = Math.max((this.config.temperature ?? 0.7) - 0.2, 0.1);
+            errorHint = '\n\nCRITICAL: Use tools by their exact name only. Do NOT embed parameters in the tool name — pass them as separate structured arguments.';
+          } else if (isGenerationError) {
+            retryTemp = Math.max((this.config.temperature ?? 0.7) - 0.3, 0.0);
+            retryToolChoice = 'required';
+            retryMaxSteps = Math.min(maxSteps, 3);
+            errorHint = '\n\nYou MUST call the available tools to complete this task. Call the search tool first, then send the results.';
+          } else {
+            retryTemp = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
+          }
+
+          logger.info(`[proactive] Retry config: toolChoice=${retryToolChoice}, temp=${retryTemp}, maxSteps=${retryMaxSteps}`);
           result = await generateText({
             model: this.modelFactory.getModel(),
             system: systemPromptWithContext + errorHint,
             messages: [{ role: 'user', content: taskInstructions }],
-            ...(selectedTools ? { tools: selectedTools, toolChoice: 'auto' as const } : {}),
-            maxSteps: Math.min(maxSteps, 4),
+            tools: selectedTools,
+            toolChoice: retryToolChoice as 'auto',
+            maxSteps: retryMaxSteps,
             temperature: retryTemp,
             abortSignal: AbortSignal.timeout(90_000),
           });
