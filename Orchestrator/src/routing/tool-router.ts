@@ -427,6 +427,7 @@ export class ToolRouter {
     // Normalize skill inputs before routing (fixes LLM mistakes regardless of caller)
     if (toolName === 'memory_store_skill' || toolName === 'memory_update_skill') {
       const normalized = normalizeSkillInput(args);
+      this.logger.info('Skill normalizer applied', { toolName, inputAgentId: args.agent_id, normalizedAgentId: normalized.agent_id });
       Object.assign(args, normalized);
 
       // Validate cron expression before storage
