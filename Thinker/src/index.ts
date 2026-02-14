@@ -150,14 +150,14 @@ function createServer(config: Config, startTime: number) {
       return;
     }
 
-    const { skillId, skillName, instructions, maxSteps, notifyOnCompletion, noTools, notifyChatId: explicitChatId, requiredTools } = req.body;
+    const { skillId, skillName, instructions, maxSteps, notifyOnCompletion, noTools, notifyChatId: explicitChatId, requiredTools, chatId } = req.body;
 
     if (!instructions) {
       res.status(400).json({ success: false, error: 'instructions is required' });
       return;
     }
 
-    logger.info(`Received skill execution request: skillId=${skillId}, maxSteps=${maxSteps}`);
+    logger.info(`Received skill execution request: skillId=${skillId}, maxSteps=${maxSteps}, chatId=${chatId || 'none'}`);
 
     try {
       const notifyChatId = explicitChatId
@@ -170,6 +170,7 @@ function createServer(config: Config, startTime: number) {
         noTools,
         requiredTools,
         skillName,
+        chatId,
       );
 
       res.json({

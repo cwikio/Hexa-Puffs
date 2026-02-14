@@ -49,6 +49,7 @@ export class Agent {
   private tools: Record<string, CoreTool> = {};
   private conversationStates: Map<string, AgentState> = new Map();
   private currentTrace: TraceContext | undefined;
+  private currentChatId: string | undefined;
   private logger = getTraceLogger();
   private playbookCache: PlaybookCache;
   private customSystemPrompt: string | null = null;
@@ -159,10 +160,12 @@ export class Agent {
     logger.info(`Discovered ${orchestratorTools.length} tools from Orchestrator`);
 
     // Create tools from Orchestrator
+    const getChatId = () => this.currentChatId || this.config.defaultNotifyChatId;
     const dynamicTools = createToolsFromOrchestrator(
       orchestratorTools,
       this.orchestrator,
-      () => this.currentTrace
+      () => this.currentTrace,
+      getChatId,
     );
 
     // Create essential tools
@@ -170,6 +173,7 @@ export class Agent {
       this.orchestrator,
       this.config.thinkerAgentId,
       () => this.currentTrace,
+      getChatId,
     );
 
     // Merge tools (essential tools override dynamic ones)
@@ -218,15 +222,18 @@ export class Agent {
       const currentNames = new Set(Object.keys(this.tools));
 
       // Always rebuild (cheap) so essential tools stay current
+      const getChatId = () => this.currentChatId || this.config.defaultNotifyChatId;
       const dynamicTools = createToolsFromOrchestrator(
         freshOrchestratorTools,
         this.orchestrator,
         () => this.currentTrace,
+        getChatId,
       );
       const essentialTools = createEssentialTools(
         this.orchestrator,
         this.config.thinkerAgentId,
         () => this.currentTrace,
+        getChatId,
       );
       this.tools = { ...dynamicTools, ...essentialTools };
 
@@ -508,6 +515,7 @@ export class Agent {
   async processMessage(message: IncomingMessage): Promise<ProcessingResult> {
     const trace = createTrace('thinker');
     this.currentTrace = trace;
+    this.currentChatId = message.chatId;
 
     await this.logger.logMessageReceived(trace, message.chatId, message.text);
 
@@ -1202,6 +1210,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       };
     } finally {
       this.currentTrace = undefined;
+      this.currentChatId = undefined;
     }
   }
 
@@ -1216,11 +1225,13 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
     noTools?: boolean,
     requiredTools?: string[],
     skillName?: string,
+    chatId?: string,
   ): Promise<ProcessingResult & { summary: string }> {
     const trace = createTrace('thinker-skill');
     this.currentTrace = trace;
+    this.currentChatId = chatId;
 
-    logger.info(`Processing proactive task (maxSteps: ${maxSteps})`);
+    logger.info(`Processing proactive task (maxSteps: ${maxSteps}, chatId: ${chatId || 'none'})`);
 
     const providerInfo = this.modelFactory.getProviderInfo();
 
@@ -1272,10 +1283,12 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
         hour12: false,
       });
 
+      const chatSection = chatId ? `\n\n## Current Chat\nchat_id: ${chatId}` : '';
+
       const systemPrompt = `${basePrompt}
 
 ## Current Date & Time
-${formatter.format(currentDate)} (${tz})
+${formatter.format(currentDate)} (${tz})${chatSection}
 
 ## Current Task
 You are executing an autonomous scheduled task. There is no user message — follow the instructions below as your goal.
@@ -1455,6 +1468,7 @@ Complete the task step by step, using your available tools. When done, provide a
       };
     } finally {
       this.currentTrace = undefined;
+      this.currentChatId = undefined;
     }
   }
 

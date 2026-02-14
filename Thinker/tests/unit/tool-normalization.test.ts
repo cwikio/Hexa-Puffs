@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { relaxSchemaTypes, stripNullValues } from '../../src/orchestrator/tools.js';
+import { relaxSchemaTypes, stripNullValues, injectChatId } from '../../src/orchestrator/tools.js';
 
 describe('relaxSchemaTypes', () => {
   it('does NOT add "null" for required properties', () => {
@@ -177,5 +177,76 @@ describe('stripNullValues', () => {
 
     expect(result).toHaveProperty('a');
     expect(result).not.toHaveProperty('b');
+  });
+});
+
+describe('injectChatId', () => {
+  const PRIMARY_CHAT = '8304042211';
+
+  it('injects chat_id when missing from telegram_send_message', () => {
+    const args = { message: 'hello' };
+    const result = injectChatId('telegram_send_message', args, PRIMARY_CHAT);
+
+    expect(result.chat_id).toBe(PRIMARY_CHAT);
+  });
+
+  it('preserves valid short chat_id', () => {
+    const args = { chat_id: '99999', message: 'hello' };
+    const result = injectChatId('telegram_send_message', args, PRIMARY_CHAT);
+
+    expect(result.chat_id).toBe('99999');
+  });
+
+  it('replaces hallucinated long chat_id', () => {
+    const args = { chat_id: "the user's chat id or username", message: 'hello' };
+    const result = injectChatId('telegram_send_message', args, PRIMARY_CHAT);
+
+    expect(result.chat_id).toBe(PRIMARY_CHAT);
+  });
+
+  it('replaces hallucinated @username', () => {
+    const args = { chat_id: '@some_long_username_here', message: 'hello' };
+    const result = injectChatId('telegram_send_message', args, PRIMARY_CHAT);
+
+    expect(result.chat_id).toBe(PRIMARY_CHAT);
+  });
+
+  it('does nothing for non-telegram tools', () => {
+    const args = { query: 'AI news' };
+    const result = injectChatId('searcher_web_search', args, PRIMARY_CHAT);
+
+    expect(result).not.toHaveProperty('chat_id');
+    expect(result.query).toBe('AI news');
+  });
+
+  it('does nothing when no primaryChatId is available', () => {
+    const args = { message: 'hello' };
+    const result = injectChatId('telegram_send_message', args, undefined);
+
+    expect(result).not.toHaveProperty('chat_id');
+  });
+
+  it('injects when chat_id is null (after stripNullValues would have removed it)', () => {
+    // After stripNullValues, chat_id would be deleted. But if it somehow remains as
+    // a non-string falsy value, injectChatId should still inject.
+    const args: Record<string, unknown> = { chat_id: '', message: 'hello' };
+    const result = injectChatId('telegram_send_message', args, PRIMARY_CHAT);
+
+    expect(result.chat_id).toBe(PRIMARY_CHAT);
+  });
+
+  it('preserves numeric chat_id string (valid Telegram ID)', () => {
+    const args = { chat_id: '-1001234567890', message: 'hello' };
+    const result = injectChatId('telegram_send_message', args, PRIMARY_CHAT);
+
+    // 15 chars — under the 20-char threshold
+    expect(result.chat_id).toBe('-1001234567890');
+  });
+
+  it('mutates the args object in-place', () => {
+    const args = { message: 'hello' };
+    const result = injectChatId('telegram_send_message', args, PRIMARY_CHAT);
+
+    expect(result).toBe(args);
   });
 });

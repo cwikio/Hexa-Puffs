@@ -466,8 +466,9 @@ Call **get_tool_catalog** to see all available tools in the system. Use EXACT to
    - "at 3pm today" → \`{ "at": "2026-02-14T15:00:00" }\` (one-shot, compute ISO datetime)
    - "every day at 9am" → \`{ "schedule": "0 9 * * *" }\` (recurring)
    - "every 5 minutes" → \`{ "schedule": "*/5 * * * *" }\` (recurring)
-2. Build the execution_plan — exactly one step. ALWAYS include chat_id from the current conversation:
-   \`[{ "id": "step1", "toolName": "telegram_send_message", "parameters": { "chat_id": "<CURRENT_CHAT_ID>", "message": "Drink water!" } }]\`
+2. Build the execution_plan — exactly one step:
+   \`[{ "id": "step1", "toolName": "telegram_send_message", "parameters": { "message": "Drink water!" } }]\`
+   Note: chat_id is auto-injected at execution time — do NOT include it in execution_plan parameters.
 3. Confirm with user: "I'll create a skill that sends '[message]' [schedule description]. No LLM needed — runs instantly. OK?"
 4. Call memory_store_skill with:
    - name: descriptive name
@@ -475,7 +476,7 @@ Call **get_tool_catalog** to see all available tools in the system. Use EXACT to
    - trigger_config: the schedule/at/in_minutes object
    - instructions: brief description of what the skill does (for display purposes)
    - required_tools: array with EXACT tool names from get_tool_catalog used in execution_plan
-   - execution_plan: the compiled steps array (MUST include chat_id in telegram parameters)
+   - execution_plan: the compiled steps array
    - notify_on_completion: false (the execution_plan already sends the message)
    - agent_id: "thinker"
 
@@ -488,7 +489,7 @@ Call **get_tool_catalog** to see all available tools in the system. Use EXACT to
    - name: descriptive name
    - trigger_type: "cron"
    - trigger_config: the schedule object (timezone is auto-injected by the system)
-   - instructions: the natural language task description (include the user's chat_id if Telegram messaging is involved)
+   - instructions: the natural language task description
    - required_tools: EXACT tool names from get_tool_catalog
    - max_steps: appropriate limit (default 10, use lower for simpler tasks)
    - agent_id: "thinker"
@@ -497,21 +498,21 @@ Call **get_tool_catalog** to see all available tools in the system. Use EXACT to
 For "remind me in 5 minutes" or "in an hour":
 - Use trigger_config: { "in_minutes": N } — system auto-computes the ISO datetime
 - These fire once and auto-disable
-- Almost always SIMPLE (execution_plan with telegram_send_message + chat_id)
+- Almost always SIMPLE (execution_plan with telegram_send_message)
 
 For "remind me at 3pm" or "remind me tomorrow at 9am":
 - Use trigger_config: { "at": "<ISO datetime>" } — compute the correct datetime
 - These fire once and auto-disable
-- Almost always SIMPLE (execution_plan with telegram_send_message + chat_id)
+- Almost always SIMPLE (execution_plan with telegram_send_message)
 
 ## NOTES
+- chat_id is auto-injected for all Telegram tool calls — do NOT hardcode it in execution_plan or instructions
 - Timezone is auto-detected — do NOT specify timezone unless the user explicitly requests a different one
 - Use memory_list_skills to show existing skills
 - Use memory_delete_skill to remove a skill
 - Cron format: "minute hour day month weekday" (e.g., "0 9 * * *" = 9:00 AM daily)
 - Always confirm the schedule before creating — mistakes are hard to undo
-- execution_plan tools MUST be a subset of required_tools — the system validates this
-- ALWAYS include the user's chat_id in execution_plan parameters for telegram_send_message`,
+- execution_plan tools MUST be a subset of required_tools — the system validates this`,
     required_tools: ['memory_store_skill', 'memory_list_skills', 'memory_delete_skill', 'get_tool_catalog'],
     max_steps: 8,
     notify_on_completion: false,

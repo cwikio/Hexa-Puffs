@@ -587,20 +587,21 @@ export const skillSchedulerFunction = inngest.createFunction(
             throw new Error(`Agent "${agentId}" client not available after ensureRunning`);
           }
 
-          // Auto-detect notification chat from channel manager (throttled)
+          // Resolve primary chat_id from channel manager — used for both
+          // LLM context (so it knows which chat to send to) and notifications
+          const channelManager = orchestrator.getChannelManager();
+          const telegramAdapter = channelManager?.getAdapter('telegram');
+          const primaryChatId = telegramAdapter?.getMonitoredChatIds()?.[0];
+
+          // Notification throttling (only controls whether notifyChatId is set)
           let notifyChatId: string | undefined;
-          if (skill.notify_on_completion) {
+          if (skill.notify_on_completion && primaryChatId) {
             const intervalMin = skill.notify_interval_minutes || DEFAULT_NOTIFY_INTERVAL_MINUTES;
             const lastNotified = skill.last_notified_at ? new Date(skill.last_notified_at).getTime() : 0;
             const elapsedMin = (Date.now() - lastNotified) / 60_000;
 
             if (elapsedMin >= intervalMin) {
-              const channelManager = orchestrator.getChannelManager();
-              const telegramAdapter = channelManager?.getAdapter('telegram');
-              const chatIds = telegramAdapter?.getMonitoredChatIds() ?? [];
-              if (chatIds.length > 0) {
-                notifyChatId = chatIds[0];
-              }
+              notifyChatId = primaryChatId;
             } else {
               logger.debug('Notification throttled', {
                 skillId: skill.id, name: skill.name,
@@ -626,6 +627,7 @@ export const skillSchedulerFunction = inngest.createFunction(
             parsedRequiredTools,
             skill.id,
             skill.name,
+            primaryChatId,
           );
 
           // Update skill's last_run fields via Memory MCP

@@ -102,6 +102,33 @@ function stripHallucinatedParams(toolName: string, args: Record<string, unknown>
 }
 
 /**
+ * Max length for a valid Telegram chat_id. Real IDs are numeric strings (< 15 chars).
+ * Anything longer is likely a hallucinated placeholder like "the user's chat id or username".
+ */
+const MAX_CHAT_ID_LENGTH = 20;
+
+/**
+ * Auto-inject or fix chat_id for telegram_send_message tool calls.
+ * LLMs (especially Llama/Groq in proactive tasks) hallucinate placeholder
+ * chat_ids like "the user's chat id or username" or "@username".
+ * The known primary chat_id is injected from the channel manager.
+ * Mutates the args object in-place.
+ */
+export function injectChatId(
+  toolName: string,
+  args: Record<string, unknown>,
+  chatId: string | undefined,
+): Record<string, unknown> {
+  if (toolName !== 'telegram_send_message' || !chatId) return args;
+
+  const current = args.chat_id;
+  if (!current || typeof current !== 'string' || current.length > MAX_CHAT_ID_LENGTH) {
+    args.chat_id = chatId;
+  }
+  return args;
+}
+
+/**
  * Create Vercel AI SDK tools from Orchestrator tools.
  *
  * Uses `jsonSchema()` to pass the MCP's original JSON Schema directly to the
@@ -113,7 +140,8 @@ function stripHallucinatedParams(toolName: string, args: Record<string, unknown>
 export function createToolsFromOrchestrator(
   orchestratorTools: OrchestratorTool[],
   client: OrchestratorClient,
-  getTrace: () => TraceContext | undefined
+  getTrace: () => TraceContext | undefined,
+  getChatId: () => string | undefined,
 ): Record<string, CoreTool> {
   const tools: Record<string, CoreTool> = {};
   const logger = getTraceLogger();
@@ -135,9 +163,14 @@ export function createToolsFromOrchestrator(
         // Normalize null/undefined args to empty object (for tools with no parameters)
         // Coerce string booleans from Groq/Llama ("true"→true, "false"→false)
         // Strip hallucinated params (e.g. teamId/slug from vercel_ tools)
-        const normalizedArgs = stripHallucinatedParams(
+        // Auto-inject chat_id for telegram_send_message when missing or hallucinated
+        const normalizedArgs = injectChatId(
           orchTool.name,
-          stripNullValues(coerceStringBooleans((args ?? {}) as Record<string, unknown>))
+          stripHallucinatedParams(
+            orchTool.name,
+            stripNullValues(coerceStringBooleans((args ?? {}) as Record<string, unknown>))
+          ),
+          getChatId(),
         );
         const trace = getTrace();
         const startTime = Date.now();
@@ -193,26 +226,33 @@ export function createEssentialTools(
   client: OrchestratorClient,
   agentId: string,
   getTrace: () => TraceContext | undefined,
+  getChatId: () => string | undefined,
 ): Record<string, CoreTool> {
   const logger = getTraceLogger();
 
   return {
     send_telegram: tool({
-      description: 'Send a message to a Telegram chat',
+      description: 'Send a message to a Telegram chat. The chat_id is auto-injected if omitted.',
       parameters: z.object({
-        chat_id: z.string().describe('The Telegram chat ID to send to'),
+        chat_id: z.string().optional().describe('The Telegram chat ID (auto-injected if omitted)'),
         message: z.string().describe('The message text to send'),
         reply_to: z.number().nullish().describe('Optional message ID to reply to'),
       }),
       execute: async ({ chat_id, message, reply_to }) => {
+        // Auto-inject chat_id from known primary chat when missing
+        const resolvedChatId = chat_id || getChatId();
+        if (!resolvedChatId) {
+          return { success: false, message: 'No chat_id provided and no primary chat available' };
+        }
+
         const trace = getTrace();
         const startTime = Date.now();
 
         if (trace) {
-          await logger.logToolCallStart(trace, 'send_telegram', { chat_id, message_length: message.length });
+          await logger.logToolCallStart(trace, 'send_telegram', { chat_id: resolvedChatId, message_length: message.length });
         }
 
-        const success = await client.sendTelegramMessage(chat_id, message, reply_to ?? undefined, trace);
+        const success = await client.sendTelegramMessage(resolvedChatId, message, reply_to ?? undefined, trace);
         const durationMs = Date.now() - startTime;
 
         if (trace) {
