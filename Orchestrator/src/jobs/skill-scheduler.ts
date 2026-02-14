@@ -1,6 +1,6 @@
 import { inngest } from './inngest-client.js';
 import { notifyTelegram, SYSTEM_TIMEZONE } from './helpers.js';
-import { PREFLIGHT_CALENDAR_WINDOW_MS, PREFLIGHT_EMAIL_ENABLED, DEFAULT_NOTIFY_INTERVAL_MINUTES } from '../const/general.js';
+import { PREFLIGHT_CALENDAR_WINDOW_MS, PREFLIGHT_EMAIL_ENABLED } from '../const/general.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { getHaltManager } from '../core/halt-manager.js';
 import { Cron } from 'croner';
@@ -106,7 +106,17 @@ export const skillSchedulerFunction = inngest.createFunction(
         const disabledSkills = (data?.data?.skills || data?.skills || []) as unknown[];
 
         for (const rawSkill of disabledSkills) {
-          const skill = rawSkill as { id: number; name: string; required_tools?: string[] | string };
+          const skill = rawSkill as { id: number; name: string; required_tools?: string[] | string; trigger_config?: string };
+
+          // Skip one-shot skills — they were disabled intentionally after firing
+          if (skill.trigger_config) {
+            try {
+              const tc = typeof skill.trigger_config === 'string'
+                ? JSON.parse(skill.trigger_config) : skill.trigger_config;
+              if ((tc as Record<string, unknown>)?.at) continue;
+            } catch { /* ignore parse errors */ }
+          }
+
           let requiredTools: string[] = [];
 
           if (typeof skill.required_tools === 'string') {
@@ -587,28 +597,10 @@ export const skillSchedulerFunction = inngest.createFunction(
             throw new Error(`Agent "${agentId}" client not available after ensureRunning`);
           }
 
-          // Resolve primary chat_id from channel manager — used for both
-          // LLM context (so it knows which chat to send to) and notifications
+          // Resolve primary chat_id from channel manager so the LLM knows which chat to target
           const channelManager = orchestrator.getChannelManager();
           const telegramAdapter = channelManager?.getAdapter('telegram');
           const primaryChatId = telegramAdapter?.getMonitoredChatIds()?.[0];
-
-          // Notification throttling (only controls whether notifyChatId is set)
-          let notifyChatId: string | undefined;
-          if (skill.notify_on_completion && primaryChatId) {
-            const intervalMin = skill.notify_interval_minutes || DEFAULT_NOTIFY_INTERVAL_MINUTES;
-            const lastNotified = skill.last_notified_at ? new Date(skill.last_notified_at).getTime() : 0;
-            const elapsedMin = (Date.now() - lastNotified) / 60_000;
-
-            if (elapsedMin >= intervalMin) {
-              notifyChatId = primaryChatId;
-            } else {
-              logger.debug('Notification throttled', {
-                skillId: skill.id, name: skill.name,
-                intervalMin, elapsedMin: Math.round(elapsedMin),
-              });
-            }
-          }
 
           // Parse required_tools (can be JSON string or array from DB)
           let parsedRequiredTools: string[] | undefined;
@@ -621,9 +613,7 @@ export const skillSchedulerFunction = inngest.createFunction(
           const result = await client.executeSkill(
             skill.instructions,
             skill.max_steps || 10,
-            skill.notify_on_completion ?? false,
             false,
-            notifyChatId,
             parsedRequiredTools,
             skill.id,
             skill.name,
@@ -640,7 +630,6 @@ export const skillSchedulerFunction = inngest.createFunction(
                 last_run_at: new Date().toISOString(),
                 last_run_status: 'success',
                 last_run_summary: result.response || 'No summary',
-                ...(notifyChatId ? { last_notified_at: new Date().toISOString() } : {}),
               });
             } catch (updateError) {
               logger.error('Failed to update skill status', { skillId: skill.id, error: updateError });

@@ -1221,7 +1221,6 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
   async processProactiveTask(
     taskInstructions: string,
     maxSteps: number = 10,
-    notifyChatId?: string,
     noTools?: boolean,
     requiredTools?: string[],
     skillName?: string,
@@ -1314,7 +1313,6 @@ Complete the task step by step, using your available tools. When done, provide a
       logger.info(`[prompt-size] Proactive task prompt: ~${Math.ceil(promptChars / 4)} tokens (${promptChars} chars)`);
 
       // Run the LLM with task instructions as the "user message"
-      // For proactive tasks, exclude send_telegram — notifications are handled post-completion via notifyChatId
       let selectedTools: Record<string, CoreTool> | undefined;
       if (noTools) {
         selectedTools = undefined;
@@ -1329,9 +1327,6 @@ Complete the task step by step, using your available tools. When done, provide a
         logger.info(`Tool selection: method=required_tools, resolved=${Object.keys(selectedTools).length}/${requiredTools.length}`);
       } else {
         selectedTools = await selectToolsWithFallback(taskInstructions, this.tools, this.embeddingSelector);
-      }
-      if (selectedTools) {
-        delete selectedTools['send_telegram'];
       }
       let result;
       try {
@@ -1354,10 +1349,17 @@ Complete the task step by step, using your available tools. When done, provide a
 
         if (isToolCallError && selectedTools) {
           logger.warn(`[proactive] Tool call failed, retrying once: ${genMsg}`);
-          const retryTemp = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
+          // Lower temperature for tool-format errors (model embedding args in tool name)
+          const isFormatError = genMsg.includes('was not in request.tools');
+          const retryTemp = isFormatError
+            ? Math.max((this.config.temperature ?? 0.7) - 0.2, 0.1)
+            : Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
+          const errorHint = isFormatError
+            ? '\n\nCRITICAL: Use tools by their exact name only. Do NOT embed parameters in the tool name — pass them as separate structured arguments.'
+            : '';
           result = await generateText({
             model: this.modelFactory.getModel(),
-            system: systemPromptWithContext,
+            system: systemPromptWithContext + errorHint,
             messages: [{ role: 'user', content: taskInstructions }],
             ...(selectedTools ? { tools: selectedTools, toolChoice: 'auto' as const } : {}),
             maxSteps: Math.min(maxSteps, 4),
@@ -1432,16 +1434,6 @@ Complete the task step by step, using your available tools. When done, provide a
         );
       } catch (memError) {
         logger.error('Failed to store skill execution summary in memory:', memError);
-      }
-
-      // Optionally notify via Telegram (always via Orchestrator)
-      if (notifyChatId) {
-        try {
-          const notificationText = `📋 ${skillName || 'Skill completed'}:\n\n${responseText}`;
-          await this.orchestrator.sendTelegramMessage(notifyChatId, notificationText, undefined, trace);
-        } catch (notifyError) {
-          logger.error('Failed to send skill completion notification:', notifyError);
-        }
       }
 
       // Flag if cost monitor tripped during this loop (so upstream can notify)

@@ -150,7 +150,7 @@ function createServer(config: Config, startTime: number) {
       return;
     }
 
-    const { skillId, skillName, instructions, maxSteps, notifyOnCompletion, noTools, notifyChatId: explicitChatId, requiredTools, chatId } = req.body;
+    const { skillId, skillName, instructions, maxSteps, noTools, requiredTools, chatId } = req.body;
 
     if (!instructions) {
       res.status(400).json({ success: false, error: 'instructions is required' });
@@ -160,13 +160,9 @@ function createServer(config: Config, startTime: number) {
     logger.info(`Received skill execution request: skillId=${skillId}, maxSteps=${maxSteps}, chatId=${chatId || 'none'}`);
 
     try {
-      const notifyChatId = explicitChatId
-        || (notifyOnCompletion ? (config.defaultNotifyChatId || undefined) : undefined);
-
       const result = await agentRef.processProactiveTask(
         instructions,
         maxSteps || 10,
-        notifyChatId,
         noTools,
         requiredTools,
         skillName,

@@ -425,7 +425,7 @@ Analyze this data and produce a concise Telegram-friendly summary:
 3. If there are no anomalies, no new security threats, and no errors, end with: "No anomalies detected."
 Keep it concise. No markdown formatting — plain text only.`;
 
-    const result = await client.executeSkill(instructions, 1, false, true);
+    const result = await client.executeSkill(instructions, 1, true);
 
     if (!result.success) {
       return `Summary failed: ${result.error ?? 'unknown error'}`;

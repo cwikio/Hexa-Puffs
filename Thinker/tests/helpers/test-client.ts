@@ -143,7 +143,7 @@ export class ThinkerTestClient {
         }
       }
 
-      const data = await response.json()
+      const data = (await response.json()) as RootEndpointResult['data']
       return {
         success: true,
         data,
@@ -166,7 +166,7 @@ export class ThinkerTestClient {
 
 // Pre-configured URLs
 export const THINKER_URL = process.env.THINKER_URL || 'http://localhost:8006'
-export const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:8000'
+export const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:8010'
 
 export function createThinkerClient(): ThinkerTestClient {
   return new ThinkerTestClient(THINKER_URL)
@@ -187,7 +187,7 @@ export async function checkOrchestratorAvailable(): Promise<boolean> {
 
     if (!response.ok) return false
 
-    const data = (await response.json()) as { status: string }
+    const data: { status: string } = await response.json()
     return data.status === 'ok'
   } catch {
     return false
@@ -223,7 +223,7 @@ export async function readRecentTraces(
     const content = await readFile(resolvedPath, 'utf-8')
     const lines = content.trim().split('\n').filter(Boolean)
     const recentLines = lines.slice(-limit)
-    return recentLines.map((line) => JSON.parse(line))
+    return recentLines.map((line): Record<string, unknown> => JSON.parse(line))
   } catch {
     return []
   }

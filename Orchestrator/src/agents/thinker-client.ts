@@ -65,9 +65,7 @@ export class ThinkerClient {
   async executeSkill(
     instructions: string,
     maxSteps: number = 10,
-    notifyOnCompletion: boolean = false,
     noTools: boolean = false,
-    notifyChatId?: string,
     requiredTools?: string[],
     skillId?: number,
     skillName?: string,
@@ -79,7 +77,7 @@ export class ThinkerClient {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skillId, skillName, instructions, maxSteps, notifyOnCompletion, noTools, notifyChatId, requiredTools, chatId }),
+        body: JSON.stringify({ skillId, skillName, instructions, maxSteps, noTools, requiredTools, chatId }),
         signal: AbortSignal.timeout(this.timeout),
       });
 
