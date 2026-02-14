@@ -743,9 +743,16 @@ export const skillSchedulerFunction = inngest.createFunction(
       }
 
       // ── Tier Router: Direct vs Agent execution ──
-      const executionPlan = skill.execution_plan
-        ? (() => { try { return JSON.parse(typeof skill.execution_plan === 'string' ? skill.execution_plan : ''); } catch { return null; } })()
-        : null;
+      // execution_plan may be a JSON string (raw DB) or already-parsed array (from formatSkill)
+      const executionPlan = (() => {
+        const ep = skill.execution_plan;
+        if (!ep) return null;
+        if (Array.isArray(ep)) return ep;
+        if (typeof ep === 'string') {
+          try { return JSON.parse(ep); } catch { return null; }
+        }
+        return null;
+      })();
 
       if (Array.isArray(executionPlan) && executionPlan.length > 0) {
         // DIRECT TIER — execute via ToolRouter, zero LLM cost
