@@ -365,7 +365,6 @@ export const skillSchedulerFunction = inngest.createFunction(
 
         // List disabled cron skills
         const disabledResult = await toolRouter.routeToolCall('memory_list_skills', {
-          agent_id: 'thinker',
           enabled: false,
           trigger_type: 'cron',
         });
@@ -475,7 +474,6 @@ export const skillSchedulerFunction = inngest.createFunction(
         const orchestrator = await getOrchestrator();
         const toolRouter = orchestrator.getToolRouter();
         const result = await toolRouter.routeToolCall('memory_list_skills', {
-          agent_id: 'thinker',
           enabled: true,
           trigger_type: 'cron',
         });

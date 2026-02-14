@@ -183,6 +183,7 @@ describe('normalizeSkillInput', () => {
 
   it('should pass through already-correct input unchanged', () => {
     const input = {
+      agent_id: 'thinker',
       name: 'ai-news-monitor',
       trigger_type: 'cron',
       trigger_config: { schedule: '0 */3 * * *' },

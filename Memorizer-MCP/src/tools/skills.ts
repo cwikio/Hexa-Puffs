@@ -222,7 +222,7 @@ export const StoreSkillInputSchema = z.object({
 });
 
 export const ListSkillsInputSchema = z.object({
-  agent_id: z.string().default('main'),
+  agent_id: z.string().optional(),
   enabled: z.boolean().optional(),
   trigger_type: z.enum(TRIGGER_TYPES).optional(),
 });
@@ -329,8 +329,13 @@ export async function handleListSkills(args: unknown): Promise<StandardResponse<
   try {
     const db = getDatabase();
 
-    let query = `SELECT * FROM skills WHERE agent_id = ?`;
-    const params: (string | number)[] = [agent_id];
+    let query = `SELECT * FROM skills WHERE 1=1`;
+    const params: (string | number)[] = [];
+
+    if (agent_id) {
+      query += ` AND agent_id = ?`;
+      params.push(agent_id);
+    }
 
     if (enabled !== undefined) {
       query += ` AND enabled = ?`;
@@ -347,8 +352,12 @@ export async function handleListSkills(args: unknown): Promise<StandardResponse<
     const skills = db.prepare(query).all(...params) as SkillRow[];
 
     // Get total count
-    let countQuery = `SELECT COUNT(*) as count FROM skills WHERE agent_id = ?`;
-    const countParams: (string | number)[] = [agent_id];
+    let countQuery = `SELECT COUNT(*) as count FROM skills WHERE 1=1`;
+    const countParams: (string | number)[] = [];
+    if (agent_id) {
+      countQuery += ` AND agent_id = ?`;
+      countParams.push(agent_id);
+    }
     if (enabled !== undefined) {
       countQuery += ` AND enabled = ?`;
       countParams.push(enabled ? 1 : 0);
