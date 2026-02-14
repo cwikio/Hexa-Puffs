@@ -14,16 +14,32 @@ import { getTraceLogger } from '../tracing/logger.js';
  * `z.coerce.number()`. Boolean coercion is handled by `coerceStringBooleans()`
  * in the execute callback before args are sent to the Orchestrator.
  */
-function relaxSchemaTypes(schema: Record<string, unknown>): Record<string, unknown> {
+export function relaxSchemaTypes(schema: Record<string, unknown>): Record<string, unknown> {
   const relaxed = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
 
-  function walk(obj: Record<string, unknown>) {
+  function walk(obj: Record<string, unknown>, requiredKeys?: Set<string>) {
     if (obj.type === 'number' || obj.type === 'integer' || obj.type === 'boolean') {
       obj.type = [obj.type as string, 'string'];
     }
     if (obj.properties && typeof obj.properties === 'object') {
-      for (const prop of Object.values(obj.properties as Record<string, Record<string, unknown>>)) {
-        if (prop && typeof prop === 'object') walk(prop);
+      const required = new Set(
+        Array.isArray(obj.required) ? (obj.required as string[]) : [],
+      );
+      for (const [key, prop] of Object.entries(
+        obj.properties as Record<string, Record<string, unknown>>,
+      )) {
+        if (prop && typeof prop === 'object') {
+          // Recurse first so numeric/boolean relaxation runs on the original type
+          walk(prop);
+          // Then allow null for optional properties — LLMs send null instead of omitting
+          if (!required.has(key)) {
+            if (typeof prop.type === 'string') {
+              prop.type = [prop.type, 'null'];
+            } else if (Array.isArray(prop.type) && !prop.type.includes('null')) {
+              prop.type = [...prop.type, 'null'];
+            }
+          }
+        }
       }
     }
     if (obj.items && typeof obj.items === 'object') {
@@ -44,6 +60,20 @@ function coerceStringBooleans(args: Record<string, unknown>): Record<string, unk
   for (const [key, value] of Object.entries(args)) {
     if (value === 'true') args[key] = true;
     else if (value === 'false') args[key] = false;
+  }
+  return args;
+}
+
+/**
+ * Strip null values from tool call args.
+ * LLMs (especially Llama on Groq) send `null` for optional params instead of omitting them.
+ * `relaxSchemaTypes` lets nulls pass JSON Schema validation; this cleans them before
+ * sending to the Orchestrator/MCP where Zod schemas use `.optional()` (not `.nullish()`).
+ * Mutates the args object in-place.
+ */
+export function stripNullValues(args: Record<string, unknown>): Record<string, unknown> {
+  for (const [key, value] of Object.entries(args)) {
+    if (value === null) delete args[key];
   }
   return args;
 }
@@ -107,7 +137,7 @@ export function createToolsFromOrchestrator(
         // Strip hallucinated params (e.g. teamId/slug from vercel_ tools)
         const normalizedArgs = stripHallucinatedParams(
           orchTool.name,
-          coerceStringBooleans((args ?? {}) as Record<string, unknown>)
+          stripNullValues(coerceStringBooleans((args ?? {}) as Record<string, unknown>))
         );
         const trace = getTrace();
         const startTime = Date.now();
@@ -172,7 +202,7 @@ export function createEssentialTools(
       parameters: z.object({
         chat_id: z.string().describe('The Telegram chat ID to send to'),
         message: z.string().describe('The message text to send'),
-        reply_to: z.number().optional().describe('Optional message ID to reply to'),
+        reply_to: z.number().nullish().describe('Optional message ID to reply to'),
       }),
       execute: async ({ chat_id, message, reply_to }) => {
         const trace = getTrace();
@@ -182,7 +212,7 @@ export function createEssentialTools(
           await logger.logToolCallStart(trace, 'send_telegram', { chat_id, message_length: message.length });
         }
 
-        const success = await client.sendTelegramMessage(chat_id, message, reply_to, trace);
+        const success = await client.sendTelegramMessage(chat_id, message, reply_to ?? undefined, trace);
         const durationMs = Date.now() - startTime;
 
         if (trace) {
