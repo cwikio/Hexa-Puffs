@@ -446,11 +446,13 @@ Call **get_tool_catalog** to see all available tools in the system. Use EXACT to
 **SIMPLE (Direct tier — zero LLM cost)** — Use when ALL of these are true:
 - The action is a SINGLE fixed tool call with static parameters (no dynamic content)
 - No data reading, no decisions, no reasoning needed
-- execution_plan must be exactly 1 step. If you need multiple steps, use Agent tier.
-- Examples: "remind me to drink water", "send me hello every minute", "remind me at 3pm about dentist"
+- IMPORTANT: execution_plan MUST be exactly 1 step. Multi-step plans are auto-converted to Agent tier by the system.
+- YES Direct tier: "remind me to drink water", "send me hello every minute", "remind me at 3pm about dentist"
+- NOT Direct tier: "search news and send" (search + send = 2 steps → Agent), "check emails and notify" (read + classify + send → Agent)
 - You will produce an \`execution_plan\` with exactly one step
 
 **COMPLEX (Agent tier — LLM reasoning at fire time)** — Use when ANY of these are true:
+- The task needs MORE THAN ONE tool call (e.g. search → summarize → send)
 - The task reads data and acts on it (emails, calendar, search results, news)
 - The response depends on what the data contains
 - The task involves summarization, classification, or multi-step decisions

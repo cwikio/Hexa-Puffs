@@ -441,6 +441,25 @@ export class ToolRouter {
           };
         }
       }
+
+      // Safety net: multi-step execution_plan → force Agent tier
+      // Direct tier has no result piping between steps, so >1 step plans would
+      // send literal template strings like {{step1.result}} instead of actual data.
+      const plan = args.execution_plan;
+      if (Array.isArray(plan) && plan.length > 1) {
+        this.logger.warn('Multi-step execution_plan auto-converted to Agent tier', {
+          name: args.name, steps: plan.length,
+        });
+        if (!args.required_tools || (Array.isArray(args.required_tools) && args.required_tools.length === 0)) {
+          args.required_tools = [...new Set(
+            plan
+              .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
+              .map(s => s.toolName)
+              .filter((t): t is string => typeof t === 'string')
+          )];
+        }
+        delete args.execution_plan;
+      }
     }
 
     const route = this.routes.get(toolName);

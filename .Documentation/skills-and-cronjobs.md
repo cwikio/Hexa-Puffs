@@ -1,27 +1,27 @@
-# Skills and Cron Jobs
+# Skills (Scheduled Tasks)
 
-Annabelle has two independent scheduling systems. **Skills** are the primary system — they support both zero-cost direct execution (via `execution_plan`) and LLM-powered execution (via the Thinker). **Cron Jobs** are a legacy system that executes a single hardcoded tool call on a schedule with zero LLM involvement.
+Annabelle uses a unified **skills** system for all scheduled tasks. Skills support two execution tiers: **Direct tier** (zero LLM cost, single compiled tool call) and **Agent tier** (LLM-powered reasoning via Thinker). All skills are stored in SQLite via the Memorizer MCP and scheduled via Inngest.
 
-## Comparison
+## Execution Tiers
 
-| | Skills (Direct tier) | Skills (Agent tier) | Cron Jobs |
-|---|---|---|---|
-| **LLM involved** | No — direct tool call | Yes — Thinker reasons through instructions | No — direct tool call |
-| **Use for** | Static reminders, fixed notifications | Multi-step workflows, decision-making | Legacy fixed actions |
-| **Storage** | SQLite (`~/.annabelle/data/memory.db`, table `skills`) | Same | JSON files (`~/.annabelle/data/jobs/`) |
-| **Managed by** | Memorizer MCP (`memory_store_skill`, etc.) | Same | Orchestrator (`create_job`, etc.) |
-| **Scheduling** | `skillSchedulerFunction` (Inngest, every minute) | Same | `cronJobPollerFunction` (Inngest, every minute) |
-| **Examples** | "Send 'Drink water!' at 9am" | "Check inbox, summarize urgent emails" | Legacy: "Send 'Good morning!'" |
-| **Cost** | Zero — just a tool call | LLM tokens per execution | Zero — just a tool call |
-| **Complexity** | Single tool call, fixed parameters | Can call multiple tools, branch on content | Single tool call, fixed parameters |
+| | Direct Tier | Agent Tier |
+|---|---|---|
+| **LLM involved** | No — direct tool call | Yes — Thinker reasons through instructions |
+| **Use for** | Static reminders, fixed notifications | Multi-step workflows, decision-making, content analysis |
+| **Cost** | Zero — just a tool call | LLM tokens per execution |
+| **Complexity** | Single tool call, fixed parameters | Can call multiple tools, branch on content |
+| **Key field** | `execution_plan` (compiled steps) | `instructions` (natural language) |
+| **Examples** | "Send 'Drink water!' at 9am" | "Check inbox, summarize urgent emails" |
 
-**Rule of thumb**: For fixed actions (reminders, static messages), create a skill with an `execution_plan` (Direct tier). For tasks that read data and make decisions, create a skill with `instructions` only (Agent tier). Prefer skills over cron jobs for all new work.
+**Rule of thumb**: For fixed actions (reminders, static messages), create a skill with an `execution_plan` (Direct tier). For tasks that read data and make decisions, create a skill with `instructions` only (Agent tier).
+
+**Safety net**: If an `execution_plan` with more than 1 step is submitted, the system auto-converts it to Agent tier (strips the plan, populates `required_tools` from the plan's tool names). Direct tier does not support result piping between steps.
 
 ---
 
 ## Skills
 
-Skills are **intelligent scheduled behaviors** powered by the Thinker LLM. When a skill fires, the Orchestrator sends the skill's instructions to the Thinker, which reasons through them, calls tools, makes decisions, and optionally notifies you of the result.
+Skills are **autonomous scheduled behaviors**. Simple skills (Direct tier) execute a single compiled tool call with zero LLM cost. Complex skills (Agent tier) dispatch instructions to the Thinker, which reasons through them, calls tools, makes decisions, and produces a result.
 
 ### Creating a skill
 
@@ -240,104 +240,13 @@ Event-driven skills (playbook): `email-triage`, `email-compose`, `schedule-meeti
 
 ---
 
-## Cron Jobs
-
-Cron jobs are **simple, dumb scheduled actions**. They execute a single hardcoded tool call on a schedule with no LLM involvement.
-
-### Creating a cron job
-
-**1. Ask the Thinker via Telegram**:
-- "Remind me to drink water every hour"
-- "Send me 'Stand up!' every 30 minutes during work hours"
-
-The Thinker uses the `cron-scheduling` playbook to decide whether to create a cron job or a skill based on complexity.
-
-**2. Call the tool directly**:
-```
-create_job({
-  name: "Daily water reminder",
-  type: "cron",
-  cronExpression: "0 9 * * *",
-  action: {
-    type: "tool_call",
-    toolName: "telegram_send_message",
-    parameters: {
-      chat_id: "123456789",
-      message: "Drink water!"
-    }
-  }
-})
-```
-
-Timezone defaults to the system timezone. Optional fields: `maxRuns` (auto-disable after N runs), `expiresAt` (ISO date to auto-disable).
-
-### Managing cron jobs
-
-| Tool | Purpose |
-|------|---------|
-| `create_job` | Create a new cron or scheduled job |
-| `list_jobs` | List all jobs |
-| `get_job` | Get a single job by ID |
-| `delete_job` | Delete a job by ID |
-
-### Job types
-
-| Type | Description |
-|------|-------------|
-| `cron` | Recurring — fires on a cron expression schedule |
-| `scheduled` | One-shot — fires once at a specific datetime, then stays as a record |
-
-### How a cron job executes
-
-1. `cronJobPollerFunction` runs every minute via Inngest
-2. Loads all enabled cron jobs from `~/.annabelle/data/jobs/`
-3. For each job, uses `croner` to check if the cron expression fires in the current minute
-4. Checks expiration limits (`maxRuns`, `expiresAt`)
-5. Calls `executeAction()` which directly routes the tool call via `ToolRouter`
-6. Updates `lastRunAt`, `runCount` in the job file
-7. On failure: sends Telegram notification and stores error in Memory MCP
-
-### Job file format
-
-```json
-{
-  "id": "job_1770880402842_t36thucch",
-  "name": "Daily water reminder",
-  "type": "cron",
-  "cronExpression": "0 9 * * *",
-  "timezone": "America/New_York",
-  "action": {
-    "type": "tool_call",
-    "toolName": "telegram_send_message",
-    "parameters": {
-      "chat_id": "123456789",
-      "message": "Drink water!"
-    }
-  },
-  "enabled": true,
-  "createdAt": "2026-02-12T07:13:22.842Z",
-  "createdBy": "user",
-  "runCount": 5,
-  "lastRunAt": "2026-02-13T09:00:00.363Z",
-  "maxRuns": 10,
-  "expiresAt": "2026-03-01T00:00:00Z"
-}
-```
-
-### Dedup protection
-
-If a job with the same name was created within the last 60 seconds, the system returns the existing job instead of creating a duplicate. This prevents LLM retry loops from creating multiple identical jobs.
-
----
-
 ## Other Inngest Functions
 
-Beyond the two schedulers, the Orchestrator registers these Inngest functions:
+Beyond the skill scheduler, the Orchestrator registers these Inngest functions:
 
 | Function | Schedule | Purpose |
 |----------|----------|---------|
 | `backgroundJobFunction` | Event-driven | Executes one-off background tasks (queued via `queue_task` tool) |
-| `cronJobFunction` | Event-driven | Executes a single cron job (dispatched by the poller) |
 | `conversationBackfillFunction` | Manual trigger | Extracts facts from old conversations that were never processed |
 | `memorySynthesisFunction` | Sun 3:00 AM | Weekly fact consolidation — merges duplicates, resolves contradictions |
 | `healthReportFunction` | Every 6 hours | Runs `/diagnose` checks, compares with last report, sends Telegram alert on changes |
@@ -350,7 +259,6 @@ The `skillSchedulerFunction` also includes a rate-limited Ollama health check. O
 
 ## Timezone handling
 
-- **Skills**: Timezone is auto-injected by the Memorizer when a skill is created or updated. If `trigger_config` has a `schedule` (cron expression) but no `timezone`, the system timezone is added automatically. User-specified timezones are respected.
-- **Cron Jobs**: Timezone defaults to the system timezone in the `CreateJobSchema` (via `SYSTEM_TIMEZONE`).
+- Timezone is auto-injected by the Memorizer when a skill is created or updated. If `trigger_config` has a `schedule` (cron expression) but no `timezone`, the system timezone is added automatically. User-specified timezones are respected.
 - **System timezone**: Detected at runtime via `Intl.DateTimeFormat().resolvedOptions().timeZone`.
 - The Thinker's playbook instructs the LLM to omit timezone (auto-detected) unless the user specifies one.

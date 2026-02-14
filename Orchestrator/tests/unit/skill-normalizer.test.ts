@@ -342,6 +342,97 @@ describe('normalizeSkillInput', () => {
   });
 });
 
+/**
+ * Tests for the multi-step execution_plan safety net.
+ *
+ * This mirrors the logic in ToolRouter.routeToolCall() that strips
+ * execution_plan when it has >1 step, forcing Agent tier execution.
+ */
+describe('Multi-step execution_plan safety net', () => {
+  /** Mirrors the safety net logic from tool-router.ts:routeToolCall */
+  function applyMultiStepSafetyNet(args: Record<string, unknown>): Record<string, unknown> {
+    const plan = args.execution_plan;
+    if (Array.isArray(plan) && plan.length > 1) {
+      if (!args.required_tools || (Array.isArray(args.required_tools) && args.required_tools.length === 0)) {
+        args.required_tools = [...new Set(
+          plan
+            .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
+            .map(s => s.toolName)
+            .filter((t): t is string => typeof t === 'string')
+        )];
+      }
+      delete args.execution_plan;
+    }
+    return args;
+  }
+
+  it('should strip 2-step execution_plan and populate required_tools', () => {
+    const args = {
+      name: 'news-and-send',
+      instructions: 'Search AI news and send via Telegram',
+      execution_plan: [
+        { id: 'step1', toolName: 'searcher_web_search', parameters: { query: 'AI news' } },
+        { id: 'step2', toolName: 'telegram_send_message', parameters: { message: '{{step1.result}}' } },
+      ],
+    };
+    const result = applyMultiStepSafetyNet(args);
+    expect(result.execution_plan).toBeUndefined();
+    expect(result.required_tools).toEqual(['searcher_web_search', 'telegram_send_message']);
+  });
+
+  it('should preserve single-step execution_plan', () => {
+    const plan = [
+      { id: 'step1', toolName: 'telegram_send_message', parameters: { message: 'hello' } },
+    ];
+    const args = {
+      name: 'hello-reminder',
+      instructions: 'Send hello',
+      execution_plan: plan,
+    };
+    const result = applyMultiStepSafetyNet(args);
+    expect(result.execution_plan).toEqual(plan);
+  });
+
+  it('should not overwrite existing required_tools when stripping multi-step plan', () => {
+    const args = {
+      name: 'news-and-send',
+      instructions: 'Search and send',
+      required_tools: ['searcher_news_search', 'telegram_send_message'],
+      execution_plan: [
+        { id: 'step1', toolName: 'searcher_web_search', parameters: { query: 'AI' } },
+        { id: 'step2', toolName: 'telegram_send_message', parameters: { message: 'done' } },
+      ],
+    };
+    const result = applyMultiStepSafetyNet(args);
+    expect(result.execution_plan).toBeUndefined();
+    expect(result.required_tools).toEqual(['searcher_news_search', 'telegram_send_message']);
+  });
+
+  it('should deduplicate tool names extracted from plan', () => {
+    const args = {
+      name: 'double-send',
+      instructions: 'Send two messages',
+      execution_plan: [
+        { id: 'step1', toolName: 'telegram_send_message', parameters: { message: 'first' } },
+        { id: 'step2', toolName: 'telegram_send_message', parameters: { message: 'second' } },
+      ],
+    };
+    const result = applyMultiStepSafetyNet(args);
+    expect(result.execution_plan).toBeUndefined();
+    expect(result.required_tools).toEqual(['telegram_send_message']);
+  });
+
+  it('should not touch args without execution_plan', () => {
+    const args = {
+      name: 'agent-skill',
+      instructions: 'Check emails and summarize',
+      required_tools: ['gmail_list_messages'],
+    };
+    const result = applyMultiStepSafetyNet(args);
+    expect(result).toEqual(args);
+  });
+});
+
 describe('validateCronExpression', () => {
   it('should accept valid 5-field cron expression', () => {
     expect(validateCronExpression('* * * * *')).toEqual({ valid: true });
