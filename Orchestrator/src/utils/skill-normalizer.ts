@@ -106,6 +106,11 @@ export function normalizeSkillInput(args: Record<string, unknown>): Record<strin
     result.notify_on_completion = result.notify_on_completion === 'true';
   }
 
+  // 7. Default agent_id to 'thinker' (the skill poller filters by this)
+  if (!result.agent_id) {
+    result.agent_id = 'thinker';
+  }
+
   return result;
 }
 
