@@ -1,21 +1,21 @@
 # Skills and Cron Jobs
 
-Annabelle has two independent scheduling systems. **Skills** are LLM-powered — when they fire, the Thinker receives natural language instructions, reasons through them, calls multiple tools, and makes decisions. **Cron Jobs** are dumb — they execute a single hardcoded tool call on a schedule with zero LLM involvement. Skills cost tokens; cron jobs are free. Use skills for anything that requires reading data and deciding what to do. Use cron jobs for fixed reminders and static notifications.
+Annabelle has two independent scheduling systems. **Skills** are the primary system — they support both zero-cost direct execution (via `execution_plan`) and LLM-powered execution (via the Thinker). **Cron Jobs** are a legacy system that executes a single hardcoded tool call on a schedule with zero LLM involvement.
 
 ## Comparison
 
-| | Skills | Cron Jobs |
-|---|---|---|
-| **LLM involved** | Yes — Thinker reasons through instructions | No — direct tool call |
-| **Use for** | Multi-step workflows, decision-making, content analysis | Static reminders, fixed notifications |
-| **Storage** | SQLite (`~/.annabelle/data/memory.db`, table `skills`) | JSON files (`~/.annabelle/data/jobs/`) |
-| **Managed by** | Memorizer MCP (`memory_store_skill`, etc.) | Orchestrator (`create_job`, etc.) |
-| **Scheduling** | `skillSchedulerFunction` (Inngest, every minute) | `cronJobPollerFunction` (Inngest, every minute) |
-| **Examples** | "Check inbox, summarize urgent emails" | "Send 'Good morning!' at 9am" |
-| **Cost** | LLM tokens per execution | Zero — just a tool call |
-| **Complexity** | Can call multiple tools, branch on content | Single tool call, fixed parameters |
+| | Skills (Direct tier) | Skills (Agent tier) | Cron Jobs |
+|---|---|---|---|
+| **LLM involved** | No — direct tool call | Yes — Thinker reasons through instructions | No — direct tool call |
+| **Use for** | Static reminders, fixed notifications | Multi-step workflows, decision-making | Legacy fixed actions |
+| **Storage** | SQLite (`~/.annabelle/data/memory.db`, table `skills`) | Same | JSON files (`~/.annabelle/data/jobs/`) |
+| **Managed by** | Memorizer MCP (`memory_store_skill`, etc.) | Same | Orchestrator (`create_job`, etc.) |
+| **Scheduling** | `skillSchedulerFunction` (Inngest, every minute) | Same | `cronJobPollerFunction` (Inngest, every minute) |
+| **Examples** | "Send 'Drink water!' at 9am" | "Check inbox, summarize urgent emails" | Legacy: "Send 'Good morning!'" |
+| **Cost** | Zero — just a tool call | LLM tokens per execution | Zero — just a tool call |
+| **Complexity** | Single tool call, fixed parameters | Can call multiple tools, branch on content | Single tool call, fixed parameters |
 
-**Rule of thumb**: If the task reads data and makes decisions, use a skill. If it's a fixed action with no branching, use a cron job.
+**Rule of thumb**: For fixed actions (reminders, static messages), create a skill with an `execution_plan` (Direct tier). For tasks that read data and make decisions, create a skill with `instructions` only (Agent tier). Prefer skills over cron jobs for all new work.
 
 ---
 
@@ -37,46 +37,58 @@ Tell the Thinker what you want scheduled and it will create the skill for you. E
 The Thinker uses the `cron-scheduling` playbook, which follows a structured decision flow:
 
 ```
-User: "Check my email every 3 hours"
+User: "Remind me in 5 minutes to drink water"
          │
     ┌────▼────────────────────────────────────────────┐
     │  THINKER (cron-scheduling playbook)              │
     │                                                  │
-    │  Step 1: Classify — cron job or skill?           │
-    │    • Fixed action, no decisions → CRON JOB       │
-    │    • Reads data, makes decisions → SKILL         │
+    │  Step 1: Parse schedule                          │
+    │    • "in 5 minutes" → { in_minutes: 5 }         │
+    │    • "at 3pm" → { at: "2026-02-14T15:00:00" }   │
+    │    • "every day at 9am" → { schedule: "0 9 *" }  │
     │                                                  │
-    │  CRON JOB path:                                  │
-    │    → Parse schedule → create_job                 │
+    │  Step 2: Classify — SIMPLE or COMPLEX?           │
+    │    • Fixed action, no decisions → SIMPLE          │
+    │      → Build execution_plan (Direct tier)        │
+    │    • Reads data, makes decisions → COMPLEX        │
+    │      → Write instructions (Agent tier)            │
     │                                                  │
-    │  SKILL path:                                     │
-    │    → Call get_tool_catalog (discover tools)       │
-    │    → Select required tools from catalog           │
-    │    → Parse schedule, write instructions           │
-    │    → Call memory_store_skill                      │
+    │  Step 3: Call memory_store_skill                  │
     └──────────────────────┬───────────────────────────┘
                            │
     ┌──────────────────────▼───────────────────────────┐
     │  ORCHESTRATOR                                     │
     │                                                  │
-    │  get_tool_catalog: returns all tools grouped      │
-    │  by MCP (name + short description only)           │
-    │                                                  │
-    │  Validation: when memory_store_skill is called,   │
-    │  checks required_tools against ToolRouter.        │
-    │  Warns on unknown tools (still stores the skill). │
+    │  Normalizer: converts in_minutes → at timestamp   │
+    │  Validates cron expressions via croner             │
+    │  Checks required_tools against ToolRouter          │
     └──────────────────────────────────────────────────┘
 ```
 
 The key steps for skill creation:
 
-1. **Classify**: The playbook decides if the request needs an LLM (skill) or is a simple fixed action (cron job)
-2. **Discover tools**: Calls `get_tool_catalog` to get all available tools grouped by MCP with short descriptions
-3. **Select tools**: Picks the exact tool names needed from the catalog (no guessing)
-4. **Create**: Calls `memory_store_skill` with validated `required_tools`
-5. **Validate**: The Orchestrator checks that all `required_tools` actually exist and warns if any are unknown
+1. **Parse schedule**: Determine one-shot (`in_minutes`, `at`) vs recurring (`schedule`, `interval_minutes`)
+2. **Classify**: Simple fixed action → Direct tier with `execution_plan`. Complex decision-making → Agent tier with `instructions`
+3. **Discover tools**: Calls `get_tool_catalog` to get all available tools
+4. **Create**: Calls `memory_store_skill` — the Orchestrator normalizer converts `in_minutes`/`in_hours` to `at` timestamps and validates cron expressions
 
 **2. Call the tool directly** (from any MCP client):
+
+Direct tier example (zero LLM cost — static tool call):
+```
+memory_store_skill({
+  name: "Drink water reminder",
+  trigger_type: "cron",
+  trigger_config: { in_minutes: 30 },
+  instructions: "Send a reminder to drink water",
+  required_tools: ["telegram_send_message"],
+  execution_plan: [{ id: "step1", toolName: "telegram_send_message", parameters: { chat_id: "8304042211", message: "Drink water!" } }],
+  notify_on_completion: false,
+  agent_id: "thinker"
+})
+```
+
+Agent tier example (LLM reasoning at fire time):
 ```
 memory_store_skill({
   name: "Morning Briefing",
@@ -93,10 +105,12 @@ memory_store_skill({
 **Required fields**: `name`, `trigger_type`, `instructions`
 
 **Optional fields**:
-- `trigger_config` — schedule or interval (see formats below). Omit for manual/event skills.
+- `trigger_config` — schedule, interval, `at`, or `in_minutes` (see formats below). Omit for manual/event skills.
 - `required_tools` — exact tool names from `get_tool_catalog`. Used for auto-enable logic and validated at creation time.
-- `max_steps` — max LLM reasoning steps (default: 10)
-- `notify_on_completion` — send Telegram notification when done (default: true)
+- `execution_plan` — compiled array of tool call steps. When present, skill uses Direct tier (zero LLM cost). Each step: `{ id, toolName, parameters }`.
+- `max_steps` — max LLM reasoning steps for Agent tier (default: 10)
+- `notify_on_completion` — send Telegram notification when done (default: true). Set to false for Direct tier skills whose `execution_plan` already sends a message.
+- `notify_interval_minutes` — minimum minutes between notifications (0 = use global default from `SKILL_NOTIFY_INTERVAL_MINUTES` env var)
 - `agent_id` — which agent owns the skill (default: "main", most cron skills use "thinker")
 - `enabled` — set to false to create a skill that auto-enables later when its tools become available
 - `description` — brief description of what the skill does
@@ -121,49 +135,81 @@ memory_store_skill({
 
 ### Cron trigger_config formats
 
-**Cron expression** (precise scheduling):
+**Cron expression** (precise recurring scheduling):
 ```json
 { "schedule": "0 9 * * *" }
 ```
 Timezone is **auto-injected** by the Memorizer at creation time using the system's timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`). Only specify `"timezone"` if the user explicitly requests a different one.
 
-**Interval** (every-N-minutes):
+**Interval** (every-N-minutes recurring):
 ```json
 { "interval_minutes": 30 }
 ```
 Fires when `now - last_run_at >= interval_minutes`. No timezone needed.
 
+**One-shot absolute** (fires once at a specific time):
+```json
+{ "at": "2026-02-14T15:00:00" }
+```
+Fires once when `now >= at`, then auto-disables. Use for "remind me at 3pm" or "tomorrow at 9am."
+
+**One-shot relative** (fires once N minutes from now):
+```json
+{ "in_minutes": 10 }
+```
+The skill normalizer (`Orchestrator/src/utils/skill-normalizer.ts`) auto-converts this to an absolute `at` timestamp at creation time. Use for "remind me in 5 minutes" or "in an hour" (`{ "in_minutes": 60 }`). Also supports `{ "in_hours": 2 }`.
+
+**Important**: "remind me IN 5 minutes" = one-shot `{ "in_minutes": 5 }`. "remind me EVERY 5 minutes" = recurring `{ "schedule": "*/5 * * * *" }`. The `in_minutes` format exists specifically because LLMs tend to confuse these two patterns.
+
+### Execution tiers
+
+Skills have two execution tiers, selected automatically based on whether `execution_plan` is present:
+
+**Direct tier** (zero LLM cost) — when `execution_plan` is present:
+1. The scheduler reads the compiled tool call steps from `execution_plan`
+2. Executes them sequentially via `executeWorkflow()` in `Orchestrator/src/jobs/executor.ts`
+3. No LLM involved — just direct tool calls with static parameters
+4. Safety net: if `telegram_send_message` is called without `chat_id`, the executor auto-injects the default monitored chat from the channel manager
+
+**Agent tier** (LLM reasoning) — when `execution_plan` is absent:
+1. The scheduler dispatches the skill's `instructions` to the Thinker via `AgentManager.executeSkill()`
+2. The Thinker reads the instructions, calls tools, makes decisions, and produces a result
+3. Costs LLM tokens per execution
+
 ### How a skill executes
 
 1. `skillSchedulerFunction` runs every minute via Inngest
 2. Loads all enabled cron skills from Memorizer (`memory_list_skills`)
-3. For each skill, checks if it's due (cron expression match or interval elapsed)
-4. Applies failure cooldown (5 min backoff after errors)
-5. For meeting-related skills: runs a calendar pre-check (free/busy across all calendars)
-6. Dispatches the skill's `instructions` to the Thinker via `AgentManager.executeSkill()`
-7. The Thinker reads the instructions, calls tools (gmail, telegram, searcher, etc.), and produces a result
-8. Updates `last_run_at`, `last_run_status`, `last_run_summary` in the DB
-9. Sends a Telegram notification if `notify_on_completion` is true
+3. For each skill, checks if it's due (cron expression match, interval elapsed, or one-shot time reached)
+4. Applies failure cooldown (graduated backoff: 1, 5, 15, 60 min after consecutive errors)
+5. Pre-flight checks: calendar-aware for meeting skills, email-aware for email skills
+6. **Tier routing**: if `execution_plan` exists → Direct tier; otherwise → Agent tier
+7. Updates `last_run_at`, `last_run_status`, `last_run_summary` in the DB
+8. Sends a Telegram notification if `notify_on_completion` is true
+9. One-shot skills (`at` trigger) auto-disable after firing
 
 ### Schema
 
 ```
-id              INTEGER PRIMARY KEY
-agent_id        TEXT (default: "main", most skills use "thinker")
-name            TEXT (unique per agent)
-description     TEXT
-enabled         INTEGER (0/1)
-trigger_type    TEXT ("cron" | "event" | "manual")
-trigger_config  TEXT (JSON)
-instructions    TEXT (natural language for the LLM)
-required_tools  TEXT (JSON array of tool names)
-max_steps       INTEGER (default: 10, limits LLM reasoning steps)
-notify_on_completion  INTEGER (0/1)
-last_run_at     TEXT (ISO datetime)
-last_run_status TEXT ("success" | "error")
-last_run_summary TEXT
-created_at      TEXT
-updated_at      TEXT
+id                      INTEGER PRIMARY KEY
+agent_id                TEXT (default: "main", most skills use "thinker")
+name                    TEXT (unique per agent)
+description             TEXT
+enabled                 INTEGER (0/1)
+trigger_type            TEXT ("cron" | "event" | "manual")
+trigger_config          TEXT (JSON — schedule, interval_minutes, at, or in_minutes)
+instructions            TEXT (natural language for the LLM)
+required_tools          TEXT (JSON array of tool names)
+execution_plan          TEXT (JSON array of tool call steps — when present, uses Direct tier)
+max_steps               INTEGER (default: 10, limits LLM reasoning steps for Agent tier)
+notify_on_completion    INTEGER (0/1)
+notify_interval_minutes INTEGER (min minutes between notifications, 0 = global default)
+last_run_at             TEXT (ISO datetime)
+last_run_status         TEXT ("success" | "error")
+last_run_summary        TEXT
+last_notified_at        TEXT (ISO datetime)
+created_at              TEXT
+updated_at              TEXT
 ```
 
 ### Current active skills
@@ -184,8 +230,12 @@ Event-driven skills (playbook): `email-triage`, `email-compose`, `schedule-meeti
 ### Special behaviors
 
 - **Auto-enable**: Disabled skills with `required_tools` are automatically re-enabled when all their tools become available (e.g., after an MCP reconnects)
-- **Failure cooldown**: After a skill fails, it waits 5 minutes before retrying
-- **Calendar pre-check**: Meeting-related skills (name matches `/meeting|prep/i` AND requires `gmail_list_events`) check all calendars via free/busy API before dispatching to the Thinker. First empty check of the day sends a "no events" notification; subsequent empty checks skip silently.
+- **Graduated backoff**: After failures, retry delays increase: 1 → 5 → 15 → 60 minutes. Auto-disables after 5 consecutive failures. Counters reset on process restart.
+- **One-shot auto-disable**: Skills with `trigger_config.at` fire once and auto-disable after execution
+- **Calendar pre-check**: Meeting-related skills (name matches `/meeting|prep/i` AND requires `gmail_list_events`) check all calendars via free/busy API before dispatching. No meetings → skip silently (zero LLM cost).
+- **Email pre-check**: Email skills (name matches `/email/i` AND requires `gmail_get_new_emails`) skip if no new emails exist
+- **chat_id auto-injection**: Direct tier executor auto-injects `chat_id` for `telegram_send_message` calls that omit it, using the first monitored chat from the channel manager
+- **Skill normalizer**: The Orchestrator normalizes skill inputs at creation time (`Orchestrator/src/utils/skill-normalizer.ts`): re-nests flattened fields, converts `in_minutes`/`in_hours` to `at` timestamps, normalizes cron aliases, parses string fields to proper types
 - **Cost controls**: If the Thinker's token usage spikes during a skill, the agent is auto-paused and a notification is sent
 
 ---
