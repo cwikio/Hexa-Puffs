@@ -37,9 +37,13 @@ function checkSchedule(
       return { isDue: false, isOneShot: true };
     }
     if (now >= atTime) {
-      // Prevent double execution
+      // Prevent double execution — only skip if last run was AFTER the scheduled `at` time
+      // (allows re-firing when `at` is updated to a new future time)
       if (lastRunAt) {
-        return { isDue: false, isOneShot: true };
+        const lastRun = new Date(lastRunAt).getTime();
+        if (lastRun >= atTime.getTime()) {
+          return { isDue: false, isOneShot: true };
+        }
       }
       return { isDue: true, isOneShot: true };
     }
@@ -89,13 +93,25 @@ describe('One-shot (at) schedule', () => {
     expect(result.isOneShot).toBe(true);
   });
 
-  it('should NOT be due when already run (prevents double execution)', () => {
+  it('should NOT be due when already run AFTER the at time (prevents double execution)', () => {
     const result = checkSchedule(
       { at: '2026-02-13T10:00:00' },
-      '2026-02-13T10:01:00', // already ran
+      '2026-02-13T10:01:00', // ran after the at time
       new Date('2026-02-13T10:05:00'),
     );
     expect(result.isDue).toBe(false);
+    expect(result.isOneShot).toBe(true);
+  });
+
+  it('should be due when at is updated to a new future time after a previous run', () => {
+    // Scenario: skill originally had at=10:00, ran at 10:01. User updates at to 11:00.
+    // At 11:05, the skill should fire again because the new at (11:00) > last_run_at (10:01).
+    const result = checkSchedule(
+      { at: '2026-02-13T11:00:00' }, // updated to new future time
+      '2026-02-13T10:01:00',          // previous run from old at
+      new Date('2026-02-13T11:05:00'),
+    );
+    expect(result.isDue).toBe(true);
     expect(result.isOneShot).toBe(true);
   });
 

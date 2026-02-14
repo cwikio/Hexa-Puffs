@@ -249,9 +249,13 @@ export const skillSchedulerFunction = inngest.createFunction(
           isDue = true;
           isOneShot = true;
 
-          // Prevent double execution
+          // Prevent double execution — only skip if last run was AFTER the scheduled `at` time
+          // (allows re-firing when `at` is updated to a new future time)
           if (skill.last_run_at) {
-            isDue = false;
+            const lastRun = new Date(skill.last_run_at).getTime();
+            if (lastRun >= atTime.getTime()) {
+              isDue = false;
+            }
           }
         }
       } else if (triggerConfig?.schedule) {
