@@ -45,7 +45,7 @@ import {
   handleGetToolCatalog,
   type StandardResponse,
 } from '../tools/index.js';
-import { normalizeSkillInput, validateCronExpression } from '../utils/skill-normalizer.js';
+
 
 // Custom tools that are not passthrough (orchestrator-specific)
 const customToolDefinitions = [statusToolDefinition, ...jobToolDefinitions, spawnSubagentToolDefinition, getToolCatalogToolDefinition];
@@ -163,28 +163,7 @@ export async function handleCallTool(
         const routeInfo = toolRouter.getRouteInfo(name);
         logger.debug(`Routing to ${routeInfo?.mcpName}.${routeInfo?.originalName}`);
 
-        // Normalize skill input before storage (fixes common LLM mistakes)
-        if (name === 'memory_store_skill' || name === 'memory_update_skill') {
-          Object.assign(args, normalizeSkillInput(args));
-        }
-
-        // Validate cron expression before storage
-        if (name === 'memory_store_skill' || name === 'memory_update_skill') {
-          const tc = args?.trigger_config as Record<string, unknown> | undefined;
-          if (tc?.schedule && typeof tc.schedule === 'string') {
-            const cronCheck = validateCronExpression(tc.schedule);
-            if (!cronCheck.valid) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({
-                content: [{ type: 'text', text: JSON.stringify({
-                  success: false,
-                  error: `Invalid cron expression "${tc.schedule}": ${cronCheck.error}`,
-                })}],
-              }));
-              return;
-            }
-          }
-        }
+        // Normalization + cron validation now handled inside toolRouter.routeToolCall()
 
         const callResult = await toolRouter.routeToolCall(name, args || {});
 
