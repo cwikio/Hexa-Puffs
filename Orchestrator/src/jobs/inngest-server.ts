@@ -2,8 +2,24 @@ import { serve } from 'inngest/express';
 import express from 'express';
 import { createServer as createHttpServer } from 'http';
 import { inngest } from './inngest-client.js';
-import { jobFunctions } from './functions.js';
+import { backgroundJobFunction } from './background-job.js';
+import { cronJobFunction } from './cron-job.js';
+import { cronJobPollerFunction } from './cron-poller.js';
+import { skillSchedulerFunction } from './skill-scheduler.js';
+import { conversationBackfillFunction } from './backfill.js';
+import { memorySynthesisFunction } from './memory-synthesis.js';
+import { healthReportFunction } from './health-report.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
+
+const jobFunctions = [
+  backgroundJobFunction,
+  cronJobFunction,
+  cronJobPollerFunction,
+  skillSchedulerFunction,
+  conversationBackfillFunction,
+  memorySynthesisFunction,
+  healthReportFunction,
+];
 
 export function startInngestServer(port: number = 3000): void {
   const app = express();
