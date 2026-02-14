@@ -48,6 +48,39 @@ Two test files cover the scheduler pipeline end-to-end:
 | **Graduated backoff** | Unit-tested in `graduated-backoff.test.ts` (8 tests). E2E would need 5+ Inngest cycles (80+ min). |
 | **SKILL.md auto-scheduling** | Unit-tested in `skill-loader-schedule.test.ts`. No existing SKILL.md files have `trigger_config`. |
 
-## Key observation
+## Bugs found during live testing (Feb 14, 2026)
 
-The input normalizer is already working at execution time — LLM stored `send_telegram` (wrong name), but the Direct executor auto-normalized it to `telegram_send_message`. Validation warned at creation but didn't block, which is correct since the normalizer fixes it at runtime.
+### Bug 1: Direct tier has no result piping between steps
+- **Symptom**: `ai_news_every_minute` (skill 1303) sent literal `{{search_news.result}}` to Telegram
+- **Root cause**: `executeWorkflow()` in `executor.ts:95-126` passes step parameters as-is. No template interpolation between steps.
+- **Deeper cause**: LLM classified "search AI news and send" as Direct tier despite the playbook saying data-reading tasks = Agent tier
+- **Fix**: Two-part:
+  1. **Playbook**: reinforce that multi-step plans with data dependencies = Agent tier (guidance is correct but LLM ignored it)
+  2. **Safety net**: in `tool-router.ts:428` (pre-storage proxy), auto-convert `execution_plan` with >1 step to Agent tier — strip `execution_plan`, keep `instructions` + `required_tools`
+- **Files**: `Orchestrator/src/jobs/executor.ts`, `Orchestrator/src/routing/tool-router.ts`, `Thinker/src/agent/playbook-seed.ts`
+
+### Bug 2: Pre-meeting notification fires when no meetings are soon
+Two sub-causes:
+
+**2a: Calendar pre-flight window too wide**
+- `skill-scheduler.ts:327` uses `endOfDay` (23:59:59) instead of 30-minute lookahead
+- At 5 AM with a 6 PM meeting, pre-flight passes → skill runs → "No meetings in next 30 min"
+- **Fix**: change `endOfDay` to `new Date(now.getTime() + 30 * 60 * 1000)`
+- **File**: `Orchestrator/src/jobs/skill-scheduler.ts:327`
+
+**2b: Trivial result filter was removed**
+- Commit `f14e11e` (Feb 13) removed the `trivialPatterns` regex array from `loop.ts:1424`
+- Previously filtered "No meetings", "No new emails", "All caught up" → skipped notification
+- Now every skill result gets sent as Telegram notification unconditionally
+- **Fix**: restore the trivial result filter
+- **File**: `Thinker/src/agent/loop.ts:1424`
+
+### Stale documentation
+- `~/.annabelle/documentation/skills-and-cronjobs.md` still describes dual system (Skills + Cron Jobs)
+- Needs updating to reflect v3 (everything is a skill, Direct/Agent tiers, `execution_plan`)
+
+## Key observations
+
+- The input normalizer works at execution time — `send_telegram` auto-normalized to `telegram_send_message`
+- Validation warned at creation but didn't block, which is correct since the normalizer fixes it at runtime
+- The playbook prompt has correct tier classification rules, but the LLM ignored them for the "search AI news" case — a proxy-level safety net is needed

@@ -438,10 +438,11 @@ Call **get_tool_catalog** to see all available tools in the system. Use EXACT to
 ## STEP 2: CLASSIFY — SIMPLE OR COMPLEX?
 
 **SIMPLE (Direct tier — zero LLM cost)** — Use when ALL of these are true:
-- The action is a fixed tool call with static parameters (no dynamic content)
+- The action is a SINGLE fixed tool call with static parameters (no dynamic content)
 - No data reading, no decisions, no reasoning needed
+- execution_plan must be exactly 1 step. If you need multiple steps, use Agent tier.
 - Examples: "remind me to drink water", "send me hello every minute", "remind me at 3pm about dentist"
-- You will produce an \`execution_plan\` — a compiled array of tool calls with static params
+- You will produce an \`execution_plan\` with exactly one step
 
 **COMPLEX (Agent tier — LLM reasoning at fire time)** — Use when ANY of these are true:
 - The task reads data and acts on it (emails, calendar, search results, news)
@@ -455,7 +456,7 @@ Call **get_tool_catalog** to see all available tools in the system. Use EXACT to
    - "every day at 9am" → \`{ "schedule": "0 9 * * *" }\`
    - "every 5 minutes" → \`{ "schedule": "*/5 * * * *" }\`
    - "remind me at 3pm" → \`{ "at": "2026-02-13T15:00:00" }\` (one-shot, compute the ISO datetime)
-2. Build the execution_plan — an array of steps:
+2. Build the execution_plan — exactly one step:
    \`[{ "id": "step1", "toolName": "telegram_send_message", "parameters": { "message": "Drink water!" } }]\`
 3. Confirm with user: "I'll create a skill that sends '[message]' every day at 9am. No LLM needed — runs instantly. OK?"
 4. Call memory_store_skill with:
