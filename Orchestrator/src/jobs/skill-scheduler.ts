@@ -14,6 +14,15 @@ import {
   MAX_CONSECUTIVE_FAILURES,
 } from '../utils/skill-normalizer.js';
 
+/** Default minimum minutes between Telegram notifications per skill.
+ *  Skills still run at their normal interval — only notifications are throttled.
+ *  Override globally via SKILL_NOTIFY_INTERVAL_MINUTES env var,
+ *  or per-skill via notify_interval_minutes column in the skills table. */
+const DEFAULT_NOTIFY_INTERVAL_MINUTES = parseInt(
+  process.env.SKILL_NOTIFY_INTERVAL_MINUTES || '60',
+  10,
+);
+
 interface SkillRecord {
   id: number;
   name: string;
@@ -22,8 +31,10 @@ interface SkillRecord {
   execution_plan?: string | null;
   max_steps?: number;
   notify_on_completion?: boolean;
+  notify_interval_minutes?: number;
   last_run_at?: string | null;
   last_run_status?: string | null;
+  last_notified_at?: string | null;
   required_tools?: string[] | string;
 }
 
@@ -550,14 +561,25 @@ export const skillSchedulerFunction = inngest.createFunction(
             throw new Error(`Agent "${agentId}" client not available after ensureRunning`);
           }
 
-          // Auto-detect notification chat from channel manager
+          // Auto-detect notification chat from channel manager (throttled)
           let notifyChatId: string | undefined;
           if (skill.notify_on_completion) {
-            const channelManager = orchestrator.getChannelManager();
-            const telegramAdapter = channelManager?.getAdapter('telegram');
-            const chatIds = telegramAdapter?.getMonitoredChatIds() ?? [];
-            if (chatIds.length > 0) {
-              notifyChatId = chatIds[0];
+            const intervalMin = skill.notify_interval_minutes || DEFAULT_NOTIFY_INTERVAL_MINUTES;
+            const lastNotified = skill.last_notified_at ? new Date(skill.last_notified_at).getTime() : 0;
+            const elapsedMin = (Date.now() - lastNotified) / 60_000;
+
+            if (elapsedMin >= intervalMin) {
+              const channelManager = orchestrator.getChannelManager();
+              const telegramAdapter = channelManager?.getAdapter('telegram');
+              const chatIds = telegramAdapter?.getMonitoredChatIds() ?? [];
+              if (chatIds.length > 0) {
+                notifyChatId = chatIds[0];
+              }
+            } else {
+              logger.debug('Notification throttled', {
+                skillId: skill.id, name: skill.name,
+                intervalMin, elapsedMin: Math.round(elapsedMin),
+              });
             }
           }
 
@@ -590,6 +612,7 @@ export const skillSchedulerFunction = inngest.createFunction(
                 last_run_at: new Date().toISOString(),
                 last_run_status: 'success',
                 last_run_summary: result.response || 'No summary',
+                ...(notifyChatId ? { last_notified_at: new Date().toISOString() } : {}),
               });
             } catch (updateError) {
               logger.error('Failed to update skill status', { skillId: skill.id, error: updateError });

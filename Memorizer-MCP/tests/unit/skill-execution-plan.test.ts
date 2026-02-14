@@ -84,9 +84,11 @@ describe('Skill execution_plan support', () => {
         execution_plan TEXT DEFAULT NULL,
         max_steps INTEGER NOT NULL DEFAULT 10,
         notify_on_completion INTEGER NOT NULL DEFAULT 1,
+        notify_interval_minutes INTEGER DEFAULT 0,
         last_run_at TEXT,
         last_run_status TEXT,
         last_run_summary TEXT,
+        last_notified_at TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )

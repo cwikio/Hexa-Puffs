@@ -153,6 +153,12 @@ ALTER TABLE facts ADD COLUMN last_accessed_at TEXT DEFAULT NULL;
 
 -- Add execution_plan column for direct-tier skill execution (v3 tiered architecture)
 ALTER TABLE skills ADD COLUMN execution_plan TEXT DEFAULT NULL;
+
+-- Notification throttling: 0 = use global default, >0 = per-skill override in minutes
+ALTER TABLE skills ADD COLUMN notify_interval_minutes INTEGER DEFAULT 0;
+
+-- Tracks when the last Telegram notification was sent for this skill
+ALTER TABLE skills ADD COLUMN last_notified_at TEXT DEFAULT NULL;
 `;
 
 export interface ConversationRow {
@@ -196,9 +202,11 @@ export interface SkillRow {
   execution_plan: string | null;
   max_steps: number;
   notify_on_completion: number;
+  notify_interval_minutes: number;
   last_run_at: string | null;
   last_run_status: string | null;
   last_run_summary: string | null;
+  last_notified_at: string | null;
   created_at: string;
   updated_at: string;
 }

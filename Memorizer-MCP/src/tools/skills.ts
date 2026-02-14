@@ -32,9 +32,11 @@ function formatSkill(row: SkillRow) {
     execution_plan: row.execution_plan ? JSON.parse(row.execution_plan) : null,
     max_steps: row.max_steps,
     notify_on_completion: row.notify_on_completion === 1,
+    notify_interval_minutes: row.notify_interval_minutes ?? 0,
     last_run_at: row.last_run_at,
     last_run_status: row.last_run_status,
     last_run_summary: row.last_run_summary,
+    last_notified_at: row.last_notified_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -103,6 +105,11 @@ export const storeSkillToolDefinition = {
         type: 'boolean',
         description: 'Send a Telegram notification when skill finishes (default: true)',
         default: true,
+      },
+      notify_interval_minutes: {
+        type: 'number',
+        description: 'Minimum minutes between notifications. 0 = use global default (SKILL_NOTIFY_INTERVAL_MINUTES env var, typically 60). Set >0 to override per-skill.',
+        default: 0,
       },
       enabled: {
         type: 'boolean',
@@ -173,9 +180,11 @@ export const updateSkillToolDefinition = {
       execution_plan: { type: 'array', items: { type: 'object' }, description: 'New execution plan (compiled tool call steps)' },
       max_steps: { type: 'number', description: 'New max steps' },
       notify_on_completion: { type: 'boolean', description: 'New notification setting' },
+      notify_interval_minutes: { type: 'number', description: 'Minimum minutes between notifications (0 = global default)' },
       last_run_at: { type: 'string', description: 'ISO datetime of last run' },
       last_run_status: { type: 'string', description: 'Last run status (success/error)' },
       last_run_summary: { type: 'string', description: 'Summary of the last run' },
+      last_notified_at: { type: 'string', description: 'ISO datetime of last notification sent' },
     },
     required: ['skill_id'],
   },
@@ -218,6 +227,7 @@ export const StoreSkillInputSchema = z.object({
   execution_plan: z.array(ExecutionStepSchema).optional(),
   max_steps: z.number().positive().default(10),
   notify_on_completion: z.boolean().default(true),
+  notify_interval_minutes: z.number().int().min(0).default(0),
   enabled: z.boolean().default(true),
 });
 
@@ -243,9 +253,11 @@ export const UpdateSkillInputSchema = z.object({
   execution_plan: z.array(ExecutionStepSchema).optional(),
   max_steps: z.number().positive().optional(),
   notify_on_completion: z.boolean().optional(),
+  notify_interval_minutes: z.number().int().min(0).optional(),
   last_run_at: z.string().optional(),
   last_run_status: z.string().optional(),
   last_run_summary: z.string().optional(),
+  last_notified_at: z.string().optional(),
 });
 
 export const DeleteSkillInputSchema = z.object({
@@ -265,7 +277,8 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
 
   const {
     agent_id, name, description, trigger_type, trigger_config,
-    instructions, required_tools, execution_plan, max_steps, notify_on_completion, enabled,
+    instructions, required_tools, execution_plan, max_steps,
+    notify_on_completion, notify_interval_minutes, enabled,
   } = parseResult.data;
 
   // Auto-inject system timezone into cron trigger_config if not specified
@@ -288,8 +301,8 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
 
     const result = db
       .prepare(
-        `INSERT INTO skills (agent_id, name, description, trigger_type, trigger_config, instructions, required_tools, execution_plan, max_steps, notify_on_completion, enabled)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO skills (agent_id, name, description, trigger_type, trigger_config, instructions, required_tools, execution_plan, max_steps, notify_on_completion, notify_interval_minutes, enabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         agent_id,
@@ -302,6 +315,7 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
         execution_plan ? JSON.stringify(execution_plan) : null,
         max_steps,
         notify_on_completion ? 1 : 0,
+        notify_interval_minutes,
         enabled ? 1 : 0,
       );
 
@@ -477,6 +491,10 @@ export async function handleUpdateSkill(args: unknown): Promise<StandardResponse
       setClauses.push('notify_on_completion = ?');
       values.push(updates.notify_on_completion ? 1 : 0);
     }
+    if (updates.notify_interval_minutes !== undefined) {
+      setClauses.push('notify_interval_minutes = ?');
+      values.push(updates.notify_interval_minutes);
+    }
     if (updates.last_run_at !== undefined) {
       setClauses.push('last_run_at = ?');
       values.push(updates.last_run_at);
@@ -488,6 +506,10 @@ export async function handleUpdateSkill(args: unknown): Promise<StandardResponse
     if (updates.last_run_summary !== undefined) {
       setClauses.push('last_run_summary = ?');
       values.push(updates.last_run_summary);
+    }
+    if (updates.last_notified_at !== undefined) {
+      setClauses.push('last_notified_at = ?');
+      values.push(updates.last_notified_at);
     }
 
     if (setClauses.length === 0) {
