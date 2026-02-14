@@ -829,6 +829,26 @@ export const skillSchedulerFunction = inngest.createFunction(
         });
 
         executed++;
+
+        // One-shot cleanup for Direct tier (the `continue` below skips the shared cleanup)
+        if (isOneShot) {
+          await step.run(`oneshot-cleanup-${skill.id}`, async () => {
+            try {
+              const { getOrchestrator } = await import('../core/orchestrator.js');
+              const orchestrator = await getOrchestrator();
+              const toolRouter = orchestrator.getToolRouter();
+              await toolRouter.routeToolCall('memory_update_skill', {
+                skill_id: skill.id,
+                enabled: false,
+                last_run_summary: `One-shot fired at ${new Date().toISOString()}`,
+              });
+              logger.info('One-shot skill auto-disabled after fire (Direct tier)', { skillId: skill.id, name: skill.name });
+            } catch (cleanupError) {
+              logger.error('Failed to auto-disable one-shot skill', { skillId: skill.id, error: cleanupError });
+            }
+          });
+        }
+
         continue; // Skip the Agent tier below
       }
 
