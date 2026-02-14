@@ -44,7 +44,7 @@ const skills: CronSkill[] = [
   {
     name: 'Email Processor',
     description: 'Pull new emails, classify by priority, enrich with contact/project context, and send a smart summary.',
-    trigger_config: { interval_minutes: 30 },
+    trigger_config: { interval_minutes: 60 },
     instructions: `You are running the Email Processor skill.
 
 Step 1: Call gmail_get_new_emails to get unprocessed emails. If none, respond "No new emails since last check." and stop.

@@ -1,5 +1,6 @@
 import { inngest } from './inngest-client.js';
 import { notifyTelegram, SYSTEM_TIMEZONE } from './helpers.js';
+import { PREFLIGHT_CALENDAR_WINDOW_MS, PREFLIGHT_EMAIL_ENABLED, DEFAULT_NOTIFY_INTERVAL_MINUTES } from '../const/general.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { getHaltManager } from '../core/halt-manager.js';
 import { Cron } from 'croner';
@@ -14,14 +15,6 @@ import {
   MAX_CONSECUTIVE_FAILURES,
 } from '../utils/skill-normalizer.js';
 
-/** Default minimum minutes between Telegram notifications per skill.
- *  Skills still run at their normal interval — only notifications are throttled.
- *  Override globally via SKILL_NOTIFY_INTERVAL_MINUTES env var,
- *  or per-skill via notify_interval_minutes column in the skills table. */
-const DEFAULT_NOTIFY_INTERVAL_MINUTES = parseInt(
-  process.env.SKILL_NOTIFY_INTERVAL_MINUTES || '60',
-  10,
-);
 
 interface SkillRecord {
   id: number;
@@ -335,7 +328,7 @@ export const skillSchedulerFunction = inngest.createFunction(
             const toolRouter = orchestrator.getToolRouter();
 
             const now = new Date();
-            const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+            const windowEnd = new Date(now.getTime() + PREFLIGHT_CALENDAR_WINDOW_MS);
 
             // Step 1: List all calendars to get their IDs
             let calendarIds = ['primary'];
@@ -355,7 +348,7 @@ export const skillSchedulerFunction = inngest.createFunction(
             // Step 2: Use free/busy to check ALL calendars in one call
             const fbResult = await toolRouter.routeToolCall('gmail_find_free_time', {
               time_min: now.toISOString(),
-              time_max: endOfDay.toISOString(),
+              time_max: windowEnd.toISOString(),
               calendar_ids: calendarIds,
             });
 
@@ -378,29 +371,11 @@ export const skillSchedulerFunction = inngest.createFunction(
               return false; // Don't skip on error — let the skill run
             }
 
-            if (hasEvents) return false; // Meetings found — run the full skill
+            if (hasEvents) return false; // Meeting within window — run the full skill
 
-            // No events — check if we already sent the daily "no events" notification
-            const stateDir = join(homedir(), '.annabelle', 'data');
-            const statePath = join(stateDir, 'calendar-check-state.json');
-            const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
-
-            let alreadyNotifiedToday = false;
-            try {
-              const state = JSON.parse(await readFile(statePath, 'utf-8'));
-              alreadyNotifiedToday = state.lastNoEventsDate === todayStr;
-            } catch {
-              // No state file — first check ever
-            }
-
-            if (!alreadyNotifiedToday) {
-              await mkdir(stateDir, { recursive: true });
-              await writeFile(statePath, JSON.stringify({ lastNoEventsDate: todayStr }));
-              await notifyTelegram('📅 Calendar update: No upcoming events for the rest of today.');
-              logger.info('Sent daily calendar update — no events today', { skillId: skill.id });
-            }
-
-            return true; // Skip the full skill either way
+            // No meetings in the next window — skip silently (zero LLM cost)
+            logger.info('Pre-flight: no meetings in next window, skipping skill', { skillId: skill.id, windowMs: PREFLIGHT_CALENDAR_WINDOW_MS });
+            return true;
           } catch (error) {
             logger.warn('Calendar pre-check failed, letting skill run', { error });
             return false; // Don't skip on error
@@ -417,6 +392,53 @@ export const skillSchedulerFunction = inngest.createFunction(
               last_run_at: new Date().toISOString(),
               last_run_status: 'success',
               last_run_summary: 'No upcoming events — skipped',
+            });
+          } catch { /* non-fatal */ }
+          continue;
+        }
+      }
+
+      // Pre-flight: email-aware scheduling for email skills
+      // If no new emails exist, skip the skill entirely (zero LLM cost)
+      const isEmailSkill = requiredToolsRaw.includes('gmail_get_new_emails')
+        && /email/i.test(skill.name);
+
+      if (isEmailSkill && PREFLIGHT_EMAIL_ENABLED) {
+        const shouldSkipEmail = await step.run(`preflight-email-${skill.id}`, async () => {
+          try {
+            const { getOrchestrator } = await import('../core/orchestrator.js');
+            const orchestrator = await getOrchestrator();
+            const toolRouter = orchestrator.getToolRouter();
+
+            const result = await toolRouter.routeToolCall('gmail_get_new_emails', {});
+            if (!result.success) return false; // Don't skip on error
+
+            const response = result.content as { content?: Array<{ type: string; text?: string }> };
+            const text = response?.content?.[0]?.text;
+            if (!text) return false;
+
+            const data = JSON.parse(text);
+            const emails = data?.data?.emails || data?.emails || [];
+            if (emails.length === 0) {
+              logger.info('Pre-flight: no new emails, skipping skill', { skillId: skill.id });
+              return true;
+            }
+            return false;
+          } catch (error) {
+            logger.warn('Email pre-check failed, letting skill run', { error });
+            return false;
+          }
+        });
+
+        if (shouldSkipEmail) {
+          try {
+            const { getOrchestrator } = await import('../core/orchestrator.js');
+            const orchestrator = await getOrchestrator();
+            await orchestrator.getToolRouter().routeToolCall('memory_update_skill', {
+              skill_id: skill.id,
+              last_run_at: new Date().toISOString(),
+              last_run_status: 'success',
+              last_run_summary: 'No new emails — skipped',
             });
           } catch { /* non-fatal */ }
           continue;
