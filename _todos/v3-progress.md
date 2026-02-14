@@ -20,17 +20,33 @@ User said "send hello every minute" → Thinker created skill `hello_every_minut
 | **Skill poller (Inngest)** | Fired every minute reliably |
 | **`last_run_at/status/summary` tracking** | Updated after every execution |
 
-## Not tested
+## Automated E2E tests (Feb 14, 2026)
 
-| V3 Feature | Notes |
+Two test files cover the scheduler pipeline end-to-end:
+
+**`workflow-scheduler-e2e.test.ts`** (existing):
+| Test | Status |
 |---|---|
-| **Agent execution tier** | Complex skills needing LLM reasoning |
-| **One-shot `at` schedule** | "Remind me at 3pm" with auto-delete |
-| **Graduated backoff** | 30s→1m→5m→15m→60m (skill never failed, so not triggered) |
-| **Cron expression validation** | Only trivially tested — `*/1 * * * *` is valid |
-| **SKILL.md auto-scheduling** | File-based skills with `trigger_config` in frontmatter |
-| **Strict tool sandboxing** | Agent tier receives only `required_tools` |
-| **`notify_on_completion`** | Telegram notification after skill fires |
+| Direct-tier skill via Inngest poller | ✅ Passed |
+| One-shot `at` schedule + auto-disable | ✅ Passed |
+| Invalid cron expression rejected at creation | ✅ Passed |
+| Input normalization (flattened schedule → trigger_config) | ✅ Passed |
+| Old cron job tools removed from tool list | ✅ Passed |
+
+**`skill-tiers-e2e.test.ts`** (new):
+| Test | Status |
+|---|---|
+| Agent-tier skill via Inngest poller (LLM stores fact) | ✅ Passed |
+| Direct-tier with Telegram delivery | ⏳ Needs `E2E_TELEGRAM_CHAT_ID` |
+| Tool sandboxing (requiredTools blocks excluded tools) | ✅ Passed |
+| notify_on_completion Telegram notification | ⏳ Needs `E2E_TELEGRAM_CHAT_ID` |
+
+## Not covered by automated tests
+
+| V3 Feature | Reason |
+|---|---|
+| **Graduated backoff** | Unit-tested in `graduated-backoff.test.ts` (8 tests). E2E would need 5+ Inngest cycles (80+ min). |
+| **SKILL.md auto-scheduling** | Unit-tested in `skill-loader-schedule.test.ts`. No existing SKILL.md files have `trigger_config`. |
 
 ## Key observation
 
