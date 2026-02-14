@@ -13,6 +13,12 @@ export interface CachedPlaybook {
   requiredTools: string[];
   /** Where this playbook came from: 'database' (Memorizer) or 'file' (~/.annabelle/skills/) */
   source: 'database' | 'file';
+  /** Optional scheduling config for file-based skills with trigger_config in frontmatter */
+  triggerConfig?: Record<string, unknown>;
+  /** Max LLM steps for agent-tier execution */
+  maxSteps?: number;
+  /** Compiled execution plan for direct-tier execution */
+  executionPlan?: Array<{ id: string; toolName: string; parameters?: Record<string, unknown> }>;
 }
 
 /** Escape special regex characters so a string can be used literally in a RegExp. */

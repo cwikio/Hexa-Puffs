@@ -16,10 +16,15 @@ describe('playbook-seed: cron-scheduling', () => {
     expect(cronPlaybook!.required_tools).toContain('memory_store_skill');
   });
 
-  it('should include cron job tools in required_tools', () => {
-    expect(cronPlaybook!.required_tools).toContain('create_job');
-    expect(cronPlaybook!.required_tools).toContain('list_jobs');
-    expect(cronPlaybook!.required_tools).toContain('delete_job');
+  it('should include skill management tools in required_tools', () => {
+    expect(cronPlaybook!.required_tools).toContain('memory_list_skills');
+    expect(cronPlaybook!.required_tools).toContain('memory_delete_skill');
+  });
+
+  it('should NOT include removed cron job tools', () => {
+    expect(cronPlaybook!.required_tools).not.toContain('create_job');
+    expect(cronPlaybook!.required_tools).not.toContain('list_jobs');
+    expect(cronPlaybook!.required_tools).not.toContain('delete_job');
   });
 
   it('should have max_steps of 8', () => {
@@ -38,8 +43,9 @@ describe('playbook-seed: cron-scheduling', () => {
   it('should have structured decision flow in instructions', () => {
     const instructions = cronPlaybook!.instructions;
     expect(instructions).toContain('CLASSIFY');
-    expect(instructions).toContain('CRON JOB');
-    expect(instructions).toContain('SKILL');
+    expect(instructions).toContain('SIMPLE');
+    expect(instructions).toContain('COMPLEX');
+    expect(instructions).toContain('execution_plan');
     expect(instructions).toContain('get_tool_catalog');
     expect(instructions).toContain('EXACT tool names');
   });

@@ -7,6 +7,13 @@ import { Cron } from 'croner';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import {
+  getBackoffMinutes,
+  getConsecutiveFailures,
+  recordFailure,
+  recordSuccess,
+  MAX_CONSECUTIVE_FAILURES,
+} from '../utils/skill-normalizer.js';
 
 /** Send a Telegram notification via the tool router. */
 async function notifyTelegram(message: string): Promise<void> {
@@ -500,14 +507,13 @@ export const skillSchedulerFunction = inngest.createFunction(
       name: string;
       trigger_config: string | Record<string, unknown>;
       instructions: string;
+      execution_plan?: string | null;
       max_steps?: number;
       notify_on_completion?: boolean;
       last_run_at?: string | null;
       last_run_status?: string | null;
       required_tools?: string[] | string;
     }
-
-    const FAILURE_COOLDOWN_MINUTES = 5;
 
     async function notifySkillFailure(
       skill: SkillRecord,
@@ -525,6 +531,9 @@ export const skillSchedulerFunction = inngest.createFunction(
           ? `cron: ${triggerConfig.schedule}`
           : `interval: ${triggerConfig?.interval_minutes || 1440}min`;
         const time = new Date().toISOString();
+        const failures = getConsecutiveFailures(skill.id);
+        const backoff = getBackoffMinutes(skill.id);
+        const remaining = MAX_CONSECUTIVE_FAILURES - failures;
 
         const toolRouter = orchestrator.getToolRouter();
         await toolRouter.routeToolCall('telegram_send_message', {
@@ -534,7 +543,10 @@ export const skillSchedulerFunction = inngest.createFunction(
             `Time: ${time}`,
             `Trigger: ${trigger}`,
             `Error: ${errorMessage}`,
-            `Next retry in ${FAILURE_COOLDOWN_MINUTES} minutes (cooldown active)`,
+            `Consecutive failures: ${failures}`,
+            remaining > 0
+              ? `Next retry in ${backoff} minutes — auto-disable in ${remaining} more failure(s)`
+              : `Skill auto-disabled after ${MAX_CONSECUTIVE_FAILURES} consecutive failures`,
           ].join('\n'),
         });
       } catch (notifyError) {
@@ -548,13 +560,27 @@ export const skillSchedulerFunction = inngest.createFunction(
         ? JSON.parse(skill.trigger_config)
         : skill.trigger_config;
 
-      // Determine if skill is due. Two scheduling modes:
+      // Determine if skill is due. Three scheduling modes:
       // 1. Cron expression: { "schedule": "0 9 * * *", "timezone": "Europe/Warsaw" }
       // 2. Interval: { "interval_minutes": 60 }
+      // 3. One-shot: { "at": "2026-02-14T09:00:00" } — fires once, auto-deletes
       let isDue = false;
+      let isOneShot = false;
       const now = new Date();
 
-      if (triggerConfig?.schedule) {
+      if (triggerConfig?.at) {
+        // One-shot mode — fire if current time >= scheduled time
+        const atTime = new Date(triggerConfig.at as string);
+        if (!isNaN(atTime.getTime()) && now >= atTime) {
+          isDue = true;
+          isOneShot = true;
+
+          // Prevent double execution
+          if (skill.last_run_at) {
+            isDue = false;
+          }
+        }
+      } else if (triggerConfig?.schedule) {
         // Cron expression mode — use croner to check if the schedule fires this minute
         try {
           const cron = new Cron(triggerConfig.schedule, {
@@ -594,15 +620,17 @@ export const skillSchedulerFunction = inngest.createFunction(
         continue;
       }
 
-      // Back-off: skip skills that recently failed (cooldown prevents hammering)
+      // Graduated back-off: skip skills that recently failed (prevents hammering)
       if (skill.last_run_status === 'error' && skill.last_run_at) {
         const minutesSinceFailure = (now.getTime() - new Date(skill.last_run_at).getTime()) / 60000;
-        if (minutesSinceFailure < FAILURE_COOLDOWN_MINUTES) {
-          logger.info('Skipping skill due to recent failure (cooldown)', {
+        const backoff = getBackoffMinutes(skill.id);
+        if (minutesSinceFailure < backoff) {
+          logger.info('Skipping skill due to recent failure (graduated backoff)', {
             skillId: skill.id,
             name: skill.name,
             minutesSinceFailure: Math.round(minutesSinceFailure),
-            cooldownMinutes: FAILURE_COOLDOWN_MINUTES,
+            backoffMinutes: backoff,
+            consecutiveFailures: getConsecutiveFailures(skill.id),
           });
           continue;
         }
@@ -714,7 +742,90 @@ export const skillSchedulerFunction = inngest.createFunction(
         }
       }
 
-      // Execute the skill via Thinker (discovered through AgentManager)
+      // ── Tier Router: Direct vs Agent execution ──
+      const executionPlan = skill.execution_plan
+        ? (() => { try { return JSON.parse(typeof skill.execution_plan === 'string' ? skill.execution_plan : ''); } catch { return null; } })()
+        : null;
+
+      if (Array.isArray(executionPlan) && executionPlan.length > 0) {
+        // DIRECT TIER — execute via ToolRouter, zero LLM cost
+        await step.run(`direct-skill-${skill.id}`, async () => {
+          try {
+            logger.info('Executing skill via Direct tier', { skillId: skill.id, name: skill.name, steps: executionPlan.length });
+
+            const { executeWorkflow } = await import('./executor.js');
+            const results = await executeWorkflow(executionPlan);
+
+            const allSuccess = Object.values(results).every(r => r.success);
+            const summary = allSuccess
+              ? `Direct execution: ${executionPlan.length} step(s) completed`
+              : `Direct execution: some steps failed — ${Object.entries(results).filter(([, r]) => !r.success).map(([id, r]) => `${id}: ${r.error}`).join('; ')}`;
+
+            const { getOrchestrator } = await import('../core/orchestrator.js');
+            const orchestrator = await getOrchestrator();
+            const toolRouter = orchestrator.getToolRouter();
+
+            if (allSuccess) {
+              recordSuccess(skill.id);
+              await toolRouter.routeToolCall('memory_update_skill', {
+                skill_id: skill.id,
+                last_run_at: new Date().toISOString(),
+                last_run_status: 'success',
+                last_run_summary: summary,
+              });
+            } else {
+              const { count, shouldDisable } = recordFailure(skill.id);
+              await toolRouter.routeToolCall('memory_update_skill', {
+                skill_id: skill.id,
+                last_run_at: new Date().toISOString(),
+                last_run_status: 'error',
+                last_run_summary: summary,
+                ...(shouldDisable ? { enabled: false } : {}),
+              });
+              if (shouldDisable) {
+                logger.warn('Direct skill auto-disabled after consecutive failures', {
+                  skillId: skill.id, name: skill.name, consecutiveFailures: count,
+                });
+              }
+              await notifySkillFailure(skill, summary, triggerConfig);
+            }
+
+            return { success: allSuccess, summary };
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Direct execution failed';
+            const { count, shouldDisable } = recordFailure(skill.id);
+
+            try {
+              const { getOrchestrator } = await import('../core/orchestrator.js');
+              const orchestrator = await getOrchestrator();
+              const toolRouter = orchestrator.getToolRouter();
+              await toolRouter.routeToolCall('memory_update_skill', {
+                skill_id: skill.id,
+                last_run_at: new Date().toISOString(),
+                last_run_status: 'error',
+                last_run_summary: errorMessage,
+                ...(shouldDisable ? { enabled: false } : {}),
+              });
+            } catch (updateError) {
+              logger.error('Failed to update direct skill error status', { skillId: skill.id, error: updateError });
+            }
+
+            if (shouldDisable) {
+              logger.warn('Direct skill auto-disabled after consecutive failures', {
+                skillId: skill.id, name: skill.name, consecutiveFailures: count,
+              });
+            }
+
+            await notifySkillFailure(skill, errorMessage, triggerConfig);
+            return { success: false, error: errorMessage };
+          }
+        });
+
+        executed++;
+        continue; // Skip the Agent tier below
+      }
+
+      // AGENT TIER — Execute the skill via Thinker (discovered through AgentManager)
       await step.run(`execute-skill-${skill.id}`, async () => {
         try {
           logger.info('Executing skill via Thinker', { skillId: skill.id, name: skill.name });
@@ -773,20 +884,39 @@ export const skillSchedulerFunction = inngest.createFunction(
           );
 
           // Update skill's last_run fields via Memory MCP
-          try {
-            const toolRouter = orchestrator.getToolRouter();
-            await toolRouter.routeToolCall('memory_update_skill', {
-              skill_id: skill.id,
-              last_run_at: new Date().toISOString(),
-              last_run_status: result.success ? 'success' : 'error',
-              last_run_summary: result.response || result.error || 'No summary',
-            });
-          } catch (updateError) {
-            logger.error('Failed to update skill status', { skillId: skill.id, error: updateError });
-          }
-
-          // Notify on failure
-          if (!result.success) {
+          const toolRouter = orchestrator.getToolRouter();
+          if (result.success) {
+            recordSuccess(skill.id);
+            try {
+              await toolRouter.routeToolCall('memory_update_skill', {
+                skill_id: skill.id,
+                last_run_at: new Date().toISOString(),
+                last_run_status: 'success',
+                last_run_summary: result.response || 'No summary',
+              });
+            } catch (updateError) {
+              logger.error('Failed to update skill status', { skillId: skill.id, error: updateError });
+            }
+          } else {
+            const { count, shouldDisable } = recordFailure(skill.id);
+            try {
+              await toolRouter.routeToolCall('memory_update_skill', {
+                skill_id: skill.id,
+                last_run_at: new Date().toISOString(),
+                last_run_status: 'error',
+                last_run_summary: result.error || 'No summary',
+                ...(shouldDisable ? { enabled: false } : {}),
+              });
+            } catch (updateError) {
+              logger.error('Failed to update skill status', { skillId: skill.id, error: updateError });
+            }
+            if (shouldDisable) {
+              logger.warn('Skill auto-disabled after consecutive failures', {
+                skillId: skill.id,
+                name: skill.name,
+                consecutiveFailures: count,
+              });
+            }
             await notifySkillFailure(skill, result.error || 'Unknown error', triggerConfig);
           }
 
@@ -818,8 +948,9 @@ export const skillSchedulerFunction = inngest.createFunction(
           logger.error('Failed to execute skill via Thinker', { skillId: skill.id, error });
 
           const errorMessage = error instanceof Error ? error.message : 'Failed to reach Thinker';
+          const { count, shouldDisable } = recordFailure(skill.id);
 
-          // Still update the skill as failed
+          // Still update the skill as failed (+ auto-disable if threshold hit)
           try {
             const { getOrchestrator } = await import('../core/orchestrator.js');
             const orchestrator = await getOrchestrator();
@@ -829,9 +960,18 @@ export const skillSchedulerFunction = inngest.createFunction(
               last_run_at: new Date().toISOString(),
               last_run_status: 'error',
               last_run_summary: errorMessage,
+              ...(shouldDisable ? { enabled: false } : {}),
             });
           } catch (updateError) {
             logger.error('Failed to update skill error status', { skillId: skill.id, error: updateError });
+          }
+
+          if (shouldDisable) {
+            logger.warn('Skill auto-disabled after consecutive failures', {
+              skillId: skill.id,
+              name: skill.name,
+              consecutiveFailures: count,
+            });
           }
 
           // Notify on failure
@@ -842,6 +982,25 @@ export const skillSchedulerFunction = inngest.createFunction(
       });
 
       executed++;
+
+      // One-shot cleanup: auto-disable after successful fire
+      if (isOneShot) {
+        await step.run(`oneshot-cleanup-${skill.id}`, async () => {
+          try {
+            const { getOrchestrator } = await import('../core/orchestrator.js');
+            const orchestrator = await getOrchestrator();
+            const toolRouter = orchestrator.getToolRouter();
+            await toolRouter.routeToolCall('memory_update_skill', {
+              skill_id: skill.id,
+              enabled: false,
+              last_run_summary: `One-shot fired at ${new Date().toISOString()}`,
+            });
+            logger.info('One-shot skill auto-disabled after fire', { skillId: skill.id, name: skill.name });
+          } catch (cleanupError) {
+            logger.error('Failed to auto-disable one-shot skill', { skillId: skill.id, error: cleanupError });
+          }
+        });
+      }
     }
 
     return { checked: skills.length, executed };
@@ -1162,7 +1321,6 @@ export const healthReportFunction = inngest.createFunction(
 export const jobFunctions = [
   backgroundJobFunction,
   cronJobFunction,
-  cronJobPollerFunction,
   skillSchedulerFunction,
   conversationBackfillFunction,
   memorySynthesisFunction,

@@ -585,10 +585,6 @@ export async function handleTriggerBackfill(_args: unknown): Promise<StandardRes
 
 // Export all job tool definitions
 export const jobToolDefinitions = [
-  createJobToolDefinition,
   queueTaskToolDefinition,
-  listJobsToolDefinition,
-  getJobStatusToolDefinition,
-  deleteJobToolDefinition,
   triggerBackfillToolDefinition,
 ];

@@ -37,11 +37,7 @@ import {
   statusToolDefinition,
   handleStatus,
   jobToolDefinitions,
-  handleCreateJob,
   handleQueueTask,
-  handleListJobs,
-  handleGetJobStatus,
-  handleDeleteJob,
   handleTriggerBackfill,
   spawnSubagentToolDefinition,
   handleSpawnSubagent,
@@ -49,6 +45,7 @@ import {
   handleGetToolCatalog,
   type StandardResponse,
 } from '../tools/index.js';
+import { normalizeSkillInput, validateCronExpression } from '../utils/skill-normalizer.js';
 
 // Custom tools that are not passthrough (orchestrator-specific)
 const customToolDefinitions = [statusToolDefinition, ...jobToolDefinitions, spawnSubagentToolDefinition, getToolCatalogToolDefinition];
@@ -59,11 +56,7 @@ const customToolHandlers: Record<
   (args: unknown) => Promise<StandardResponse>
 > = {
   get_status: handleStatus,
-  create_job: handleCreateJob,
   queue_task: handleQueueTask,
-  list_jobs: handleListJobs,
-  get_job_status: handleGetJobStatus,
-  delete_job: handleDeleteJob,
   trigger_backfill: handleTriggerBackfill,
   get_tool_catalog: handleGetToolCatalog,
 };
@@ -170,6 +163,29 @@ export async function handleCallTool(
         const routeInfo = toolRouter.getRouteInfo(name);
         logger.debug(`Routing to ${routeInfo?.mcpName}.${routeInfo?.originalName}`);
 
+        // Normalize skill input before storage (fixes common LLM mistakes)
+        if (name === 'memory_store_skill' || name === 'memory_update_skill') {
+          Object.assign(args, normalizeSkillInput(args));
+        }
+
+        // Validate cron expression before storage
+        if (name === 'memory_store_skill' || name === 'memory_update_skill') {
+          const tc = args?.trigger_config as Record<string, unknown> | undefined;
+          if (tc?.schedule && typeof tc.schedule === 'string') {
+            const cronCheck = validateCronExpression(tc.schedule);
+            if (!cronCheck.valid) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                content: [{ type: 'text', text: JSON.stringify({
+                  success: false,
+                  error: `Invalid cron expression "${tc.schedule}": ${cronCheck.error}`,
+                })}],
+              }));
+              return;
+            }
+          }
+        }
+
         const callResult = await toolRouter.routeToolCall(name, args || {});
 
         if (callResult.success) {
@@ -180,8 +196,8 @@ export async function handleCallTool(
           };
           let innerText = mcpResponse?.content?.[0]?.text;
 
-          // Validate required_tools when storing a skill
-          if (innerText && name === 'memory_store_skill') {
+          // Validate required_tools and execution_plan when storing/updating a skill
+          if (innerText && (name === 'memory_store_skill' || name === 'memory_update_skill')) {
             const reqTools = args?.required_tools;
             if (Array.isArray(reqTools) && reqTools.length > 0) {
               const unknown = reqTools.filter((t) => typeof t === 'string' && !toolRouter.hasRoute(t) && !customToolHandlers[t]);
@@ -190,6 +206,25 @@ export async function handleCallTool(
                 try {
                   const parsed = JSON.parse(innerText);
                   parsed.warning = `These required_tools were not found and the skill may fail: ${unknown.join(', ')}`;
+                  innerText = JSON.stringify(parsed);
+                } catch { /* non-JSON response, skip */ }
+              }
+            }
+
+            // Validate execution_plan tool names exist in ToolRouter
+            const plan = args?.execution_plan;
+            if (Array.isArray(plan) && plan.length > 0) {
+              const planTools = plan
+                .filter((step): step is Record<string, unknown> => !!step && typeof step === 'object')
+                .map(step => step.toolName)
+                .filter((t): t is string => typeof t === 'string');
+              const unknownPlanTools = planTools.filter(t => !toolRouter.hasRoute(t) && !customToolHandlers[t]);
+              if (unknownPlanTools.length > 0) {
+                logger.warn('Skill execution_plan references unknown tools', { unknownPlanTools });
+                try {
+                  const parsed = JSON.parse(innerText);
+                  parsed.warning = (parsed.warning ? parsed.warning + '. ' : '') +
+                    `execution_plan references unknown tools: ${unknownPlanTools.join(', ')}`;
                   innerText = JSON.stringify(parsed);
                 } catch { /* non-JSON response, skip */ }
               }

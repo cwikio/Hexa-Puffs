@@ -11,11 +11,7 @@ import {
   statusToolDefinition,
   handleStatus,
   jobToolDefinitions,
-  handleCreateJob,
   handleQueueTask,
-  handleListJobs,
-  handleGetJobStatus,
-  handleDeleteJob,
   handleTriggerBackfill,
   spawnSubagentToolDefinition,
   handleSpawnSubagent,
@@ -35,11 +31,7 @@ const customToolHandlers: Record<
   (args: unknown) => Promise<StandardResponse>
 > = {
   get_status: handleStatus,
-  create_job: handleCreateJob,
   queue_task: handleQueueTask,
-  list_jobs: handleListJobs,
-  get_job_status: handleGetJobStatus,
-  delete_job: handleDeleteJob,
   trigger_backfill: handleTriggerBackfill,
   system_health_check: handleHealthCheck,
   get_tool_catalog: handleGetToolCatalog,

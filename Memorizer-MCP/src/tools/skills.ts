@@ -29,6 +29,7 @@ function formatSkill(row: SkillRow) {
     trigger_config: row.trigger_config ? JSON.parse(row.trigger_config) : null,
     instructions: row.instructions,
     required_tools: row.required_tools ? JSON.parse(row.required_tools) : [],
+    execution_plan: row.execution_plan ? JSON.parse(row.execution_plan) : null,
     max_steps: row.max_steps,
     notify_on_completion: row.notify_on_completion === 1,
     last_run_at: row.last_run_at,
@@ -79,6 +80,19 @@ export const storeSkillToolDefinition = {
         type: 'array',
         items: { type: 'string' },
         description: 'List of tool names this skill needs. Use exact tool names from get_tool_catalog — do not guess.',
+      },
+      execution_plan: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            toolName: { type: 'string' },
+            parameters: { type: 'object' },
+          },
+          required: ['id', 'toolName'],
+        },
+        description: 'For simple skills: a compiled sequence of tool calls with static params. When present, the skill executes directly via ToolRouter (zero LLM cost). Omit for complex skills that need LLM reasoning.',
       },
       max_steps: {
         type: 'number',
@@ -156,6 +170,7 @@ export const updateSkillToolDefinition = {
       trigger_config: { type: 'object', description: 'New trigger configuration' },
       instructions: { type: 'string', description: 'New instructions' },
       required_tools: { type: 'array', items: { type: 'string' }, description: 'New required tools list' },
+      execution_plan: { type: 'array', items: { type: 'object' }, description: 'New execution plan (compiled tool call steps)' },
       max_steps: { type: 'number', description: 'New max steps' },
       notify_on_completion: { type: 'boolean', description: 'New notification setting' },
       last_run_at: { type: 'string', description: 'ISO datetime of last run' },
@@ -185,6 +200,13 @@ export const deleteSkillToolDefinition = {
 // Input Schemas (Zod)
 // ============================================================================
 
+const ExecutionStepSchema = z.object({
+  id: z.string(),
+  toolName: z.string(),
+  parameters: z.record(z.unknown()).optional(),
+  dependsOn: z.array(z.string()).optional(),
+});
+
 export const StoreSkillInputSchema = z.object({
   agent_id: z.string().default('main'),
   name: z.string().min(1),
@@ -193,6 +215,7 @@ export const StoreSkillInputSchema = z.object({
   trigger_config: z.record(z.unknown()).optional(),
   instructions: z.string().min(1),
   required_tools: z.array(z.string()).optional(),
+  execution_plan: z.array(ExecutionStepSchema).optional(),
   max_steps: z.number().positive().default(10),
   notify_on_completion: z.boolean().default(true),
   enabled: z.boolean().default(true),
@@ -217,6 +240,7 @@ export const UpdateSkillInputSchema = z.object({
   trigger_config: z.record(z.unknown()).optional(),
   instructions: z.string().min(1).optional(),
   required_tools: z.array(z.string()).optional(),
+  execution_plan: z.array(ExecutionStepSchema).optional(),
   max_steps: z.number().positive().optional(),
   notify_on_completion: z.boolean().optional(),
   last_run_at: z.string().optional(),
@@ -241,7 +265,7 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
 
   const {
     agent_id, name, description, trigger_type, trigger_config,
-    instructions, required_tools, max_steps, notify_on_completion, enabled,
+    instructions, required_tools, execution_plan, max_steps, notify_on_completion, enabled,
   } = parseResult.data;
 
   // Auto-inject system timezone into cron trigger_config if not specified
@@ -264,8 +288,8 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
 
     const result = db
       .prepare(
-        `INSERT INTO skills (agent_id, name, description, trigger_type, trigger_config, instructions, required_tools, max_steps, notify_on_completion, enabled)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO skills (agent_id, name, description, trigger_type, trigger_config, instructions, required_tools, execution_plan, max_steps, notify_on_completion, enabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         agent_id,
@@ -275,6 +299,7 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
         trigger_config ? JSON.stringify(trigger_config) : null,
         instructions,
         required_tools ? JSON.stringify(required_tools) : null,
+        execution_plan ? JSON.stringify(execution_plan) : null,
         max_steps,
         notify_on_completion ? 1 : 0,
         enabled ? 1 : 0,
@@ -430,6 +455,10 @@ export async function handleUpdateSkill(args: unknown): Promise<StandardResponse
     if (updates.required_tools !== undefined) {
       setClauses.push('required_tools = ?');
       values.push(JSON.stringify(updates.required_tools));
+    }
+    if (updates.execution_plan !== undefined) {
+      setClauses.push('execution_plan = ?');
+      values.push(JSON.stringify(updates.execution_plan));
     }
     if (updates.max_steps !== undefined) {
       setClauses.push('max_steps = ?');

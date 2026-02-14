@@ -150,6 +150,9 @@ export const MIGRATIONS_SQL = `
 -- Note: ALTER TABLE ADD COLUMN requires a constant default in SQLite, so use NULL here.
 -- The CREATE TABLE schema uses datetime('now') for new databases. Existing rows get NULL.
 ALTER TABLE facts ADD COLUMN last_accessed_at TEXT DEFAULT NULL;
+
+-- Add execution_plan column for direct-tier skill execution (v3 tiered architecture)
+ALTER TABLE skills ADD COLUMN execution_plan TEXT DEFAULT NULL;
 `;
 
 export interface ConversationRow {
@@ -190,6 +193,7 @@ export interface SkillRow {
   trigger_config: string | null;
   instructions: string;
   required_tools: string | null;
+  execution_plan: string | null;
   max_steps: number;
   notify_on_completion: number;
   last_run_at: string | null;
