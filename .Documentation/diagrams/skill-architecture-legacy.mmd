@@ -1,0 +1,44 @@
+flowchart TB
+    U(["User via Telegram:\nCheck news on AI every 3 hours"])
+
+    subgraph Orchestrator["ORCHESTRATOR port 8010"]
+        CM["Channel Manager\npolls Telegram every 10s"]
+        AM["Agent Manager\nlazy-spawns Thinker"]
+        TR["ToolRouter\n148 prefixed MCP tools"]
+        CH["Custom Handlers\ncreate_job, get_status\nget_tool_catalog"]
+        CJ_EXEC["Cron Executor\nresolves toolName via ToolRouter\n+ backward compat map"]
+        CJ_POLL["Inngest Cron Poller\nevery 1 min"]
+        STALE["STALE tool list in\ncreate_job description\nonly 30 of 148 tools"]
+    end
+
+    subgraph Thinker["THINKER port 8006"]
+        PC["Playbook Classifier\nkeyword matching\nword-boundary regex"]
+        ETS["Embedding Tool Selector\ntop-K by cosine similarity"]
+        RTS["Regex Tool Selector\ngroups: core, search, jobs"]
+        LLM["LLM\nGroq llama-3.3-70b"]
+    end
+
+    subgraph Storage["JOB STORAGE"]
+        JOB["Job JSON:\ntoolName: get_status\nparameters: empty\ncron: */3 * * * *"]
+    end
+
+    FAIL1["FAIL: Playbook NOT activated\nevery three hours\ndoes not match keywords"]
+    FAIL2["FAIL: Unknown tool get_status\njob fails permanently"]
+
+    U --> CM --> AM -->|"dispatch"| PC
+    PC -->|"keywords: every day,\nevery morning, cron...\nNO MATCH"| FAIL1
+    FAIL1 -.->|"falls through"| ETS
+    ETS -->|"top tools"| LLM
+    RTS -->|"jobs group"| LLM
+    STALE -.->|"LLM only sees\n30 tools"| LLM
+    LLM -->|"calls create_job\nhallucinated toolName"| CH
+    CH -->|"NO validation"| JOB
+    CJ_POLL -->|"job fires"| CJ_EXEC
+    CJ_EXEC -->|"get_status not\nin ToolRouter"| FAIL2
+
+    style FAIL1 fill:#ffcdd2,stroke:#c62828,stroke-width:3px
+    style FAIL2 fill:#ffcdd2,stroke:#c62828,stroke-width:3px
+    style PC fill:#ffcdd2,stroke:#c62828,stroke-width:2px
+    style CH fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style STALE fill:#ffcdd2,stroke:#c62828,stroke-width:2px
+    style LLM fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px

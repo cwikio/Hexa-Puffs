@@ -301,6 +301,48 @@ Tool selection: method=required_tools, resolved=3/3
 
 ---
 
+## Tool Argument Normalization
+
+When the LLM calls a tool, the arguments pass through a normalization pipeline in the Thinker before reaching the Orchestrator. This fixes common LLM quirks (especially with Groq/Llama models).
+
+```
+Thinker/src/orchestrator/tools.ts
+```
+
+```
+LLM tool call args
+        │
+        ▼
+coerceStringBooleans()      ← "true" → true, "false" → false
+        │
+        ▼
+stripNullValues()           ← removes keys with null values
+        │                      (LLMs send null instead of omitting optional params)
+        │
+        ▼
+stripHallucinatedParams()   ← removes known hallucinated params
+        │                      (e.g., teamId/slug on vercel_* tools)
+        │
+        ▼
+injectChatId()              ← fixes telegram_send_message chat_id
+        │                      replaces missing, non-string, or
+        │                      suspiciously long (>20 char) values
+        │                      with real primary chat_id from channel manager
+        │
+        ▼
+POST /tools/call → Orchestrator → MCP
+```
+
+Additionally, `relaxSchemaTypes()` modifies the JSON Schema definitions sent to the LLM:
+
+- Numeric types accept strings too (`"type": "number"` → `"type": ["number", "string"]`)
+- Boolean types accept strings too
+- Optional properties also accept `null`
+
+This prevents schema validation failures when the LLM sends `"5"` instead of `5` or `null` for an optional param.
+
+---
+
 ## Tool Execution Flow
 
 ### Interactive Messages (User via Telegram)
@@ -424,6 +466,7 @@ Skills are stored in the `skills` SQLite table:
 | `trigger_config` | TEXT (JSON) | Cron expression or interval config |
 | `instructions` | TEXT | Natural language task for the LLM |
 | `required_tools` | TEXT (JSON) | Array of tool names the skill needs |
+| `execution_plan` | TEXT (JSON) | Compiled tool call steps for Direct tier (zero LLM cost) |
 | `max_steps` | INTEGER | Max LLM reasoning steps (default 10) |
 | `notify_on_completion` | INTEGER | Send Telegram notification? |
 | `last_run_at` | TEXT | ISO timestamp of last execution |
@@ -451,55 +494,77 @@ All skills are seeded with `enabled: false` and auto-enable once their `required
 ### Skill Scheduling (Inngest)
 
 ```
-Orchestrator/src/jobs/functions.ts — skillSchedulerFunction
+Orchestrator/src/jobs/skill-scheduler.ts — skillSchedulerFunction
 ```
 
 The scheduler runs every minute and performs:
 
 ```
-┌──────────────────────────────────────────────────┐
-│              Every 1 minute                       │
-│                                                   │
-│  Step 0: Auto-enable disabled skills              │
-│  ┌─────────────────────────────────────────────┐  │
-│  │ For each disabled cron skill:               │  │
-│  │   Parse required_tools from DB              │  │
-│  │   Check toolRouter.hasRoute(tool) for each  │  │
-│  │   If ALL available → enable the skill       │  │
-│  └─────────────────────────────────────────────┘  │
-│                                                   │
-│  Step 1: List enabled cron skills                 │
-│  ┌─────────────────────────────────────────────┐  │
-│  │ memory_list_skills(enabled=true, cron)      │  │
-│  └─────────────────────────────────────────────┘  │
-│                                                   │
-│  Step 2: For each skill, check if due             │
-│  ┌─────────────────────────────────────────────┐  │
-│  │ Cron mode:                                  │  │
-│  │   Parse cron expression with timezone       │  │
-│  │   Check if nextRun falls in current minute  │  │
-│  │   Prevent double-execution in same minute   │  │
-│  │                                             │  │
-│  │ Interval mode:                              │  │
-│  │   Compare minutes since last run            │  │
-│  │   to interval_minutes                       │  │
-│  └─────────────────────────────────────────────┘  │
-│                                                   │
-│  Step 3: Failure cooldown (5 minutes)             │
-│  ┌─────────────────────────────────────────────┐  │
-│  │ If last_run_status = 'error' and            │  │
-│  │ less than 5 min since failure → skip        │  │
-│  └─────────────────────────────────────────────┘  │
-│                                                   │
-│  Step 4: Execute due skills                       │
-│  ┌─────────────────────────────────────────────┐  │
-│  │ Ensure Thinker agent is running             │  │
-│  │ Parse required_tools from skill record      │  │
-│  │ Call ThinkerClient.executeSkill()           │  │
-│  │ Update last_run_at / last_run_status in DB  │  │
-│  │ On failure: send Telegram notification      │  │
-│  └─────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────┐
+│              Every 1 minute                            │
+│                                                        │
+│  Step 0: Auto-enable disabled skills                   │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ For each disabled cron skill:                    │  │
+│  │   Parse required_tools from DB                   │  │
+│  │   Check toolRouter.hasRoute(tool) for each       │  │
+│  │   If ALL available → enable the skill            │  │
+│  │   Skip one-shot skills (trigger_config.at)       │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  Step 1: List enabled cron skills                      │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ memory_list_skills(enabled=true, cron)           │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  Step 2: For each skill, check if due                  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Cron mode:                                       │  │
+│  │   Parse cron expression with timezone            │  │
+│  │   Check if nextRun falls in current minute       │  │
+│  │   Prevent double-execution in same minute        │  │
+│  │                                                  │  │
+│  │ Interval mode:                                   │  │
+│  │   Compare minutes since last run                 │  │
+│  │   to interval_minutes                            │  │
+│  │                                                  │  │
+│  │ One-shot mode:                                   │  │
+│  │   Check if now >= trigger_config.at              │  │
+│  │   Skip if already run (last_run_at >= at)        │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  Step 3: Graduated backoff                             │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ If last_run_status = 'error':                    │  │
+│  │   getBackoffMinutes(skillId) → 1, 5, 15, 60 min │  │
+│  │   If cooldown not elapsed → skip                 │  │
+│  │   Auto-disable after 5 consecutive failures      │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  Step 4: Pre-flight checks                             │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Calendar: meeting skills check free/busy API     │  │
+│  │   No events in window → skip (zero LLM cost)    │  │
+│  │ Email: email skills check for new emails         │  │
+│  │   No new emails → skip (zero LLM cost)          │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  Step 5: Tier routing + execution                      │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ If execution_plan exists → DIRECT TIER           │  │
+│  │   executeWorkflow() via executor.ts              │  │
+│  │   Zero LLM cost, direct tool calls              │  │
+│  │   Auto-injects chat_id for telegram tools        │  │
+│  │                                                  │  │
+│  │ If no execution_plan → AGENT TIER                │  │
+│  │   Dispatch to Thinker via AgentManager           │  │
+│  │   LLM reasons with sandboxed required_tools      │  │
+│  │                                                  │  │
+│  │ Update last_run_at / last_run_status in DB       │  │
+│  │ One-shot skills: auto-disable after firing       │  │
+│  │ On failure: send Telegram notification           │  │
+│  └──────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────┘
 ```
 
 ### Skill Execution in Thinker
@@ -563,7 +628,7 @@ The `required_tools` array flows through four files:
                                   │ memory_list_skills
                                   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Orchestrator/src/jobs/functions.ts                               │
+│ Orchestrator/src/jobs/skill-scheduler.ts                         │
 │                                                                  │
 │ Parse: JSON string or array → string[]                           │
 │ Pass to: client.executeSkill(..., parsedRequiredTools)           │
@@ -820,7 +885,11 @@ The Thinker detects new or removed tools without requiring a restart:
 | Regex Tool Selector | `Thinker/src/agent/tool-selector.ts` | Groups, keyword routes, `selectToolsForMessage()` |
 | History Repair & Truncation | `Thinker/src/agent/history-repair.ts` | `repairConversationHistory()`, `truncateHistoryToolResults()` |
 | Cost Monitor | `Thinker/src/cost/monitor.ts` | Sliding window, thresholds, pause/resume |
-| Inngest Skill Scheduler | `Orchestrator/src/jobs/functions.ts` | Auto-enable, cron matching, execution |
+| Tool Argument Normalization | `Thinker/src/orchestrator/tools.ts` | `relaxSchemaTypes()`, `stripNullValues()`, `injectChatId()`, `coerceStringBooleans()` |
+| Inngest Skill Scheduler | `Orchestrator/src/jobs/skill-scheduler.ts` | Auto-enable, cron matching, tier routing, pre-flight checks |
+| Skill Normalizer | `Orchestrator/src/utils/skill-normalizer.ts` | Input normalization, graduated backoff |
+| Direct Tier Executor | `Orchestrator/src/jobs/executor.ts` | `executeWorkflow()`, `executeToolCall()` |
+| Tool Catalog | `Orchestrator/src/tools/tool-catalog.ts` | `get_tool_catalog` — tool discovery for LLMs |
 | Thinker Client | `Orchestrator/src/agents/thinker-client.ts` | `executeSkill()` HTTP call |
 | Skill Schema | `Memorizer-MCP/src/db/schema.ts` | `SkillRow` interface, skills table |
 | Skill Seeding | `_scripts/seed-cron-skills.ts` | Skill definitions, `--update` mode |

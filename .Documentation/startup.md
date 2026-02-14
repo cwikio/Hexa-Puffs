@@ -66,7 +66,7 @@ Inside `Orchestrator.initialize()`:
 | Slash commands (/status, /logs) | Phase 5 (Orchestrator up) |
 | Telegram polling | Phase 5g (channel manager started) |
 | Thinker agent | First message received (lazy spawn) |
-| Cron jobs | Phase 6 (Inngest + skill seeding complete) |
+| Scheduled skills | Phase 6 (Inngest + skill seeding complete) |
 | Tool embeddings | First Thinker message (cache loaded on demand) |
 
 ## Startup vs Restart
@@ -117,4 +117,5 @@ Inside `Orchestrator.initialize()`:
 | `Orchestrator/src/index.ts` | HTTP server setup, main() |
 | `Orchestrator/src/core/orchestrator.ts` | `initialize()` — MCP lifecycle |
 | `Orchestrator/src/core/agent-manager.ts` | `initializeAll()` — agent registration |
+| `Orchestrator/src/jobs/skill-scheduler.ts` | Inngest skill scheduler, tier routing |
 | `_scripts/seed-cron-skills.ts` | Cron skill seeding |

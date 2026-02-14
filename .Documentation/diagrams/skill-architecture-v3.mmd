@@ -1,0 +1,74 @@
+flowchart TB
+    U(["User via Telegram:\nSend hello every minute"])
+
+    subgraph Orchestrator["ORCHESTRATOR port 8010"]
+        CM["Channel Manager\npolls Telegram every 10s"]
+        AM["Agent Manager\nlazy-spawns Thinker"]
+        TR["ToolRouter\n148+ prefixed MCP tools"]
+        CAT["get_tool_catalog\ndynamic catalog from ToolRouter"]
+        NORM["Input Normalizer\nfixes casing, flattened\ntrigger_config, missing fields\nbefore storage"]
+        VAL["Validation Layer\n1. required_tools vs ToolRouter\n2. cron expression via croner\n3. execution_plan tools ⊆ required_tools"]
+        POLL["Inngest Skill Poller\nevery 1 min\ngraduated backoff\n30s → 1m → 5m → 15m → 60m\nauto-disable after 5 failures\none-shot auto-delete"]
+        TIER{{"Tier Router\nhas execution_plan?\nYes → DIRECT\nNo → AGENT"}}
+        DIRECT["Direct Executor\nexecuteWorkflow()\ncalls tools via ToolRouter\nzero LLM cost, ~5ms"]
+        RES1["Update skill:\nlast_run_at\nlast_run_status\nlast_run_summary"]
+    end
+
+    subgraph Thinker["THINKER port 8006"]
+        PC["Playbook Classifier\nEMBEDDING similarity"]
+        PB["scheduling Playbook\nLLM decides:\n- execution_plan (simple)\n- instructions (complex)"]
+        LLM["LLM decides tier\nat creation time"]
+        AGENT["Agent Executor\nclient.executeSkill()\nSTRICT SANDBOX:\nonly required_tools\nnothing else available"]
+        RES2["Returns result\nto Orchestrator\nfor status update"]
+    end
+
+    subgraph Memorizer["MEMORIZER MCP — single store"]
+        SKILL_D["Direct Skill\nname: Hello Reminder\nschedule: */1 * * * *\nexecution_plan:\n  [{tool: telegram_send_message\n    params: {message: hello}}]\nrequired_tools:\n  [telegram_send_message]"]
+        SKILL_A["Agent Skill\nname: AI News Monitor\nschedule: 0 */3 * * *\nmax_steps: 5\ninstructions: Search latest\nAI news, summarize top 3,\nsend via Telegram\nrequired_tools:\n  [searcher_news_search,\n   telegram_send_message]"]
+        SKILL_AT["One-shot Skill\nname: Dentist Reminder\nat: 2026-02-14T09:00:00\nexecution_plan:\n  [{tool: telegram_send_message\n    params: {message:\n    Dentist at 10am}}]\nauto_delete: true"]
+    end
+
+    subgraph FileSkills["~/.annabelle/skills/ — git-managed"]
+        SKILLMD["SKILL.md with trigger_config\nauto-syncs to Memorizer\non startup + every 5 min\nnew/updated → upsert\ndeleted → remove"]
+    end
+
+    U --> CM --> AM -->|dispatch| PC
+    PC -->|embedding match| PB
+    PB -->|force-includes\nget_tool_catalog\nmemory_store_skill| LLM
+
+    LLM -->|"1: get_tool_catalog"| CAT
+    CAT -->|"148+ tools by MCP"| LLM
+    LLM -->|"2: memory_store_skill\nwith execution_plan\nOR instructions"| NORM
+    NORM --> VAL
+    VAL -->|validated| SKILL_D
+    VAL -->|validated| SKILL_A
+    VAL -->|validated| SKILL_AT
+
+    SKILLMD -.->|"auto-sync\nstartup + refresh"| VAL
+
+    POLL -->|skill is due| TIER
+    TIER -->|"execution_plan\npresent"| DIRECT
+    DIRECT -->|"tool calls"| TR
+    DIRECT --> RES1
+
+    TIER -->|"instructions\nonly"| AGENT
+    AGENT -->|"sandboxed\ntool calls"| TR
+    AGENT --> RES2
+    RES2 -.->|"status update"| RES1
+
+    style TIER fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    style DIRECT fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    style NORM fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    style SKILLMD fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    style POLL fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    style VAL fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    style AGENT fill:#fff9c4,stroke:#f9a825,stroke-width:3px
+    style RES2 fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style CALL fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style RES1 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style SKILL_D fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style SKILL_A fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style SKILL_AT fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style PC fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    style LLM fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style PB fill:#bbdefb,stroke:#1565c0,stroke-width:2px

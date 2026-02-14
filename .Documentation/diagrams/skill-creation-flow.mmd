@@ -1,0 +1,40 @@
+sequenceDiagram
+    participant U as User (Telegram)
+    participant T as Thinker
+    participant PC as Playbook Classifier
+    participant LLM as LLM (Groq)
+    participant O as Orchestrator
+    participant N as Skill Normalizer
+    participant V as Validation Layer
+    participant M as Memorizer DB
+
+    U->>T: "Remind me to drink water every hour"
+    T->>PC: classifyMessage()
+    PC-->>T: Match: cron-scheduling playbook
+
+    Note over T: Inject playbook instructions<br/>+ force-include get_tool_catalog<br/>+ memory_store_skill
+
+    T->>LLM: System prompt + playbook + user message
+    LLM->>O: get_tool_catalog()
+    O-->>LLM: 148+ tools grouped by MCP
+
+    Note over LLM: Classify: SIMPLE task<br/>→ build execution_plan<br/>(fixed action, no decisions)
+
+    LLM->>O: memory_store_skill({<br/>  name: "Drink water reminder",<br/>  trigger_config: { schedule: "0 * * * *" },<br/>  execution_plan: [{ toolName:<br/>    "telegram_send_message",<br/>    parameters: { message: "Drink water!" } }],<br/>  required_tools: ["telegram_send_message"]<br/>})
+
+    O->>N: normalizeSkillInput(args)
+    Note over N: Re-nest flattened fields<br/>Normalize cron aliases<br/>Convert in_minutes → at<br/>Parse string arrays<br/>Default agent_id = "thinker"
+    N-->>O: normalized args
+
+    O->>V: validateCronExpression()
+    Note over V: Validate via croner<br/>Check required_tools vs ToolRouter
+    V-->>O: valid
+
+    Note over O: Safety net check:<br/>execution_plan has 1 step<br/>→ OK for Direct tier
+
+    O->>M: Store skill (Direct tier)
+    M-->>O: skill ID 990
+
+    O-->>LLM: { success: true, id: 990 }
+    LLM-->>T: "Done! I've set up a reminder..."
+    T-->>U: Response via Telegram

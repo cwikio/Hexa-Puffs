@@ -117,9 +117,9 @@ Guardian blocks input/output
 
 ---
 
-### Scheduled Task Didn't Run
+### Scheduled Skill Didn't Run
 
-**Symptoms:** A cron job or skill didn't execute at expected time.
+**Symptoms:** A scheduled skill didn't execute at expected time.
 
 **Possible causes:**
 
@@ -131,16 +131,25 @@ Guardian blocks input/output
    - Check: `curl http://localhost:8288/health`.
    - Fix: Restart via `./start-all.sh` or manually start Inngest.
 
-3. **Cron expression wrong** — The schedule expression doesn't match expectations.
-   - Check: `/cron` — shows cron expressions and next run times.
-   - Fix: Update the job via `create_job` with correct cron expression.
+3. **Graduated backoff active** — After failures, the skill has increasing cooldown delays (1 → 5 → 15 → 60 minutes). After 5 consecutive failures, the skill is auto-disabled.
+   - Check: `memory_get_skill` — look at `last_run_status` and `last_run_at`. If status is `error` and recent, backoff is active.
+   - Fix: Fix the underlying issue, then `memory_update_skill` to re-enable if auto-disabled. Backoff counters reset on process restart.
 
 4. **Skill disabled** — The skill's `enabled` flag is false.
    - Check: `memory_list_skills` tool — look for disabled skills.
-   - Fix: `memory_update_skill` to re-enable.
+   - Fix: `memory_update_skill` to re-enable. Note: skills auto-enable when their `required_tools` become available.
 
-5. **Timezone mismatch** — Job configured with wrong timezone.
-   - Check: `/cron` — shows timezone per job.
+5. **Pre-flight check skipping** — Meeting skills skip silently when no calendar events exist in the next window. Email skills skip when no new emails.
+   - Check: This is intentional (saves LLM cost). Look at `last_run_summary` — it will say "No upcoming events — skipped" or similar.
+   - Not a bug — the skill ran but found nothing to do.
+
+6. **Timezone mismatch** — Skill configured with wrong timezone. Timezone is auto-injected from the system at creation time.
+   - Check: `/cron` — shows timezone per skill. Compare with system timezone.
+   - Fix: `memory_update_skill` with correct `trigger_config.timezone`.
+
+7. **Cron expression issue** — Cron expressions are validated at creation time via `croner`. If the skill was stored, the expression was valid. However, the expression may not match what you expect.
+   - Check: `/cron` — shows cron expressions and next run times.
+   - Fix: `memory_update_skill` with corrected `trigger_config.schedule`.
 
 ---
 

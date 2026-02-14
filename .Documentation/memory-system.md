@@ -14,7 +14,7 @@
 | `conversations` | Full interaction history | `id`, `agent_id`, `session_id`, `user_message`, `agent_response`, `tags`, `created_at` |
 | `profiles` | Structured user knowledge per agent | `agent_id` (PK), `profile_data` (JSON), `created_at`, `updated_at` |
 | `profile_history` | Rollback capability for profiles | `id`, `agent_id`, `profile_data`, `changed_at`, `change_reason` |
-| `skills` | Autonomous behavior definitions | `id`, `agent_id`, `name`, `description`, `enabled`, `trigger_type`, `trigger_config`, `instructions`, `required_tools`, `max_steps` |
+| `skills` | Autonomous behavior definitions | `id`, `agent_id`, `name`, `description`, `enabled`, `trigger_type`, `trigger_config`, `instructions`, `required_tools`, `execution_plan`, `max_steps` |
 | `contacts` | People the user works with | `id`, `agent_id`, `name`, `email`, `company`, `role`, `type` (work/personal/ignored) |
 | `projects` | Things user works on | `id`, `agent_id`, `name`, `status`, `type`, `description`, `primary_contact_id`, `participants`, `company`, `priority` |
 
