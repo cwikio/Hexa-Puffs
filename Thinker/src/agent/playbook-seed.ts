@@ -415,7 +415,7 @@ User asks to interact with a website: fill forms, click buttons, take screenshot
   },
   {
     name: 'cron-scheduling',
-    description: 'Create recurring cron jobs or scheduled skills from natural language',
+    description: 'Create recurring scheduled skills, reminders, or one-shot notifications from natural language',
     trigger_type: 'event',
     trigger_config: {
       keywords: [
@@ -423,70 +423,79 @@ User asks to interact with a website: fill forms, click buttons, take screenshot
         'every week', 'every month', 'every morning', 'every evening',
         'schedule task', 'background job', 'repeat', 'daily at', 'weekly',
         'hourly', 'once a day', 'once a week', 'times a day', 'times a week',
-        'per minute', 'per hour', 'per day',
+        'per minute', 'per hour', 'per day', 'at 3pm', 'at noon', 'tomorrow at',
+        'remind me at', 'alert me', 'notify me',
       ],
       priority: 10,
     },
     instructions: `## WHEN TO USE
-User wants to set up a recurring task, reminder, or scheduled job.
+User wants to set up a recurring task, reminder, one-shot notification, or scheduled job.
+Everything is created as a **skill** via memory_store_skill. There are no separate "cron jobs".
 
-## STEP 1: CLASSIFY — CRON JOB OR SKILL?
+## STEP 1: DISCOVER AVAILABLE TOOLS
+Call **get_tool_catalog** to see all available tools in the system. Use EXACT tool names from the catalog — do NOT guess.
 
-Before doing anything, decide which type to create:
+## STEP 2: CLASSIFY — SIMPLE OR COMPLEX?
 
-**CRON JOB (create_job)** — Use when ALL of these are true:
-- The action is a fixed message or a single tool call with hardcoded parameters
-- No data reading, no decisions, no multi-step logic
-- Examples: "remind me to drink water", "send me good morning at 9am", "tell me happy birthday on March 5th"
+**SIMPLE (Direct tier — zero LLM cost)** — Use when ALL of these are true:
+- The action is a SINGLE fixed tool call with static parameters (no dynamic content)
+- No data reading, no decisions, no reasoning needed
+- execution_plan must be exactly 1 step. If you need multiple steps, use Agent tier.
+- Examples: "remind me to drink water", "send me hello every minute", "remind me at 3pm about dentist"
+- You will produce an \`execution_plan\` with exactly one step
 
-**SKILL (memory_store_skill)** — Use when ANY of these are true:
+**COMPLEX (Agent tier — LLM reasoning at fire time)** — Use when ANY of these are true:
 - The task reads data and acts on it (emails, calendar, search results, news)
-- The task involves multiple steps or decisions
 - The response depends on what the data contains
-- Examples: "check my email", "summarize my calendar", "organize my inbox", "send me an article from onet.pl", "weekly review of my calendar"
+- The task involves summarization, classification, or multi-step decisions
+- Examples: "check AI news every 3 hours and summarize", "organize my inbox daily", "weekly project review"
+- You will produce \`instructions\` (natural language) for the LLM to follow at fire time
 
-**ALWAYS use skill for:** email operations (classify, prune, organize, archive, label, sort, triage), anything that reads data, multi-step workflows.
-**ONLY use cron job for:** fixed reminders, static notifications, single deterministic tool calls.
+## STEP 3A: IF SIMPLE — Create with execution_plan
+1. Parse the schedule:
+   - "every day at 9am" → \`{ "schedule": "0 9 * * *" }\`
+   - "every 5 minutes" → \`{ "schedule": "*/5 * * * *" }\`
+   - "remind me at 3pm" → \`{ "at": "2026-02-13T15:00:00" }\` (one-shot, compute the ISO datetime)
+2. Build the execution_plan — exactly one step:
+   \`[{ "id": "step1", "toolName": "telegram_send_message", "parameters": { "message": "Drink water!" } }]\`
+3. Confirm with user: "I'll create a skill that sends '[message]' every day at 9am. No LLM needed — runs instantly. OK?"
+4. Call memory_store_skill with:
+   - name: descriptive name
+   - trigger_type: "cron"
+   - trigger_config: the schedule/at object
+   - instructions: brief description of what the skill does (for display purposes)
+   - required_tools: array with EXACT tool names from get_tool_catalog used in execution_plan
+   - execution_plan: the compiled steps array
+   - agent_id: "thinker"
 
-## STEP 2A: IF CRON JOB
-1. Parse the user's schedule into a cron expression:
-   - "every day at 9am" → "0 9 * * *"
-   - "every hour" → "0 * * * *"
-   - "every 5 minutes" → "*/5 * * * *"
-   - "every Monday at 8am" → "0 8 * * 1"
-   - "every weekday at 9am" → "0 9 * * 1-5"
-2. Determine the action — usually telegram_send_message with the reminder text
-3. Confirm with user: "I'll create a cron job that sends you '[message]' every day at 9:00 AM. OK?"
-4. Call create_job with type "cron", the cron expression, and the action. Do NOT specify timezone — it is auto-detected by the system.
-
-## STEP 2B: IF SKILL
-1. **Call get_tool_catalog** to discover all available tools in the system
-2. **Select the tools** needed for this task from the catalog — use EXACT names from the catalog
-3. Parse the schedule into a cron expression or interval:
-   - Cron: { "schedule": "0 9 * * *" } — for specific times
-   - Interval: { "interval_minutes": 30 } — for every-N-minutes
-4. Write clear natural language instructions describing what the AI should do each run
-5. Confirm with user
-6. Call memory_store_skill with:
+## STEP 3B: IF COMPLEX — Create with instructions
+1. Parse the schedule (same as above, but one-shot \`at\` is rare for complex tasks)
+2. Select required tools from the catalog
+3. Write clear natural language instructions describing what the AI should do each run
+4. Confirm with user
+5. Call memory_store_skill with:
+   - name: descriptive name
    - trigger_type: "cron"
    - trigger_config: the schedule object (timezone is auto-injected by the system)
    - instructions: the natural language task description
-   - required_tools: EXACT tool names from get_tool_catalog — do NOT guess tool names
+   - required_tools: EXACT tool names from get_tool_catalog
+   - max_steps: appropriate limit (default 10, use lower for simpler tasks)
    - agent_id: "thinker"
 
-## AUTO-EXPIRATION (for cron jobs only)
-- For limited runs: set maxRuns (e.g., "5 times" → maxRuns: 5)
-- For date limits: set expiresAt as ISO date (e.g., "until Friday" → compute the ISO date for next Friday midnight)
-- For duration: compute expiresAt from now + duration (e.g., "for 20 days" → now + 20 days as ISO)
-- Both can be combined — whichever limit is hit first stops the job
-- Omit both for permanent cron jobs
+## ONE-SHOT REMINDERS
+For "remind me at 3pm" or "remind me tomorrow at 9am":
+- Use trigger_config: { "at": "<ISO datetime>" } — compute the correct datetime
+- These fire once and auto-delete
+- Almost always simple (execution_plan with telegram_send_message)
 
 ## NOTES
 - Timezone is auto-detected — do NOT specify timezone unless the user explicitly requests a different one
-- Use list_jobs to show existing cron jobs, memory_list_skills for existing skills
+- Use memory_list_skills to show existing skills
+- Use memory_delete_skill to remove a skill
 - Cron format: "minute hour day month weekday" (e.g., "0 9 * * *" = 9:00 AM daily)
-- Always confirm the schedule before creating — mistakes are hard to undo`,
-    required_tools: ['create_job', 'list_jobs', 'delete_job', 'memory_store_skill', 'memory_list_skills', 'get_tool_catalog'],
+- Always confirm the schedule before creating — mistakes are hard to undo
+- execution_plan tools MUST be a subset of required_tools — the system validates this`,
+    required_tools: ['memory_store_skill', 'memory_list_skills', 'memory_delete_skill', 'get_tool_catalog'],
     max_steps: 8,
     notify_on_completion: false,
   },

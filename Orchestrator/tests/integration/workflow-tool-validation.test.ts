@@ -138,7 +138,7 @@ describe('Workflow: required_tools Validation at Proxy', () => {
       name: 'Custom Handlers Test',
       trigger_type: 'manual',
       instructions: 'Test instructions',
-      required_tools: ['get_status', 'create_job', 'get_tool_catalog'],
+      required_tools: ['get_status', 'queue_task', 'get_tool_catalog'],
     });
 
     expect(parsed.success).toBe(true);

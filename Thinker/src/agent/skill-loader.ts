@@ -169,6 +169,17 @@ export class SkillLoader {
       requiredTools.push(...tools);
     }
 
+    // Extract scheduling extensions from metadata
+    const triggerConfig = meta.trigger_config && typeof meta.trigger_config === 'object'
+      ? meta.trigger_config as Record<string, unknown>
+      : undefined;
+    const maxSteps = typeof meta.max_steps === 'number' ? meta.max_steps : undefined;
+    const executionPlan = Array.isArray(meta.execution_plan) ? meta.execution_plan as Array<{
+      id: string;
+      toolName: string;
+      parameters?: Record<string, unknown>;
+    }> : undefined;
+
     return {
       id: nameToNegativeId(fm.name),
       name: fm.name,
@@ -178,6 +189,9 @@ export class SkillLoader {
       priority,
       requiredTools,
       source: 'file',
+      triggerConfig,
+      maxSteps,
+      executionPlan,
     };
   }
 }

@@ -9,6 +9,7 @@
 
 import type { IMCPClient, MCPToolDefinition, ToolCallResult } from '../mcp-clients/types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
+import { normalizeSkillInput, validateCronExpression } from '../utils/skill-normalizer.js';
 
 export interface RoutedTool {
   name: string; // The name exposed to Claude (may be prefixed)
@@ -423,6 +424,25 @@ export class ToolRouter {
     toolName: string,
     args: Record<string, unknown>
   ): Promise<ToolCallResult> {
+    // Normalize skill inputs before routing (fixes LLM mistakes regardless of caller)
+    if (toolName === 'memory_store_skill' || toolName === 'memory_update_skill') {
+      const normalized = normalizeSkillInput(args);
+      Object.assign(args, normalized);
+
+      // Validate cron expression before storage
+      const tc = args.trigger_config as Record<string, unknown> | undefined;
+      if (tc?.schedule && typeof tc.schedule === 'string') {
+        const cronCheck = validateCronExpression(tc.schedule);
+        if (!cronCheck.valid) {
+          return {
+            success: false,
+            error: `Invalid cron expression "${tc.schedule}": ${cronCheck.error}`,
+            content: { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Invalid cron expression "${tc.schedule}": ${cronCheck.error}` }) }] },
+          };
+        }
+      }
+    }
+
     const route = this.routes.get(toolName);
 
     if (!route) {

@@ -144,6 +144,7 @@ export interface ListSkillsData {
     trigger_config: unknown;
     instructions: string;
     required_tools: string[];
+    execution_plan: unknown[] | null;
     max_steps: number;
     notify_on_completion: boolean;
     last_run_at: string | null;
@@ -165,6 +166,7 @@ export interface GetSkillData {
     trigger_config: unknown;
     instructions: string;
     required_tools: string[];
+    execution_plan: unknown[] | null;
     max_steps: number;
     notify_on_completion: boolean;
     last_run_at: string | null;

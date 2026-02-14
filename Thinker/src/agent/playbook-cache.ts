@@ -41,6 +41,8 @@ export class PlaybookCache {
         if (this.fileSkills.length > 0) {
           logger.info(`Loaded ${this.fileSkills.length} file-based skill(s) from disk`);
         }
+        // Sync file skills that have trigger_config to Memorizer (for scheduling)
+        await this.syncScheduledFileSkills();
       } catch (error) {
         logger.warn('Failed to load file-based skills (non-fatal)', error);
       }
@@ -82,6 +84,22 @@ export class PlaybookCache {
   }
 
   private async refresh(trace?: TraceContext): Promise<void> {
+    // Re-scan file skills on refresh (picks up new/changed SKILL.md files)
+    if (this.skillLoader) {
+      try {
+        const newFileSkills = await this.skillLoader.scan();
+        if (newFileSkills.length !== this.fileSkills.length) {
+          logger.info(`File skills changed: ${this.fileSkills.length} → ${newFileSkills.length}`);
+          this.fileSkills = newFileSkills;
+          await this.syncScheduledFileSkills();
+        } else {
+          this.fileSkills = newFileSkills;
+        }
+      } catch (error) {
+        logger.warn('Failed to re-scan file-based skills', error);
+      }
+    }
+
     try {
       const { skills } = await this.orchestrator.listSkills(
         this.agentId,
@@ -102,6 +120,57 @@ export class PlaybookCache {
     } catch (error) {
       // Keep stale cache on failure — better than no playbooks
       logger.error('Failed to refresh playbook cache', error);
+    }
+  }
+
+  /**
+   * Sync file-based skills that have trigger_config to Memorizer.
+   * This enables scheduling for SKILL.md files that declare a schedule.
+   * Upserts by name — if a DB skill with the same name exists, skip.
+   */
+  private async syncScheduledFileSkills(): Promise<void> {
+    const scheduledSkills = this.fileSkills.filter(s => s.triggerConfig);
+    if (scheduledSkills.length === 0) return;
+
+    // Get existing DB skills to avoid duplicates
+    let existingNames: Set<string>;
+    try {
+      const { skills } = await this.orchestrator.listSkills(this.agentId, 'cron');
+      existingNames = new Set(skills.map(s => s.name as string).filter(Boolean));
+    } catch {
+      logger.warn('Cannot list existing skills for sync — skipping');
+      return;
+    }
+
+    for (const skill of scheduledSkills) {
+      if (existingNames.has(skill.name)) {
+        continue; // Already exists in DB — don't duplicate
+      }
+
+      try {
+        const args: Record<string, unknown> = {
+          agent_id: this.agentId,
+          name: skill.name,
+          description: skill.description || skill.name,
+          trigger_type: 'cron',
+          trigger_config: skill.triggerConfig,
+          instructions: skill.instructions,
+          required_tools: skill.requiredTools,
+          max_steps: skill.maxSteps || 10,
+        };
+        if (skill.executionPlan) {
+          args.execution_plan = skill.executionPlan;
+        }
+
+        const response = await this.orchestrator.executeTool('memory_store_skill', args);
+        if (response.success) {
+          logger.info(`Auto-synced file skill to Memorizer: ${skill.name}`);
+        } else {
+          logger.warn(`Failed to sync file skill ${skill.name}: ${response.error}`);
+        }
+      } catch (error) {
+        logger.warn(`Failed to sync file skill ${skill.name}`, error);
+      }
     }
   }
 }

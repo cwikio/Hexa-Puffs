@@ -27,11 +27,7 @@ describe('required_tools validation logic', () => {
   const hasRoute = (name: string) => knownRoutes.has(name);
   const customHandlers: Record<string, unknown> = {
     get_status: true,
-    create_job: true,
     queue_task: true,
-    list_jobs: true,
-    get_job_status: true,
-    delete_job: true,
     trigger_backfill: true,
     get_tool_catalog: true,
   };
@@ -47,7 +43,7 @@ describe('required_tools validation logic', () => {
 
   it('should return empty when all tools exist as custom handlers', () => {
     const unknown = validateRequiredTools(
-      ['get_status', 'create_job'],
+      ['get_status', 'queue_task'],
       hasRoute,
       customHandlers,
     );
