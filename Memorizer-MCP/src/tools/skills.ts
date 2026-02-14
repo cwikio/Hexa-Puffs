@@ -22,6 +22,7 @@ import {
 function formatSkill(row: SkillRow) {
   return {
     id: row.id,
+    agent_id: row.agent_id,
     name: row.name,
     description: row.description,
     enabled: row.enabled === 1,

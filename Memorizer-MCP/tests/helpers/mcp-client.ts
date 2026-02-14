@@ -1,9 +1,61 @@
 /**
  * MCP Client Helper for Memorizer MCP Integration Tests.
- * Uses shared base client, adds Memorizer-specific convenience methods.
+ * Connects via stdio transport (spawns child process) — no HTTP server needed.
+ * Follows the same pattern as Guardian/tests/helpers/mcp-client.ts.
  */
 
-import { MCPTestClient } from '@mcp/shared/Testing/mcp-test-client.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const MEMORIZER_ROOT = resolve(__dirname, '../..');
+
+// Module-level singleton — one subprocess shared across all test files
+let sdkClient: Client | null = null;
+let sdkTransport: StdioClientTransport | null = null;
+
+export async function connect(): Promise<void> {
+  if (sdkClient) return;
+
+  // Filter env vars, force stdio transport
+  const envVars: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && key !== 'TRANSPORT') {
+      envVars[key] = value;
+    }
+  }
+
+  sdkTransport = new StdioClientTransport({
+    command: 'node',
+    args: [resolve(MEMORIZER_ROOT, 'dist/index.js')],
+    cwd: MEMORIZER_ROOT,
+    env: {
+      ...envVars,
+      TRANSPORT: 'stdio',
+    },
+  });
+
+  sdkClient = new Client(
+    { name: 'memorizer-test-client', version: '1.0.0' },
+    { capabilities: {} },
+  );
+
+  await sdkClient.connect(sdkTransport);
+}
+
+export async function disconnect(): Promise<void> {
+  if (sdkClient) {
+    await sdkClient.close();
+    sdkClient = null;
+  }
+  if (sdkTransport) {
+    await sdkTransport.close();
+    sdkTransport = null;
+  }
+}
 
 export interface ToolCallResult<T = unknown> {
   success: boolean;
@@ -19,20 +71,14 @@ export interface LogEntry {
 }
 
 export class McpClient {
-  private client: MCPTestClient;
   private logs: LogEntry[] = [];
-
-  constructor(baseUrl?: string) {
-    const url = baseUrl ?? process.env.MEMORIZER_URL ?? 'http://localhost:8005';
-    this.client = new MCPTestClient('Memorizer', url);
-  }
 
   private log(level: LogEntry['level'], message: string, duration?: number): void {
     const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
     const entry: LogEntry = { timestamp, level, message, duration };
     this.logs.push(entry);
 
-    const icons = { info: 'i', success: '✓', error: '✗', debug: '...' };
+    const icons = { info: 'i', success: '\u2713', error: '\u2717', debug: '...' };
     const colors = { info: '\x1b[36m', success: '\x1b[32m', error: '\x1b[31m', debug: '\x1b[90m' };
     const reset = '\x1b[0m';
 
@@ -48,36 +94,53 @@ export class McpClient {
     this.logs = [];
   }
 
-  async healthCheck(): Promise<boolean> {
-    const url = this.client.getBaseUrl();
-    this.log('info', `Checking health at ${url}/health`);
-
-    const result = await this.client.healthCheck();
-    if (result.healthy) {
-      this.log('success', 'Health check passed', result.duration);
-      return true;
-    } else {
-      this.log('error', `Health check failed: ${result.error || result.status}`, result.duration);
-      throw new Error(`Health check failed: ${result.error || result.status}`);
-    }
-  }
-
   async callTool<T = unknown>(toolName: string, args: Record<string, unknown> = {}): Promise<ToolCallResult<T>> {
     this.log('info', `Calling ${toolName} tool`);
 
-    const result = await this.client.callTool<ToolCallResult<T>>(toolName, args);
-
-    // The shared client parses the MCP wrapper and returns the inner object.
-    // For Memorizer, the inner object IS a ToolCallResult { success, data?, error? }.
-    const mapped: ToolCallResult<T> = result.data ?? { success: false, error: result.error ?? 'Invalid response format' };
-
-    if (mapped.success) {
-      this.log('success', `${toolName} succeeded`, result.duration);
-    } else {
-      this.log('error', `${toolName} failed: ${mapped.error}`, result.duration);
+    if (!sdkClient) {
+      throw new Error('MCP client not connected. Call connect() first.');
     }
 
-    return mapped;
+    const start = Date.now();
+    try {
+      const response = await sdkClient.callTool({ name: toolName, arguments: args });
+      const duration = Date.now() - start;
+
+      // SDK returns { content } or legacy { toolResult } — extract text from content array
+      const content = 'content' in response && Array.isArray(response.content)
+        ? response.content
+        : [];
+      const textEntry = content.find((c: { type: string }) => c.type === 'text');
+      const text = textEntry && 'text' in textEntry ? String(textEntry.text) : undefined;
+
+      if (!text) {
+        this.log('error', `${toolName} failed: no text content`, duration);
+        return { success: false, error: 'No text content in response' };
+      }
+
+      const parsed: unknown = JSON.parse(text);
+
+      // Validate the parsed response has the expected shape
+      if (typeof parsed !== 'object' || parsed === null || !('success' in parsed)) {
+        this.log('error', `${toolName} failed: invalid response shape`, duration);
+        return { success: false, error: 'Invalid response shape' };
+      }
+
+      // Safe after shape validation above
+      const result = parsed as ToolCallResult<T>;
+      if (result.success) {
+        this.log('success', `${toolName} succeeded`, duration);
+      } else {
+        this.log('error', `${toolName} failed: ${result.error}`, duration);
+      }
+
+      return result;
+    } catch (err) {
+      const duration = Date.now() - start;
+      const message = err instanceof Error ? err.message : String(err);
+      this.log('error', `${toolName} failed: ${message}`, duration);
+      return { success: false, error: message };
+    }
   }
 
   // Convenience methods for each tool
@@ -102,7 +165,7 @@ export class McpClient {
     agentResponse: string,
     agentId = 'test-agent',
     sessionId?: string,
-    tags?: string[]
+    tags?: string[],
   ): Promise<ToolCallResult> {
     const args: Record<string, unknown> = {
       user_message: userMessage,
@@ -119,7 +182,7 @@ export class McpClient {
     agentId = 'test-agent',
     limit?: number,
     dateFrom?: string,
-    dateTo?: string
+    dateTo?: string,
   ): Promise<ToolCallResult> {
     const args: Record<string, unknown> = { query, agent_id: agentId };
     if (limit) args.limit = limit;
@@ -135,7 +198,7 @@ export class McpClient {
   async updateProfile(
     updates: Record<string, unknown>,
     agentId = 'test-agent',
-    reason?: string
+    reason?: string,
   ): Promise<ToolCallResult> {
     const args: Record<string, unknown> = { agent_id: agentId, updates };
     if (reason) args.reason = reason;
@@ -146,7 +209,7 @@ export class McpClient {
     query: string,
     agentId = 'test-agent',
     limit?: number,
-    includeConversations = true
+    includeConversations = true,
   ): Promise<ToolCallResult> {
     return this.callTool('retrieve_memories', {
       query,
@@ -163,7 +226,7 @@ export class McpClient {
   async exportMemory(
     agentId = 'test-agent',
     format: 'json' | 'markdown' = 'json',
-    includeConversations = true
+    includeConversations = true,
   ): Promise<ToolCallResult> {
     return this.callTool('export_memory', {
       agent_id: agentId,
@@ -183,7 +246,7 @@ export class McpClient {
     triggerType: string,
     instructions: string,
     agentId = 'test-agent',
-    opts: Record<string, unknown> = {}
+    opts: Record<string, unknown> = {},
   ): Promise<ToolCallResult> {
     return this.callTool('store_skill', {
       agent_id: agentId,
@@ -216,7 +279,7 @@ export class McpClient {
     name: string,
     email: string,
     agentId = 'test-agent',
-    opts: Record<string, unknown> = {}
+    opts: Record<string, unknown> = {},
   ): Promise<ToolCallResult> {
     return this.callTool('create_contact', {
       agent_id: agentId,
@@ -239,7 +302,7 @@ export class McpClient {
   async createProject(
     name: string,
     agentId = 'test-agent',
-    opts: Record<string, unknown> = {}
+    opts: Record<string, unknown> = {},
   ): Promise<ToolCallResult> {
     return this.callTool('create_project', {
       agent_id: agentId,
@@ -255,12 +318,13 @@ export class McpClient {
   async updateProject(projectId: number, updates: Record<string, unknown>): Promise<ToolCallResult> {
     return this.callTool('update_project', { project_id: projectId, ...updates });
   }
+
   // Timeline convenience method
 
   async queryTimeline(
     dateFrom: string,
     agentId = 'test-agent',
-    opts: Record<string, unknown> = {}
+    opts: Record<string, unknown> = {},
   ): Promise<ToolCallResult> {
     return this.callTool('query_timeline', {
       agent_id: agentId,
