@@ -2,7 +2,7 @@
 
 ## Technical Capability Comparison
 
-**February 15, 2026 | Annabelle v1.0.0 vs OpenClaw v2026.2.6 | Excludes messaging integrations**
+**February 15, 2026 | Annabelle v1.0.0 vs OpenClaw v2026.2.14 | Excludes messaging integrations**
 
 ---
 
@@ -25,7 +25,7 @@ pie title Dimension Comparison (50 total)
 
 ## Context
 
-This document evaluates **Annabelle v1.0.0** — a personal AI assistant with 11 MCPs + external MCP support, 148+ tools, and 7 proactive skills — against **OpenClaw v2026.2.6** — an open-source AI assistant with 176,000+ GitHub stars, 25+ built-in tools, 53+ official skills, and 5,700+ community skills.
+This document evaluates **Annabelle v1.0.0** — a personal AI assistant with 11 MCPs + external MCP support, 148+ tools, and 7 proactive skills — against **OpenClaw v2026.2.14** — an open-source AI assistant with 176,000+ GitHub stars, 25+ built-in tools, 53+ official skills, and 5,700+ community skills.
 
 **Scope:** Core architecture, inference, execution, safety, memory, agents, web, voice, files, email, skills, observability. **Excludes:** Messaging channel breadth (OpenClaw's 13+ channels vs Annabelle's Telegram-only) — this is a separate strategic dimension, not a capability comparison.
 
@@ -61,7 +61,7 @@ This document evaluates **Annabelle v1.0.0** — a personal AI assistant with 11
 | # | Dimension | Annabelle | OpenClaw | Edge |
 |---|-----------|-----------|----------|------|
 | 10 | **Execution Approach** | CodeExec MCP: sandboxed one-shot + persistent sessions. Python, Node.js, Bash. Script library (save, search, run). | Pi Coding Tools: `read`, `write`, `edit`, `exec`, `process`. Battle-tested with 176K+ users. Inline execution mid-stream. | **OpenClaw** — more mature, inline execution, broader usage base |
-| 11 | **Sandboxing** | Environment variables stripped before code execution. No credentials leak to sandboxed code. Process-level isolation via MCP. | Docker containers (ephemeral, per-session). Configurable: all/non-main/disabled. Isolated filesystem, network, CPU/memory limits. | **OpenClaw** — container-level isolation is stronger than process-level env stripping |
+| 11 | **Sandboxing** | Environment variables stripped before code execution. No credentials leak to sandboxed code. Process-level isolation via MCP. | Docker containers (ephemeral, per-session). Configurable: all/non-main/disabled. Isolated filesystem, network, CPU/memory limits. v2026.2.14: separate browser-container bind mounts (`sandbox.browser.binds`), sandbox file tools are bind-mount aware with read-only enforcement. | **OpenClaw** — container-level isolation is stronger than process-level env stripping |
 | 12 | **REPL / Sessions** | Persistent sessions: `start_session`, `send_to_session`, `close_session`. State maintained across calls. Session timeout and cleanup. | PTY emulation via `@lydell/node-pty`. Full terminal sessions. Process subprocess management. | **Comparable** — both support persistent sessions with different approaches |
 | 13 | **Self-Programming** | Not supported. CodeExec runs sandboxed code but cannot extend the system's permanent tool set. | OpenClaw Foundry: LLM writes, tests, and deploys its own tools at runtime. Learns user workflows, creates new capabilities. | **OpenClaw** — fundamentally different capability. Annabelle can't extend itself |
 | 14 | **Script Library** | `save_script`, `get_script`, `list_scripts`, `search_scripts`, `run_script`, `save_and_run_script`, `delete_script`. Named scripts with metadata. | Skills as code — write skills that execute tools. Bundled + workspace + managed skill directories. | **Comparable** — different abstraction (scripts vs skills), similar outcome |
@@ -72,12 +72,12 @@ This document evaluates **Annabelle v1.0.0** — a personal AI assistant with 11
 
 | # | Dimension | Annabelle | OpenClaw | Edge |
 |---|-----------|-----------|----------|------|
-| 15 | **Input Scanning** | Guardian MCP: dedicated, always-on. IBM Granite Guardian. Scans tool inputs before execution. Per-MCP toggle. Fail-closed by default. | No dedicated input scanning. 7-layer tool policy check (allow/deny). Code safety scanner added in v2026.2.6 (for skills only). | **Annabelle** — dedicated ML-based scanning vs policy-only |
+| 15 | **Input Scanning** | Guardian MCP: dedicated, always-on. IBM Granite Guardian. Scans tool inputs before execution. Per-MCP toggle. Fail-closed by default. | No dedicated input scanning. 7-layer tool policy check (allow/deny). Code safety scanner (skills only). v2026.2.14: recalled memories treated as untrusted context (escaped + non-instruction framing), auto-capture skips likely prompt-injection payloads, SSRF guards hardened across all channels. | **Annabelle** — dedicated ML-based scanning vs infrastructure hardening without content-level analysis |
 | 16 | **Output Scanning** | Guardian scans tool outputs before returning to caller. Per-MCP toggle. Web results, email content, file contents all scannable. | No output scanning. Tool results returned directly to LLM. | **Annabelle** — catches prompt injection in untrusted content (emails, web pages) |
 | 17 | **Tool Policies** | Per-agent `allowedTools` / `deniedTools` (glob patterns). ToolRouter filters before sending to Thinker. Required_tools sandboxing for skills. | 7-layer precedence hierarchy. Complex but configurable. Per-agent tool allow/deny. | **Comparable** — both have per-agent tool policies, OpenClaw's is more granular |
-| 18 | **Authentication & Network** | HTTP API with generated token (`X-Annabelle-Token`). All MCPs are local child processes — no network exposure. External MCPs get env var resolution. | WebSocket with pairing handshake. Bonjour/mDNS discovery. Tailscale/SSH tunneling for remote. Network-exposed by design (multi-device). | **Annabelle** — smaller attack surface (local-only). OpenClaw is network-exposed for multi-device support |
-| 19 | **Credential Isolation** | 1Password MCP is read-only by design. CodeExec strips environment variables. Filer has forbidden paths (~/.ssh, ~/.aws, ~/.config). | Sandbox mode isolates credentials. Docker containers get clean environment. But host mode exposes everything. | **Annabelle** — defense-in-depth: read-only vault + env stripping + forbidden paths, always active |
-| 20 | **Supply Chain Security** | External MCPs in `external-mcps.json` are auto-wrapped by Guardian. Startup diff detects changes. Hot-reload with security wrapping. | CVE-2026-25253 (RCE via malicious skills). 42,665+ exposed instances. 230+ malicious skills detected (Jan 2026). Code safety scanner added in v2026.2.6. | **Annabelle** — proactive Guardian wrapping vs reactive scanner. No supply chain incidents |
+| 18 | **Authentication & Network** | HTTP API with generated token (`X-Annabelle-Token`). All MCPs are local child processes — no network exposure. External MCPs get env var resolution. | WebSocket with pairing handshake. Bonjour/mDNS discovery. Tailscale/SSH tunneling for remote. Network-exposed by design (multi-device). v2026.2.14: hardened webhook auth (Telegram requires secret, Twilio/Telnyx require signature verification), SSRF guard fixes (IPv4-mapped IPv6 bypass blocked), Bonjour TXT no longer authoritative for routing, autoconnect requires previously trusted gateway. | **Annabelle** — smaller attack surface (local-only). OpenClaw hardened but still network-exposed by design |
+| 19 | **Credential Isolation** | 1Password MCP is read-only by design. CodeExec strips environment variables. Filer has forbidden paths (~/.ssh, ~/.aws, ~/.config). | Sandbox mode isolates credentials. Docker containers get clean environment. But host mode exposes everything. v2026.2.14: PATH hardening (project-local `node_modules/.bin` disabled by default, node-host PATH overrides disallowed), shell injection prevention on macOS keychain, process cleanup scoped to owned PIDs. | **Annabelle** — defense-in-depth: read-only vault + env stripping + forbidden paths, always active regardless of mode |
+| 20 | **Supply Chain Security** | External MCPs in `external-mcps.json` are auto-wrapped by Guardian. Startup diff detects changes. Hot-reload with security wrapping. | CVE-2026-25253 (RCE via malicious skills, Jan 2026). Code safety scanner (v2026.2.6). v2026.2.14: archive extraction entry/size limits for ZIP/TAR, skill archive path traversal prevention, hook transform modules restricted to `~/.openclaw/hooks/transforms`, hook manifest entries outside package directory ignored. Significant post-incident hardening. | **Annabelle** — proactive Guardian wrapping vs reactive post-incident hardening. OpenClaw has improved significantly but response is infrastructure-level, not runtime content scanning |
 
 ---
 
@@ -86,7 +86,7 @@ This document evaluates **Annabelle v1.0.0** — a personal AI assistant with 11
 | # | Dimension | Annabelle | OpenClaw | Edge |
 |---|-----------|-----------|----------|------|
 | 21 | **Storage Architecture** | SQLite (better-sqlite3) + sqlite-vec + FTS5. Single database at `~/.annabelle/data/memory.db`. 7 tables: facts, conversations, profiles, profile_history, skills, contacts, projects. | SQLite + sqlite-vec + FTS5. Hybrid search: 70/30 vector+BM25 blend. Memories stored as readable Markdown files. | **Comparable** — same technology stack, similar hybrid search. Annabelle has more structured tables |
-| 22 | **Auto-Learning** | Automatic fact extraction after 5-min idle. Groq Llama 8B. Max 5 facts per extraction. Confidence scoring (0.7+ threshold). Categories: preference, background, pattern, project, contact, decision. | LLM voluntarily writes to memory via `memory` tool. Context compaction triggers memory writes. Model-driven, not system-driven. | **Annabelle** — automatic extraction with confidence scoring vs voluntary model writes |
+| 22 | **Auto-Learning** | Automatic fact extraction after 5-min idle. Groq Llama 8B. Max 5 facts per extraction. Confidence scoring (0.7+ threshold). Categories: preference, background, pattern, project, contact, decision. | LLM voluntarily writes to memory via `memory` tool. Context compaction triggers memory writes. Model-driven, not system-driven. v2026.2.14: `autoCapture` now requires explicit opt-in (default disabled) for PII safety; auto-capture restricted to user messages only; prompt-injection payloads skipped. | **Annabelle** — automatic extraction with confidence scoring vs opt-in model-driven writes |
 | 23 | **User Profiles** | Structured profiles per agent (`profile_data` JSON). Profile history with rollback capability. Separate contacts and projects tables. | User context in `USER.md` file. Updated by LLM or user. No structured schema, no rollback. | **Annabelle** — structured, versioned, rollback-capable profiles |
 | 24 | **Search Quality** | 3-tier hybrid: Vector + FTS5 + LIKE fallback. Configurable weights. Porter stemming. Graceful degradation when embedding provider is down. | 2-tier hybrid: Vector + BM25. 70/30 blend, 4x candidate pool reranked. No LIKE fallback. | **Annabelle** — 3-tier fallback ensures search always works, even without embeddings |
 | 25 | **Deduplication** | Exact match check + fuzzy dedup (keyword overlap >= 0.6). Sensitive data protection (`isFactSafe()` rejects passwords/tokens). | No explicit deduplication. LLM decides what to write. Duplicate memories possible. | **Annabelle** — automatic dedup + sensitive data filtering |
@@ -175,9 +175,9 @@ This document evaluates **Annabelle v1.0.0** — a personal AI assistant with 11
 
 Guardian MCP is a dedicated, always-on safety layer with ML-based scanning (IBM Granite Guardian). It pre-scans tool inputs, post-scans tool outputs, has per-MCP configuration, per-agent overrides, and fails closed by default. Every external MCP is automatically wrapped.
 
-OpenClaw's security track record: CVE-2026-25253 (RCE vulnerability), 42,665+ exposed instances found, 230+ malicious skills detected in ClawHub (January 2026). A code safety scanner was added in v2026.2.6, but it only covers skill installation, not runtime content.
+OpenClaw's security track record: CVE-2026-25253 (RCE vulnerability, Jan 2026), 42,665+ exposed instances, 230+ malicious skills detected. Response: code safety scanner (v2026.2.6), then a massive security release (v2026.2.14) with 50+ security fixes — SSRF hardening, path traversal prevention, webhook auth requirements, memory anti-injection, archive extraction limits. The gap has narrowed significantly at the infrastructure level, but OpenClaw still lacks dedicated ML-based content scanning at tool boundaries.
 
-*For a personal assistant handling real email, real credentials, and real money, this gap is critical.*
+*For a personal assistant handling real email, real credentials, and real money, the architectural difference matters: Guardian scans content at every tool call boundary; OpenClaw hardens the infrastructure around tool calls.*
 
 **2. Token Efficiency**
 
@@ -234,11 +234,52 @@ This section tracks changes since the previous comparison document (v1 dated Feb
 | Documentation consolidation | 15 comprehensive .documentation files covering full system. Enables this benchmark update. |
 | No functional changes | Architecture, MCPs, and capabilities remain at v1.0.0 |
 
-### OpenClaw Changes
+### OpenClaw v2026.2.14 (Released Feb 15, 2026)
 
-| Change | Impact |
-|--------|--------|
-| No tracked changes | v2026.2.6 remains current release |
+This is a **major security and stability release** — 100+ fixes, 50+ security patches, 56 contributors. Key changes by category:
+
+**Security Hardening (50+ fixes):**
+
+| Area | Changes |
+|------|---------|
+| **SSRF** | IPv4-mapped IPv6 bypass blocked. Feishu, Tlon URL fetching hardened. Browser control CSRF hardening. |
+| **Path traversal** | `apply_patch` workspace-root bounds enforced (non-sandbox). Symlink-escape checks for delete hunks. Archive extraction entry/size limits (ZIP/TAR). |
+| **Webhook auth** | Telegram requires `webhookSecret`. Twilio/Telnyx require signature verification. BlueBubbles loopback-only for passwordless. |
+| **Memory anti-injection** | Recalled memories treated as untrusted context (escaped + non-instruction framing). Auto-capture skips prompt-injection payloads. Auto-capture now opt-in (`autoCapture: true` required). |
+| **Process security** | Shell injection prevented on child process spawn (Windows cmd.exe). macOS keychain credential shell injection fixed. PATH hardening: project-local `node_modules/.bin` disabled by default. |
+| **Supply chain** | Skill archive path traversal blocked. Hook transform modules restricted to `~/.openclaw/hooks/transforms`. Hook manifest entries outside package dir ignored. |
+| **Channel auth** | Telegram: numeric sender IDs required for allowlists. Slack: DM command authorization enforced with `dmPolicy=open`. Google Chat: `users/<email>` deprecated. Discovery: Bonjour TXT no longer authoritative, autoconnect requires trusted gateway. |
+| **Media** | Local allowlist hardening (explicit `readFile` override, reject filesystem-root `localRoots`). Oversized base64 rejected pre-decode. URL media fetches bounded. |
+| **Gateway** | Tool-supplied `gatewayUrl` restricted to loopback/configured. `system.execApprovals` blocked via `node.invoke`. Raw config values no longer leaked in `skills.status`. |
+
+**New Features (minor):**
+
+| Feature | Detail |
+|---------|--------|
+| Telegram polls | `openclaw message poll` with duration, silent delivery, anonymity controls |
+| Slack/Discord DM config | `dmPolicy` + `allowFrom` aliases; `openclaw doctor --fix` migrates legacy keys |
+| Discord exec approvals | Target channels, DM, or both via `channels.discord.execApprovals.target` |
+| Browser sandbox binds | `sandbox.browser.binds` for separate browser-container bind mounts |
+
+**Memory System (20+ fixes):**
+
+| Area | Changes |
+|------|---------|
+| QMD optimization | Exact docid matches before prefix fallback. Result limits passed to search. Windowed reads avoid full file loading. Unchanged session exports skip rewrite. |
+| QMD resilience | Noisy stdout JSON parsing. Null-byte `ENOTDIR` self-healing. Multi-collection ranking corruption fix. |
+| Memory management | Bounded growth across 6 subsystems: diagnostic state, `agentRunSeq`, `ABORT_MEMORY`, thread-starter cache, directory cache, remote-skills cache. All with TTL + max-size eviction. |
+
+**TUI Stability (10+ fixes):**
+- In-flight streaming preserved during concurrent run finalization
+- Pre-tool streamed text preserved during tool-boundary deltas
+- ANSI/binary history sanitization prevents startup crashes
+- Light theme contrast fix (terminal default foreground)
+- Session scope honoring for named sessions
+
+**Cron Reliability:**
+- Past-due recurring jobs no longer silently skipped
+- Stale `runningAtMs` markers handled (prevents restart loops)
+- Agent identity preserved in cron outbound messages
 
 ### Previously Tracked Changes (incorporated in this version)
 
@@ -332,9 +373,11 @@ OpenClaw optimizes for **reach** — every model, every channel, every use case.
 
 Annabelle optimizes for **depth** — type-safe contracts, process isolation, dedicated security scanning, structured memory with confidence scoring, production observability. The philosophy: do fewer things, but do them with engineering discipline.
 
-### The Safety Gap Has Widened
+### The Safety Gap Has Narrowed — But Not Closed
 
-OpenClaw's January 2026 supply chain incident (230+ malicious skills, CVE-2026-25253 affecting 42,665+ exposed instances) underscored a structural weakness: the ecosystem's openness is also its attack surface. The v2026.2.6 code safety scanner is reactive — it checks skills at installation time but doesn't scan runtime content flowing through tools.
+OpenClaw's January 2026 supply chain incident (230+ malicious skills, CVE-2026-25253) prompted a serious response. v2026.2.14 is the most security-focused release in the project's history: 50+ security fixes covering SSRF, path traversal, webhook authentication, memory prompt-injection defense, archive extraction limits, process isolation, and channel-level auth hardening. Recalled memories are now treated as untrusted context. Auto-capture requires explicit opt-in. Discovery and autoconnect security are significantly tightened.
+
+However, the architectural difference remains: OpenClaw's security improvements are **infrastructure-level** — hardening paths, validating inputs at system boundaries, preventing traversal and injection at the transport layer. Annabelle's Guardian operates at the **content level** — ML-based scanning of what flows through tools, not just how it gets there. OpenClaw still has no equivalent of pre/post-scanning tool content with a dedicated ML model.
 
 Annabelle's defense-in-depth: Guardian wraps all MCPs (including external), per-MCP scanning configuration, fail-closed by default, per-agent overrides, forbidden paths, env stripping, read-only vault access. Every layer is active by default, not opt-in.
 
@@ -350,10 +393,10 @@ Remaining gaps: voice (specced not built), self-programming (philosophical choic
 |---|---|---|
 | **Best for** | Security-conscious users handling real credentials, email, and financial data | Power users wanting maximum flexibility and community ecosystem |
 | **Strongest at** | Safety architecture, token efficiency, cost controls, engineering discipline, observability | Code execution maturity, model breadth, voice, ecosystem, multi-device |
-| **Weakest at** | Channel breadth, voice, ecosystem size, self-programming | Cost controls, security posture, token management, supply chain safety |
+| **Weakest at** | Channel breadth, voice, ecosystem size, self-programming | Cost controls, content-level security scanning, token management |
 | **Philosophy** | Depth over reach — fewer features, each secure and tested | Reach over depth — cover every use case, community fills gaps |
 
-Both are solo-developer projects. Annabelle is the more cautious, production-minded system. OpenClaw is the more ambitious, community-driven platform. The choice depends on whether you prioritize safety and efficiency (Annabelle) or flexibility and ecosystem (OpenClaw).
+Both are solo-developer projects. Annabelle is the more cautious, production-minded system. OpenClaw is the more ambitious, community-driven platform — and v2026.2.14 shows it is now taking security seriously at scale. The choice depends on whether you prioritize safety and efficiency (Annabelle) or flexibility and ecosystem (OpenClaw).
 
 ---
 
@@ -361,6 +404,7 @@ Both are solo-developer projects. Annabelle is the more cautious, production-min
 
 - [Annabelle System Documentation](.documentation/) — 15 files, February 2026
 - [OpenClaw Architecture Analysis](OpenClaw_PI_Architecture_Analysis.md) — February 2026
-- [OpenClaw GitHub](https://github.com/openclaw/openclaw) — v2026.2.6
+- [OpenClaw GitHub](https://github.com/openclaw/openclaw) — v2026.2.14
+- [OpenClaw v2026.2.14 Release Notes](https://github.com/openclaw/openclaw/releases/tag/v2026.2.14) — 100+ fixes, 50+ security patches
 - [OpenClaw Docs](https://docs.openclaw.ai)
 - [CVE-2026-25253 Disclosure](https://nvd.nist.gov/vuln/detail/CVE-2026-25253)
