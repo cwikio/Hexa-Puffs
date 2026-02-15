@@ -6,6 +6,91 @@
 
 ---
 
+## What Is OpenClaw?
+
+OpenClaw bills itself as "the AI that actually does things." It is an open-source personal AI assistant (176,000+ GitHub stars, 56 contributors on the latest release alone) that runs locally on the user's machine — Mac, Windows, or Linux — and connects through familiar chat interfaces: WhatsApp, Telegram, Discord, Slack, Signal, iMessage, and 7+ more. The core philosophy is accessibility and agency: rather than answering questions, OpenClaw clears inboxes, manages calendars, sends messages, automates file operations, and controls smart home devices. The LLM has full access to the local filesystem, shell, and browser.
+
+OpenClaw emphasizes user ownership — "your context and skills live on YOUR computer, not a walled garden" — and an open, hackable ecosystem. The system can write and deploy its own tools at runtime (OpenClaw Foundry), and the community contributes 5,700+ skills in the ClawHub marketplace. 53+ official skills and 50+ integrations cover productivity, development, and third-party services. Native apps for macOS, iOS, and Android provide a polished multi-device experience. The v2026.2.14 release (February 15, 2026) is the project's largest security hardening to date, with 50+ security patches responding to the January 2026 supply chain incident (CVE-2026-25253).
+
+## What Is Annabelle?
+
+Annabelle is a personal AI assistant built as a security-first, modular monorepo. It is a solo-developer infrastructure project designed to handle real credentials, real email, and real money with engineering discipline. The system runs as a constellation of processes: an Orchestrator hub (Express HTTP), a Thinker agent runtime (Vercel AI SDK), and 10+ MCP servers (Model Context Protocol) as isolated child processes — plus external third-party MCPs loaded at runtime via hot-reload.
+
+The defining architectural choice is Guardian — a dedicated, always-on security MCP powered by IBM Granite Guardian that pre-scans every tool input and post-scans every tool output for prompt injection, with per-MCP configuration and fail-closed defaults. Every external MCP is automatically wrapped. Beyond security, the system prioritizes token efficiency (three-path tool selection drops 148+ tools to 3-25 per message), cost controls (sliding-window anomaly detection with auto-pause), and structured memory (SQLite with vector + FTS5 + LIKE hybrid search, automatic fact extraction, confidence scoring, deduplication). Proactive skills run on Inngest cron with a two-tier execution model: simple tasks fire at zero LLM tokens, complex ones get full agent reasoning. The user interface is Telegram-only — one channel, deeply integrated, with slash commands for full system administration.
+
+---
+
+## Architecture Comparison
+
+```mermaid
+flowchart LR
+    subgraph Annabelle["ANNABELLE"]
+        direction TB
+        A_USER["User<br/>(Telegram)"]
+        A_ORCH["Orchestrator<br/>(:8010)<br/>Express HTTP"]
+        A_GUARD["Guardian<br/>(Granite Guardian)"]
+        A_THINK["Thinker<br/>(:8006)<br/>Vercel AI SDK"]
+        A_MCP1["Gmail MCP"]
+        A_MCP2["Memorizer MCP"]
+        A_MCP3["Filer MCP"]
+        A_MCP4["CodeExec MCP"]
+        A_MCP5["+ 6 more MCPs"]
+        A_EXT["External MCPs<br/>(hot-reload)"]
+        A_INN["Inngest<br/>(:8288)<br/>Skill Scheduler"]
+
+        A_USER --> A_ORCH
+        A_ORCH --> A_GUARD
+        A_ORCH --> A_THINK
+        A_ORCH --> A_MCP1
+        A_ORCH --> A_MCP2
+        A_ORCH --> A_MCP3
+        A_ORCH --> A_MCP4
+        A_ORCH --> A_MCP5
+        A_ORCH --> A_EXT
+        A_INN --> A_ORCH
+    end
+
+    subgraph OpenClaw["OPENCLAW"]
+        direction TB
+        O_USER["Users<br/>(13+ channels)"]
+        O_GW["Gateway<br/>(:18789)<br/>WebSocket RPC"]
+        O_ADAPT["Channel Adapters<br/>(Telegram, WhatsApp,<br/>Discord, Slack, ...)"]
+        O_PI["PiEmbeddedRunner<br/>(Pi Agent Core)"]
+        O_MEM["SQLite Memory<br/>(BM25 + Vector)"]
+        O_TOOLS["Built-in Tools<br/>(read, write, edit,<br/>exec, browser, ...)"]
+        O_SKILLS["Skills<br/>(53+ official,<br/>5700+ community)"]
+        O_APPS["Native Apps<br/>(macOS, iOS, Android)"]
+
+        O_USER --> O_ADAPT
+        O_ADAPT --> O_GW
+        O_GW --> O_PI
+        O_PI --> O_MEM
+        O_PI --> O_TOOLS
+        O_PI --> O_SKILLS
+        O_APPS --> O_GW
+    end
+
+    style Annabelle fill:#eaf2f8,stroke:#2980b9,stroke-width:2px
+    style OpenClaw fill:#fef9e7,stroke:#d68910,stroke-width:2px
+```
+
+### Structural Differences
+
+| Aspect | Annabelle | OpenClaw |
+|--------|-----------|----------|
+| **Hub** | Orchestrator (HTTP API) | Gateway (WebSocket RPC) |
+| **Agent** | Separate process (Thinker) | Embedded (PiEmbeddedRunner) |
+| **Tools** | MCPs as child processes | Built-in functions |
+| **Security** | Guardian wraps all MCPs | Tool policy layer |
+| **Tool execution** | Stop-call-resume (HTTP round-trip) | Inline backfill (mid-stream) |
+| **Discovery** | Package manifest auto-scan | Config-file based |
+| **Channels** | Telegram only | 13+ platforms |
+| **Memory** | SQLite (7 tables, 3-tier search) | SQLite (Markdown files, 2-tier search) |
+| **Skills** | Inngest scheduler + 2-tier execution | Filesystem skills + lazy loading |
+| **Native apps** | None | macOS, iOS, Android |
+
+---
+
 ## Scorecard Summary
 
 | | Count |
@@ -20,12 +105,6 @@ pie title Dimension Comparison (50 total)
     "Comparable (9)" : 9
     "OpenClaw Ahead (10)" : 10
 ```
-
----
-
-## Context
-
-This document evaluates **Annabelle v1.0.0** — a personal AI assistant with 11 MCPs + external MCP support, 148+ tools, and 7 proactive skills — against **OpenClaw v2026.2.14** — an open-source AI assistant with 176,000+ GitHub stars, 25+ built-in tools, 53+ official skills, and 5,700+ community skills.
 
 **Scope:** Core architecture, inference, execution, safety, memory, agents, web, voice, files, email, skills, observability. **Excludes:** Messaging channel breadth (OpenClaw's 13+ channels vs Annabelle's Telegram-only) — this is a separate strategic dimension, not a capability comparison.
 
@@ -291,77 +370,6 @@ These changes were noted in the v1 comparison and remain reflected in the curren
 4. **Proactive skills** — 7 seeded skills on Inngest cron: Email Processor, Morning Briefing, Evening Recap, Weekly Digest, Follow-up Tracker, Pre-meeting Prep, Meeting Overload Warning
 5. **Token optimization** — required_tools bypass (72+ → 3-5 tools), history truncation (old results → one-liners)
 6. **OpenClaw supply chain incident** — 230+ malicious skills detected (Jan 2026), code safety scanner added in v2026.2.6
-
----
-
-## Architecture Comparison
-
-```mermaid
-flowchart LR
-    subgraph Annabelle["ANNABELLE"]
-        direction TB
-        A_USER["User<br/>(Telegram)"]
-        A_ORCH["Orchestrator<br/>(:8010)<br/>Express HTTP"]
-        A_GUARD["Guardian<br/>(Granite Guardian)"]
-        A_THINK["Thinker<br/>(:8006)<br/>Vercel AI SDK"]
-        A_MCP1["Gmail MCP"]
-        A_MCP2["Memorizer MCP"]
-        A_MCP3["Filer MCP"]
-        A_MCP4["CodeExec MCP"]
-        A_MCP5["+ 6 more MCPs"]
-        A_EXT["External MCPs<br/>(hot-reload)"]
-        A_INN["Inngest<br/>(:8288)<br/>Skill Scheduler"]
-
-        A_USER --> A_ORCH
-        A_ORCH --> A_GUARD
-        A_ORCH --> A_THINK
-        A_ORCH --> A_MCP1
-        A_ORCH --> A_MCP2
-        A_ORCH --> A_MCP3
-        A_ORCH --> A_MCP4
-        A_ORCH --> A_MCP5
-        A_ORCH --> A_EXT
-        A_INN --> A_ORCH
-    end
-
-    subgraph OpenClaw["OPENCLAW"]
-        direction TB
-        O_USER["Users<br/>(13+ channels)"]
-        O_GW["Gateway<br/>(:18789)<br/>WebSocket RPC"]
-        O_ADAPT["Channel Adapters<br/>(Telegram, WhatsApp,<br/>Discord, Slack, ...)"]
-        O_PI["PiEmbeddedRunner<br/>(Pi Agent Core)"]
-        O_MEM["SQLite Memory<br/>(BM25 + Vector)"]
-        O_TOOLS["Built-in Tools<br/>(read, write, edit,<br/>exec, browser, ...)"]
-        O_SKILLS["Skills<br/>(53+ official,<br/>5700+ community)"]
-        O_APPS["Native Apps<br/>(macOS, iOS, Android)"]
-
-        O_USER --> O_ADAPT
-        O_ADAPT --> O_GW
-        O_GW --> O_PI
-        O_PI --> O_MEM
-        O_PI --> O_TOOLS
-        O_PI --> O_SKILLS
-        O_APPS --> O_GW
-    end
-
-    style Annabelle fill:#eaf2f8,stroke:#2980b9,stroke-width:2px
-    style OpenClaw fill:#fef9e7,stroke:#d68910,stroke-width:2px
-```
-
-### Structural Differences
-
-| Aspect | Annabelle | OpenClaw |
-|--------|-----------|----------|
-| **Hub** | Orchestrator (HTTP API) | Gateway (WebSocket RPC) |
-| **Agent** | Separate process (Thinker) | Embedded (PiEmbeddedRunner) |
-| **Tools** | MCPs as child processes | Built-in functions |
-| **Security** | Guardian wraps all MCPs | Tool policy layer |
-| **Tool execution** | Stop-call-resume (HTTP round-trip) | Inline backfill (mid-stream) |
-| **Discovery** | Package manifest auto-scan | Config-file based |
-| **Channels** | Telegram only | 13+ platforms |
-| **Memory** | SQLite (7 tables, 3-tier search) | SQLite (Markdown files, 2-tier search) |
-| **Skills** | Inngest scheduler + 2-tier execution | Filesystem skills + lazy loading |
-| **Native apps** | None | macOS, iOS, Android |
 
 ---
 
