@@ -384,7 +384,7 @@ User asks to interact with a website: fill forms, click buttons, take screenshot
     description: 'Create recurring scheduled skills, reminders, or one-shot notifications from natural language',
     trigger_type: 'event',
     trigger_config: {
-      keywords: ['cron', 'remind me', 'recurring', 'every minute', 'every hour', 'every day', 'every week', 'every month', 'every morning', 'every evening', 'schedule task', 'background job', 'repeat', 'daily at', 'weekly', 'hourly', 'once a day', 'once a week', 'times a day', 'times a week', 'per minute', 'per hour', 'per day', 'at 3pm', 'at noon', 'tomorrow at', 'remind me at', 'alert me', 'notify me'],
+      keywords: ['cron', 'remind me', 'recurring', 'every minute', 'every hour', 'every day', 'every week', 'every month', 'every morning', 'every evening', 'schedule task', 'background job', 'repeat', 'daily at', 'weekly', 'hourly', 'once a day', 'once a week', 'times a day', 'times a week', 'per minute', 'per hour', 'per day', 'at 3pm', 'at noon', 'tomorrow at', 'remind me at', 'alert me', 'notify me', 'minutes', 'hours'],
       priority: 10,
     },
     instructions: `## WHEN TO USE
@@ -517,6 +517,44 @@ IMPORTANT: Only these Vercel tools exist. Do NOT call vercel_list_teams, vercel_
     max_steps: 8,
     notify_on_completion: false,
   },
+  {
+    name: 'skill-management',
+    description: 'View, inspect, and manage scheduled skills and tasks',
+    trigger_type: 'event',
+    trigger_config: {
+      keywords: [
+        'delete skill', 'remove skill', 'disable skill',
+        'failing skill', 'broken skill', 'failed skill',
+        'my skills', 'list skills', 'show skill', 'skill status',
+        'manage skills', 'skill details', 'what skills',
+        'delete job', 'remove job', 'failing job',
+        'my jobs', 'list jobs', 'scheduled tasks',
+      ],
+      priority: 10,
+    },
+    instructions: `## WHEN TO USE
+User asks about their skills/scheduled tasks, wants to see what's failing, or wants to delete/disable a skill.
+
+## STEPS
+1. Call memory_list_skills (trigger_type "cron", enabled true) to get all active scheduled skills.
+2. Present a summary grouped by status:
+   - Healthy: last_run_status = "success" — show name and schedule
+   - Failing: last_run_status = "error" — show name, error, and consecutive failure count
+   - Never run: no last_run_at — show name and schedule
+3. If there are failing skills, ask: "Would you like details on any of these, or should I delete one?"
+4. If the user asks for details: call memory_get_skill with the skill_id, show full config (trigger_config, instructions, required_tools, last_run_summary)
+5. If the user asks to delete: confirm the skill name, then call memory_delete_skill with the skill_id. Confirm deletion.
+6. If the user asks to disable (not delete): call memory_update_skill with enabled: false.
+
+## NOTES
+- Always confirm before deleting — show the skill name and ask "Delete skill '[name]' (id: X)?"
+- After deletion, confirm: "Skill '[name]' deleted."
+- If user says "delete all failing", list each one and confirm individually
+- Skill IDs come from the list response — never guess IDs`,
+    required_tools: ['memory_list_skills', 'memory_get_skill', 'memory_delete_skill', 'memory_update_skill'],
+    max_steps: 8,
+    notify_on_completion: false,
+  },
 ]
 
 /**
@@ -534,8 +572,17 @@ export async function seedPlaybooks(orchestrator: OrchestratorClient, agentId: s
     const existingSkill = existingByName.get(playbook.name)
 
     if (existingSkill) {
-      // Update if instructions changed
-      if ((existingSkill.instructions as string) !== playbook.instructions) {
+      // Detect changes in instructions OR trigger_config (keywords, priority)
+      const existingTc = existingSkill.trigger_config as Record<string, unknown> | undefined
+      const existingKeywords = (existingTc?.keywords as string[] | undefined) ?? []
+      const seedKeywords = playbook.trigger_config.keywords
+
+      const instructionsChanged = (existingSkill.instructions as string) !== playbook.instructions
+      const keywordsChanged =
+        existingKeywords.length !== seedKeywords.length ||
+        !seedKeywords.every(k => existingKeywords.includes(k))
+
+      if (instructionsChanged || keywordsChanged) {
         const updateResponse = await orchestrator.executeTool(
           'memory_update_skill',
           {
@@ -544,6 +591,7 @@ export async function seedPlaybooks(orchestrator: OrchestratorClient, agentId: s
             description: playbook.description,
             required_tools: playbook.required_tools,
             max_steps: playbook.max_steps,
+            trigger_config: playbook.trigger_config,
           },
           trace,
         )

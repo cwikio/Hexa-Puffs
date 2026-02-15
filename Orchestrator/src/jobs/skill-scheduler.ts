@@ -63,6 +63,8 @@ async function notifySkillFailure(
         remaining > 0
           ? `Next retry in ${backoff} minutes — auto-disable in ${remaining} more failure(s)`
           : `Skill auto-disabled after ${MAX_CONSECUTIVE_FAILURES} consecutive failures`,
+        '',
+        `Say "show skill ${skill.id}" for details or "delete skill ${skill.id}" to remove it.`,
       ].join('\n'),
     });
   } catch (notifyError) {

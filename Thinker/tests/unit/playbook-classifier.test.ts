@@ -179,6 +179,117 @@ describe('classifyMessage — new playbooks (system-health-check, message-cleanu
   });
 });
 
+describe('classifyMessage — real user scenarios', () => {
+  const playbooks: CachedPlaybook[] = [
+    makePlaybook({
+      id: 20,
+      name: 'research-and-share',
+      keywords: ['search for', 'find out', 'look up', 'research', 'what is', 'tell me about', 'latest news', 'news', 'headlines', "what's new"],
+      priority: 5,
+    }),
+    makePlaybook({
+      id: 21,
+      name: 'cron-scheduling',
+      keywords: [
+        'schedule', 'cron', 'every day', 'every morning', 'every evening',
+        'every hour', 'every minute', 'recurring', 'remind me', 'remind me at',
+        'schedule task', 'set up a job', 'automate', 'periodic',
+        'alert me', 'notify me', 'minutes', 'hours',
+      ],
+      priority: 10,
+    }),
+    makePlaybook({
+      id: 22,
+      name: 'skill-management',
+      keywords: [
+        'delete skill', 'remove skill', 'disable skill',
+        'failing skill', 'broken skill', 'failed skill',
+        'my skills', 'list skills', 'show skill', 'skill status',
+        'manage skills', 'skill details', 'what skills',
+        'delete job', 'remove job', 'failing job',
+        'my jobs', 'list jobs', 'scheduled tasks',
+      ],
+      priority: 10,
+    }),
+  ];
+
+  it('should match research-and-share for "send me AI news"', () => {
+    const result = classifyMessage('send me AI news', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('research-and-share');
+  });
+
+  it('should match research-and-share for "what\'s new in tech?"', () => {
+    const result = classifyMessage("what's new in tech?", playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('research-and-share');
+  });
+
+  it('should match research-and-share for "latest headlines"', () => {
+    const result = classifyMessage('latest headlines', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('research-and-share');
+  });
+
+  it('should match cron-scheduling for "every 2 minutes"', () => {
+    const result = classifyMessage('send me one ai news every 2 minutes', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('cron-scheduling');
+  });
+
+  it('should match cron-scheduling for "every 30 minutes"', () => {
+    const result = classifyMessage('check my email every 30 minutes', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('cron-scheduling');
+  });
+
+  it('should match cron-scheduling for "in 2 hours"', () => {
+    const result = classifyMessage('remind me in 2 hours', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('cron-scheduling');
+  });
+
+  it('should match skill-management for "delete skill 647"', () => {
+    const result = classifyMessage('delete skill 647', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('skill-management');
+  });
+
+  it('should match skill-management for "show skill 1700"', () => {
+    const result = classifyMessage('show skill 1700', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('skill-management');
+  });
+
+  it('should match skill-management for "what skills are failing"', () => {
+    const result = classifyMessage('what skills are failing', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('skill-management');
+  });
+
+  it('should match skill-management for "list my jobs"', () => {
+    const result = classifyMessage('list my jobs', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('skill-management');
+  });
+
+  it('should match skill-management for "my scheduled tasks"', () => {
+    const result = classifyMessage('show me my scheduled tasks', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('skill-management');
+  });
+
+  it('should match both research + cron for "send me AI news every 2 minutes"', () => {
+    const result = classifyMessage('send me one ai news every 2 minutes', playbooks);
+    const names = result.map(r => r.name);
+    expect(names).toContain('research-and-share');
+    expect(names).toContain('cron-scheduling');
+    // cron-scheduling (priority 10) should rank above research-and-share (priority 5)
+    expect(result.findIndex(r => r.name === 'cron-scheduling'))
+      .toBeLessThan(result.findIndex(r => r.name === 'research-and-share'));
+  });
+});
+
 describe('parseSkillToPlaybook', () => {
   it('should parse a valid skill record', () => {
     const skill = {
