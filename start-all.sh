@@ -300,9 +300,18 @@ echo -e "  Orchestrator (8010) spawns Thinker agent(s) from agents.json:"
 echo -e "    └── Thinker :8006 (annabelle) — cost controls enabled"
 
 echo -e "\n${BOLD}Service URLs:${RESET}"
-echo -e "  $(printf '%-14s' "Orchestrator:") http://localhost:8010"
-echo -e "  $(printf '%-14s' "Thinker:") http://localhost:8006"
-echo -e "  $(printf '%-14s' "Inngest:") http://localhost:8288"
+echo -e "  $(printf '%-18s' "Orchestrator:") http://localhost:8010"
+echo -e "  $(printf '%-18s' "Thinker:") http://localhost:8006"
+echo -e "  $(printf '%-18s' "Inngest:") http://localhost:8288"
+while IFS='|' read -r name transport port dir sensitive; do
+  [ -z "$name" ] && continue
+  label="${name} MCP:"
+  if [ "$transport" = "http" ] && [ -n "$port" ]; then
+    echo -e "  $(printf '%-18s' "$label") http://localhost:${port}"
+  else
+    echo -e "  $(printf '%-18s' "$label") stdio (via Orchestrator :8010)"
+  fi
+done <<< "$DISCOVERY"
 
 echo -e "\n${BOLD}Log files:${RESET}"
 echo -e "  $(printf '%-14s' "Orchestrator:") ~/.annabelle/logs/orchestrator.log"
