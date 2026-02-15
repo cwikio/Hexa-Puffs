@@ -1,6 +1,6 @@
 # Tooling & Skills Architecture
 
-> How skills are created, validated, scheduled, and executed across the Annabelle ecosystem. Covers the two-tier execution model, input normalization, tool argument pipeline, and the evolution from cron jobs to unified skills.
+> How skills are created, validated, scheduled, and executed across the Annabelle ecosystem. Covers the two-tier execution model, practical usage, input normalization, tool argument pipeline, and the evolution from cron jobs to unified skills.
 
 ---
 
@@ -8,14 +8,18 @@
 
 1. [Architecture Overview](#architecture-overview)
 2. [Execution Tiers](#execution-tiers)
-3. [Skill Creation Flow](#skill-creation-flow)
-4. [Skill Execution Flow](#skill-execution-flow)
-5. [Tool Argument Normalization](#tool-argument-normalization)
-6. [Resilience](#resilience)
-7. [Tool Catalog & Discovery](#tool-catalog--discovery)
-8. [SKILL.md File-Based Skills](#skillmd-file-based-skills)
-9. [Evolution: Cron Jobs to Unified Skills](#evolution-cron-jobs-to-unified-skills)
-10. [Key Files Reference](#key-files-reference)
+3. [Creating & Managing Skills](#creating--managing-skills)
+4. [Skill Creation Flow](#skill-creation-flow)
+5. [Skill Execution Flow](#skill-execution-flow)
+6. [Tool Argument Normalization](#tool-argument-normalization)
+7. [Resilience](#resilience)
+8. [Tool Catalog & Discovery](#tool-catalog--discovery)
+9. [SKILL.md File-Based Skills](#skillmd-file-based-skills)
+10. [Other Inngest Functions](#other-inngest-functions)
+    - [Background Jobs](#background-jobs-queue_task)
+11. [Timezone Handling](#timezone-handling)
+12. [Evolution: Cron Jobs to Unified Skills](#evolution-cron-jobs-to-unified-skills)
+13. [Key Files Reference](#key-files-reference)
 
 ---
 
@@ -94,6 +98,174 @@ Orchestrator/src/routing/tool-router.ts (lines 445-462)
 
 ---
 
+## Creating & Managing Skills
+
+### Creating via Thinker (recommended)
+
+Tell the Thinker what you want scheduled via Telegram:
+
+- "Check my inbox every hour and notify me of urgent emails"
+- "Set up a daily morning briefing at 6am"
+- "Remind me to drink water every hour"
+- "Remind me in 5 minutes to call the dentist"
+
+The Thinker activates the `cron-scheduling` playbook, which guides it through:
+
+1. **Parse schedule** — Determine one-shot (`in_minutes`, `at`) vs recurring (`schedule`, `interval_minutes`)
+2. **Discover tools** — Call `get_tool_catalog` to see all available tools
+3. **Classify** — Simple fixed action → Direct tier with `execution_plan`. Complex reasoning → Agent tier with `instructions`
+4. **Create** — Call `memory_store_skill` (the Orchestrator normalizes and validates)
+
+See [Skill Creation Flow](#skill-creation-flow) for the internal details.
+
+### Creating via direct tool call
+
+Direct tier example (zero LLM cost — static tool call):
+
+```json
+memory_store_skill({
+  "name": "Drink water reminder",
+  "trigger_type": "cron",
+  "trigger_config": { "schedule": "0 * * * *" },
+  "instructions": "Send a reminder to drink water",
+  "required_tools": ["telegram_send_message"],
+  "execution_plan": [{
+    "id": "step1",
+    "toolName": "telegram_send_message",
+    "parameters": { "message": "Drink water!" }
+  }],
+  "notify_on_completion": false
+})
+```
+
+Agent tier example (LLM reasoning at fire time):
+
+```json
+memory_store_skill({
+  "name": "Morning Briefing",
+  "trigger_type": "cron",
+  "trigger_config": { "schedule": "0 6 * * *" },
+  "instructions": "Check unread emails, summarize the top 5, and send a briefing via Telegram.",
+  "required_tools": ["gmail_list_messages", "gmail_get_message", "telegram_send_message"],
+  "max_steps": 15,
+  "notify_on_completion": true
+})
+```
+
+### Fields
+
+**Required:** `name`, `trigger_type`, `instructions`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `trigger_config` | JSON | — | Schedule config. See [Trigger Configuration](#trigger-configuration). |
+| `required_tools` | string[] | — | Exact tool names from `get_tool_catalog`. Validated at creation time. Used for auto-enable logic and Agent tier sandboxing. |
+| `execution_plan` | object[] | — | Compiled tool call steps. When present → Direct tier (zero LLM cost). Each step: `{ id, toolName, parameters }`. |
+| `max_steps` | integer | 10 | Max LLM reasoning steps for Agent tier. |
+| `notify_on_completion` | boolean | true | Scaffolded for future use. Currently only failure notifications are implemented. |
+| `notify_interval_minutes` | integer | 0 | Scaffolded for notification throttling (0 = use `SKILL_NOTIFY_INTERVAL_MINUTES` env default). Not yet implemented. |
+| `agent_id` | string | "thinker" | Which agent owns the skill. |
+| `enabled` | boolean | true | Set false to create disabled; auto-enables when `required_tools` become available. |
+| `description` | string | — | Brief description of what the skill does. |
+
+### Management tools
+
+| Tool | Purpose |
+|------|---------|
+| `memory_store_skill` | Create a new skill |
+| `memory_update_skill` | Update any field (enable/disable, change schedule, etc.) |
+| `memory_list_skills` | List skills with optional filters (enabled, trigger_type, agent_id) |
+| `memory_get_skill` | Get a single skill by ID |
+| `memory_delete_skill` | Delete a skill by ID |
+
+### Trigger types
+
+| Type | Description |
+|------|-------------|
+| `cron` | Scheduled — cron expression, fixed interval, or one-shot timestamp |
+| `event` | Event-driven — keyword-matched playbook skills |
+| `manual` | On-demand only — never auto-triggered |
+
+### Trigger configuration
+
+**Cron expression** (precise recurring):
+
+```json
+{ "schedule": "0 9 * * *" }
+```
+
+Timezone is auto-injected by the Memorizer at creation time from the system timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`). Only specify `timezone` if the user explicitly requests a different one.
+
+**Interval** (every-N-minutes recurring):
+
+```json
+{ "interval_minutes": 30 }
+```
+
+Fires when `now - last_run_at >= interval_minutes`. No timezone needed.
+
+**One-shot absolute** (fires once at a specific time):
+
+```json
+{ "at": "2026-02-14T15:00:00" }
+```
+
+Fires once when `now >= at`, then auto-disables.
+
+**One-shot relative** (fires once, N minutes from now):
+
+```json
+{ "in_minutes": 10 }
+```
+
+The normalizer converts this to an absolute `at` timestamp at creation time. Also supports `{ "in_hours": 2 }`.
+
+> **Important:** "remind me IN 5 minutes" = one-shot `{ "in_minutes": 5 }`. "remind me EVERY 5 minutes" = recurring `{ "schedule": "*/5 * * * *" }`. The `in_minutes` format exists specifically because LLMs tend to confuse these two patterns.
+
+### Schema
+
+```sql
+id                      INTEGER PRIMARY KEY
+agent_id                TEXT (default: "main", most skills use "thinker")
+name                    TEXT
+description             TEXT
+enabled                 INTEGER (0/1)
+trigger_type            TEXT ("cron" | "event" | "manual")
+trigger_config          TEXT (JSON — schedule, interval_minutes, at, or in_minutes)
+instructions            TEXT (natural language for the LLM)
+required_tools          TEXT (JSON array of tool names)
+execution_plan          TEXT (JSON array of tool call steps — Direct tier)
+max_steps               INTEGER (default: 10)
+notify_on_completion    INTEGER (0/1, default: 1)
+notify_interval_minutes INTEGER (default: 0)
+last_run_at             TEXT (ISO datetime)
+last_run_status         TEXT ("success" | "error")
+last_run_summary        TEXT
+last_notified_at        TEXT (ISO datetime)
+created_at              TEXT
+updated_at              TEXT
+```
+
+### Default skills (from seed)
+
+All default skills start `enabled: false` and auto-enable when their `required_tools` become available.
+
+| Skill | Schedule | Max Steps | Required Tools |
+|-------|----------|-----------|----------------|
+| Email Processor | Every 60 min | 15 | `gmail_get_new_emails`, `memory_list_contacts`, `memory_list_projects` |
+| Morning Briefing | 6:00 AM ET | 15 | `gmail_list_events`, `gmail_get_new_emails`, `memory_list_projects`, `memory_list_facts` |
+| Evening Recap | 6:00 PM ET | 12 | `gmail_list_events`, `gmail_list_emails`, `memory_list_facts` |
+| Weekly Digest | Sun 6:00 PM ET | 15 | `gmail_list_events`, `gmail_list_emails`, `memory_list_projects` |
+| Follow-up Tracker | 9:00 AM ET | 10 | `gmail_list_emails`, `memory_list_contacts`, `memory_list_projects` |
+| Pre-meeting Prep | Every 15 min | 10 | `gmail_list_events`, `memory_list_contacts`, `memory_list_projects`, `gmail_list_emails`, `memory_list_facts` |
+| Meeting Overload Warning | 8:00 PM ET | 6 | `gmail_list_events` |
+
+Additional skills can be created at runtime via Thinker or direct tool calls.
+
+Event-driven skills (playbooks): `email-triage`, `email-compose`, `schedule-meeting`, `research-and-share`, `telegram-conversation`, `memory-recall`, `file-operations`, `daily-briefing`, `contact-lookup`, `email-classify`, `system-health-check`, `message-cleanup`, `cron-scheduling`, `web-browsing`, `vercel-deployments`.
+
+---
+
 ## Skill Creation Flow
 
 ![Skill Creation Flow](diagrams/skill-creation-flow.mmd)
@@ -136,6 +308,7 @@ sequenceDiagram
    | Normalize aliases | `cronExpression` → `schedule`, `intervalMinutes` → `interval_minutes` |
    | Convert relative times | `{ in_minutes: 5 }` → `{ at: "2026-02-14T15:05:00" }` |
    | Parse string arrays | `"[\"tool_a\"]"` → `["tool_a"]` |
+   | Parse notify_on_completion | `"true"` → `true` |
    | Default agent_id | Missing → `"thinker"` |
 
 5. **Validation** — Cron expressions are validated via `croner` at creation time. Bad expressions are rejected immediately (not at fire time). `required_tools` are checked against ToolRouter.
@@ -193,8 +366,9 @@ After failures, retry delays increase progressively: **1 → 5 → 15 → 60 min
 
 - Update `last_run_at`, `last_run_status`, `last_run_summary` in Memorizer
 - One-shot skills (`trigger_config.at`) auto-disable after firing
-- Send Telegram notification if `notify_on_completion` is true
-- On failure: send error notification, increment backoff counter
+- On failure: send Telegram notification with error details, increment backoff counter
+- On cost-pause: send Telegram alert, mark agent as paused
+- Success notifications are not yet implemented (`notify_on_completion` and `notify_interval_minutes` fields exist in the schema but are not checked by the scheduler)
 
 ---
 
@@ -245,6 +419,7 @@ Applied at creation time when `memory_store_skill` or `memory_update_skill` is c
 | Infer trigger_type | Sets `trigger_type: "cron"` if `schedule`, `interval_minutes`, or `at` exists |
 | Parse required_tools | JSON string → array, plain string → `[str]` |
 | Parse max_steps | String → number |
+| Parse notify_on_completion | String → boolean |
 | Default agent_id | Missing → `"thinker"` |
 
 ---
@@ -295,7 +470,7 @@ If the Thinker's token usage spikes during a skill execution, the agent is auto-
 Orchestrator/src/tools/tool-catalog.ts
 ```
 
-A lightweight tool for LLMs to discover available tools before creating skills. Returns tool names + short descriptions (first sentence only), grouped by MCP:
+A lightweight tool for LLMs to discover available tools before creating skills. Returns tool names + short descriptions (first sentence only), grouped by MCP, sorted alphabetically:
 
 ```json
 {
@@ -380,6 +555,89 @@ Skills **without keywords** are not eligible for playbook classification. Instea
 
 ---
 
+## Other Inngest Functions
+
+Beyond the skill scheduler, the Orchestrator registers these Inngest functions:
+
+| Function | Schedule | Purpose |
+|----------|----------|---------|
+| `backgroundJobFunction` | Event-driven | Executes one-off background tasks (queued via `queue_task` tool) |
+| `conversationBackfillFunction` | Event-driven | Extracts facts from old conversations that were never processed |
+| `memorySynthesisFunction` | Sun 3:00 AM | Weekly fact consolidation — merges duplicates, resolves contradictions |
+| `healthReportFunction` | Every 6 hours | Runs `/diagnose` checks, compares with last report, sends Telegram alert on changes |
+
+### Background Jobs (`queue_task`)
+
+```
+Orchestrator/src/tools/jobs.ts — queue_task tool
+Orchestrator/src/jobs/background-job.ts — backgroundJobFunction
+Orchestrator/src/jobs/storage.ts — TaskStorage (file-based)
+```
+
+Background jobs are one-off tasks that execute asynchronously via Inngest. They're used when the Thinker or a skill needs to fire-and-forget a tool call without blocking the conversation.
+
+**Queuing:**
+
+The `queue_task` tool accepts a task name and an action:
+
+```json
+{
+  "name": "Send greeting",
+  "action": {
+    "type": "tool_call",
+    "toolName": "telegram_send_message",
+    "parameters": { "message": "Hello!", "chat_id": "123456789" }
+  }
+}
+```
+
+Action types: `tool_call` (single tool) or `workflow` (multi-step with `workflowSteps`).
+
+Returns a `taskId` immediately. Use `get_job_status` to poll for completion.
+
+**Execution:**
+
+```
+queue_task called
+    │
+    ├── Save task to disk (status: queued)
+    ├── Send Inngest event: job/background.execute
+    │
+    ▼
+backgroundJobFunction fires
+    │
+    ├── Halt check (skip if /kill inngest active)
+    ├── Load task, set status: running
+    ├── executeAction() via executor.ts
+    │
+    ├── Success: status: completed, save result + duration
+    └── Failure: status: failed, save error
+               └── Store error fact in Memory MCP
+                   (category: 'error', agent_id: 'orchestrator')
+```
+
+**Configuration:**
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Concurrency | 10 | Max parallel background jobs |
+| Retries | 3 | Inngest auto-retries on failure |
+| Storage | `~/.annabelle/data/tasks/` | JSON files, one per task |
+
+**Task lifecycle:** `queued → running → completed` or `queued → running → failed`
+
+On failure, the error message is stored as a fact in Memorizer (category `error`) via `storeErrorFact()`, making it searchable in memory for debugging.
+
+---
+
+## Timezone Handling
+
+- Timezone is auto-injected by the Memorizer when a skill is created or updated. If `trigger_config` has a `schedule` (cron expression) but no `timezone`, the system timezone is added automatically. User-specified timezones are respected.
+- **System timezone**: Detected at runtime via `Intl.DateTimeFormat().resolvedOptions().timeZone`.
+- The Thinker's `cron-scheduling` playbook instructs the LLM to omit timezone (auto-detected) unless the user specifies one.
+
+---
+
 ## Evolution: Cron Jobs to Unified Skills
 
 ### What Was Removed
@@ -452,6 +710,10 @@ Skills **without keywords** are not eligible for playbook classification. Instea
 | Skill Seeding | `_scripts/seed-cron-skills.ts` | Default skill definitions |
 | Thinker Client | `Orchestrator/src/agents/thinker-client.ts` | `executeSkill()` HTTP call |
 | Cron Scheduling Playbook | `Thinker/src/agent/playbook-seed.ts` | Playbook instructions for skill creation |
+| Background Jobs | `Orchestrator/src/jobs/background-job.ts` | `backgroundJobFunction` — async task execution |
+| Memory Synthesis | `Orchestrator/src/jobs/memory-synthesis.ts` | Weekly fact consolidation |
+| Health Report | `Orchestrator/src/jobs/health-report.ts` | Periodic `/diagnose` + Telegram alerts |
+| Conversation Backfill | `Orchestrator/src/jobs/backfill.ts` | Extract facts from old conversations |
 
 ### Diagrams
 

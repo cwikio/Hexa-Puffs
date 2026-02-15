@@ -13,12 +13,13 @@ This document describes how tools are registered, discovered, selected, executed
    - [Regex-Based Selection](#regex-based-selection)
    - [Embedding-Based Selection](#embedding-based-selection)
    - [Selection Merge Logic](#selection-merge-logic)
+   - [Sticky Tools (Sliding Window)](#sticky-tools-sliding-window)
    - [Required Tools (Skill Shortcut)](#required-tools-skill-shortcut)
 5. [Tool Execution Flow](#tool-execution-flow)
+   - [Hallucination Guard](#hallucination-guard)
 6. [Skills and Scheduled Tool Use](#skills-and-scheduled-tool-use)
-   - [Skill Storage](#skill-storage)
-   - [Skill Scheduling (Inngest)](#skill-scheduling-inngest)
    - [Skill Execution in Thinker](#skill-execution-in-thinker)
+   - [Required Tools Data Flow](#required-tools-data-flow)
 7. [Context and Token Budget](#context-and-token-budget)
 8. [Cost Controls](#cost-controls)
 9. [Tool Refresh at Runtime](#tool-refresh-at-runtime)
@@ -272,6 +273,50 @@ Tool selection: method=embedding+regex, embedding=15, regex added=8, total=23/72
 Tool cap: kept 25/35, dropped 10: extra_tool_1, extra_tool_2, ...
 ```
 
+### Sticky Tools (Sliding Window)
+
+```
+Thinker/src/agent/loop.ts
+```
+
+When users send follow-up messages like "what about the other one?" or "send it to John too", the embedding selector may not match the same tools that were used in the previous turn. Sticky tools solve this by injecting recently-used tools into the current selection.
+
+**How it works:**
+
+After each turn, non-core tools that were called are recorded in a sliding window (`state.recentToolsByTurn[]`). Before the next LLM call, these tools are injected into the selected set — ensuring follow-up messages can still call them even when the embedding selector picks different tools.
+
+```
+Turn 1: User says "search for AI news"
+  → Embedding selects: searcher_web_search, searcher_news_search
+  → Tools used: searcher_news_search
+  → Recorded: [{ turnIndex: 1, tools: ['searcher_news_search'] }]
+
+Turn 2: User says "send me the second one"
+  → Embedding selects: telegram_send_message (no search tools matched)
+  → Sticky injection: searcher_news_search (from turn 1)
+  → LLM can now call both telegram_send_message AND searcher_news_search
+```
+
+**Algorithm:**
+
+1. After each turn: collect non-core tools from `result.steps[].toolCalls` (plus recovered leaked calls)
+2. Append to `state.recentToolsByTurn[]` with incrementing `turnIndex`
+3. Trim array to `STICKY_TOOLS_LOOKBACK` most recent entries (default: 3 turns)
+4. Before next LLM call: iterate newest-first, collect tool names not already selected and not in core set
+5. Inject up to `STICKY_TOOLS_MAX` (default: 8) sticky tools into `selectedTools`
+
+**Configuration:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `THINKER_STICKY_TOOLS_LOOKBACK` | 3 | How many recent turns to track |
+| `THINKER_STICKY_TOOLS_MAX` | 8 | Max sticky tools to inject per turn |
+
+**Logging:**
+```
+[sticky-tools] Injected 2 tool(s) from recent turns: searcher_news_search, searcher_web_fetch
+```
+
 ### Required Tools (Skill Shortcut)
 
 ```
@@ -443,129 +488,54 @@ Differences from interactive flow:
 - Tool selection uses `required_tools` directly (no keyword/embedding matching)
 - Results classified as trivial (e.g., "no new emails") skip Telegram notification
 
+### Hallucination Guard
+
+```
+Thinker/src/agent/loop.ts (lines 936-980)
+```
+
+LLMs sometimes claim they performed an action ("I've sent the email", "Event created for Monday") without actually calling any tools. The hallucination guard detects this and forces a retry.
+
+**Detection:**
+
+After the LLM responds, the guard checks two conditions:
+
+1. **No tools were used** — all steps have empty `toolCalls` arrays and no leaked tool calls were recovered
+2. **Response claims an action** — matches a regex pattern covering phrases like:
+   - "I've created/sent/scheduled/deleted/updated..."
+   - "has been created/sent/scheduled..."
+   - "Email sent", "Event details:", "Here's the email I sent"
+   - "I searched for", "I looked up", "I checked your"
+
+If both conditions are true, the model hallucinated an action.
+
+**Retry:**
+
+1. Re-run `generateText()` with `toolChoice: 'required'` (forces the LLM to call at least one tool)
+2. Cap temperature at 0.3 (reduces creativity, increases reliability)
+3. Same system prompt, conversation history, and selected tools
+4. Token usage from the retry is recorded separately in the cost monitor
+
+**Outcome:**
+
+- If the retry calls tools → accept the retry result, discard the hallucinated response
+- If the retry still doesn't call tools → replace response with: "I wasn't able to complete this action. Please try again."
+- If the retry throws an error → same fallback message
+
+**Logging:**
+
+```
+[hallucination-guard] Model claimed action without tool calls, retrying with toolChoice: required
+[hallucination-guard] Retry successful — tools were called
+```
+
 ---
 
 ## Skills and Scheduled Tool Use
 
-### Skill Storage
+For full details on skill creation, schema, trigger configuration, scheduling, and the two-tier execution model, see [tooling-and-skills-architecture.md](tooling-and-skills-architecture.md).
 
-```
-Memorizer-MCP/src/db/schema.ts — SkillRow interface
-```
-
-Skills are stored in the `skills` SQLite table:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | INTEGER | Primary key |
-| `agent_id` | TEXT | Owner agent (default: `"thinker"`) |
-| `name` | TEXT | Human-readable name |
-| `description` | TEXT | What the skill does |
-| `enabled` | INTEGER | 1 = active, 0 = disabled |
-| `trigger_type` | TEXT | `"cron"`, `"manual"`, or `"event"` |
-| `trigger_config` | TEXT (JSON) | Cron expression or interval config |
-| `instructions` | TEXT | Natural language task for the LLM |
-| `required_tools` | TEXT (JSON) | Array of tool names the skill needs |
-| `execution_plan` | TEXT (JSON) | Compiled tool call steps for Direct tier (zero LLM cost) |
-| `max_steps` | INTEGER | Max LLM reasoning steps (default 10) |
-| `notify_on_completion` | INTEGER | Send Telegram notification? |
-| `last_run_at` | TEXT | ISO timestamp of last execution |
-| `last_run_status` | TEXT | `"success"` or `"error"` |
-| `last_run_summary` | TEXT | Output summary from last run |
-
-### Current Skills
-
-```
-_scripts/seed-cron-skills.ts
-```
-
-All skills are seeded with `enabled: false` and auto-enable once their `required_tools` become available.
-
-| Skill | Trigger | Required Tools | Max Steps |
-|-------|---------|----------------|-----------|
-| Email Processor | Every 30 min | `gmail_get_new_emails`, `memory_list_contacts`, `memory_list_projects` | 15 |
-| Morning Briefing | Daily 6:00 AM (Warsaw) | `gmail_list_events`, `gmail_get_new_emails`, `memory_list_projects`, `memory_list_facts` | 15 |
-| Evening Recap | Daily 6:00 PM (Warsaw) | `gmail_list_events`, `gmail_list_emails`, `memory_list_facts` | 12 |
-| Weekly Digest | Sunday 6:00 PM (Warsaw) | `gmail_list_events`, `gmail_list_emails`, `memory_list_projects` | 15 |
-| Follow-up Tracker | Daily 9:00 AM (Warsaw) | `gmail_list_emails`, `memory_list_contacts`, `memory_list_projects` | 10 |
-| Pre-meeting Prep | Every 15 min | `gmail_list_events`, `memory_list_contacts`, `memory_list_projects`, `gmail_list_emails`, `memory_list_facts` | 10 |
-| Meeting Overload Warning | Daily 8:00 PM (Warsaw) | `gmail_list_events` | 6 |
-
-### Skill Scheduling (Inngest)
-
-```
-Orchestrator/src/jobs/skill-scheduler.ts — skillSchedulerFunction
-```
-
-The scheduler runs every minute and performs:
-
-```
-┌───────────────────────────────────────────────────────┐
-│              Every 1 minute                            │
-│                                                        │
-│  Step 0: Auto-enable disabled skills                   │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ For each disabled cron skill:                    │  │
-│  │   Parse required_tools from DB                   │  │
-│  │   Check toolRouter.hasRoute(tool) for each       │  │
-│  │   If ALL available → enable the skill            │  │
-│  │   Skip one-shot skills (trigger_config.at)       │  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│  Step 1: List enabled cron skills                      │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ memory_list_skills(enabled=true, cron)           │  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│  Step 2: For each skill, check if due                  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ Cron mode:                                       │  │
-│  │   Parse cron expression with timezone            │  │
-│  │   Check if nextRun falls in current minute       │  │
-│  │   Prevent double-execution in same minute        │  │
-│  │                                                  │  │
-│  │ Interval mode:                                   │  │
-│  │   Compare minutes since last run                 │  │
-│  │   to interval_minutes                            │  │
-│  │                                                  │  │
-│  │ One-shot mode:                                   │  │
-│  │   Check if now >= trigger_config.at              │  │
-│  │   Skip if already run (last_run_at >= at)        │  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│  Step 3: Graduated backoff                             │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ If last_run_status = 'error':                    │  │
-│  │   getBackoffMinutes(skillId) → 1, 5, 15, 60 min │  │
-│  │   If cooldown not elapsed → skip                 │  │
-│  │   Auto-disable after 5 consecutive failures      │  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│  Step 4: Pre-flight checks                             │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ Calendar: meeting skills check free/busy API     │  │
-│  │   No events in window → skip (zero LLM cost)    │  │
-│  │ Email: email skills check for new emails         │  │
-│  │   No new emails → skip (zero LLM cost)          │  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│  Step 5: Tier routing + execution                      │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ If execution_plan exists → DIRECT TIER           │  │
-│  │   executeWorkflow() via executor.ts              │  │
-│  │   Zero LLM cost, direct tool calls              │  │
-│  │   Auto-injects chat_id for telegram tools        │  │
-│  │                                                  │  │
-│  │ If no execution_plan → AGENT TIER                │  │
-│  │   Dispatch to Thinker via AgentManager           │  │
-│  │   LLM reasons with sandboxed required_tools      │  │
-│  │                                                  │  │
-│  │ Update last_run_at / last_run_status in DB       │  │
-│  │ One-shot skills: auto-disable after firing       │  │
-│  │ On failure: send Telegram notification           │  │
-│  └──────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────┘
-```
+This section covers how skills interact with the **tool system** — specifically how the Thinker selects and uses tools during skill execution.
 
 ### Skill Execution in Thinker
 
@@ -605,15 +575,8 @@ processProactiveTask(instructions, maxSteps, notifyChatId, noTools, requiredTool
          │       Detect leaked tool calls (LLM outputs JSON
          │       instead of structured tool use) → re-execute
          │
-         ├── 9. Store execution summary in memory
-         │       store_fact(summary, category: 'pattern')
-         │
-         ├── 10. Trivial result detection
-         │        "no new emails", "no meetings", etc.
-         │        → skip Telegram notification
-         │
-         └── 11. Notify via Telegram (if non-trivial + notifyChatId set)
-                  "Skill completed: [summary]"
+         └── 9. Store execution summary in memory
+                  store_fact(summary, category: 'pattern')
 ```
 
 ### Required Tools Data Flow
