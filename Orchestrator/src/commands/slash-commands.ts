@@ -606,14 +606,17 @@ Keep it concise. No markdown formatting — plain text only.`;
     if (skills.length === 0) {
       output += '  (none)\n';
     } else {
+      output += '  ID   | Name                 | Schedule              | Last Run   | Status\n';
+      output += '  -----+----------------------+-----------------------+------------+-----------\n';
       for (const skill of skills) {
+        const id = String(skill.id).padEnd(4);
         const name = skill.name.slice(0, 20).padEnd(20);
-        const schedule = skill.schedule.padEnd(14);
-        const tz = (skill.timezone ?? '').padEnd(16);
-        const lastRun = skill.lastRunAt ? this.formatTimeAgo(new Date(skill.lastRunAt)).padEnd(10) : 'never'.padEnd(10);
-        const failed = skill.lastStatus === 'failed';
-        const status = failed ? '[!] failed' : (skill.lastStatus ?? 'never run');
-        output += `  ${name} ${schedule} ${tz} ${lastRun} ${status}\n`;
+        const schedule = this.formatHumanSchedule(skill.schedule, skill.timezone).slice(0, 21).padEnd(21);
+        const lastRun = (skill.lastRunAt ? this.formatTimeAgo(new Date(skill.lastRunAt)) : 'never').padEnd(10);
+        const status = skill.lastStatus === 'failed' || skill.lastStatus === 'error'
+          ? 'error'
+          : (skill.lastStatus ?? '-');
+        output += `  ${id} | ${name} | ${schedule} | ${lastRun} | ${status}\n`;
       }
     }
 
@@ -758,11 +761,12 @@ Keep it concise. No markdown formatting — plain text only.`;
   }
 
   private parseCronSkills(result: { success: boolean; content?: unknown; error?: string } | null): Array<{
-    name: string; schedule: string; timezone?: string;
+    id: number; name: string; schedule: string; timezone?: string;
     lastRunAt?: string; lastStatus?: string;
   }> {
     if (!result?.success) return [];
     const data = this.extractData<{ skills: Array<{
+      id: number;
       name: string;
       trigger_config?: { schedule?: string; interval_minutes?: number; timezone?: string };
       last_run_status?: string | null;
@@ -770,12 +774,73 @@ Keep it concise. No markdown formatting — plain text only.`;
     }> }>(result);
     const skills = data?.skills ?? [];
     return skills.map(s => ({
+      id: s.id,
       name: s.name,
       schedule: s.trigger_config?.schedule ?? `every ${s.trigger_config?.interval_minutes ?? 1440}m`,
       timezone: s.trigger_config?.timezone,
       lastRunAt: s.last_run_at ?? undefined,
       lastStatus: s.last_run_status ?? undefined,
     }));
+  }
+
+  /**
+   * Convert a cron expression into a human-readable schedule string.
+   * e.g. "0 8 * * *" + "America/Detroit" → "8:00 AM daily (Detroit)"
+   */
+  private formatHumanSchedule(schedule: string, timezone?: string): string {
+    const tzShort = timezone ? timezone.split('/').pop() ?? '' : '';
+
+    // "every Nm" from interval_minutes
+    const intervalMatch = schedule.match(/^every (\d+)m$/);
+    if (intervalMatch) {
+      const mins = parseInt(intervalMatch[1], 10);
+      if (mins < 60) return `every ${mins} min`;
+      if (mins === 60) return 'every hour';
+      if (mins % 60 === 0) return `every ${mins / 60} hours`;
+      return `every ${mins} min`;
+    }
+
+    const parts = schedule.split(/\s+/);
+    if (parts.length !== 5) return schedule;
+
+    const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+
+    // "*/N * * * *" → every N min
+    const everyMinMatch = minute.match(/^\*\/(\d+)$/);
+    if (everyMinMatch && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+      return `every ${everyMinMatch[1]} min`;
+    }
+
+    // "0 */N * * *" → every N hours
+    if (minute === '0' && hour.startsWith('*/') && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+      const h = hour.slice(2);
+      return `every ${h} hours`;
+    }
+
+    // Fixed time schedules
+    if (minute.match(/^\d+$/) && hour.match(/^\d+$/)) {
+      const h = parseInt(hour, 10);
+      const m = parseInt(minute, 10);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      const timeStr = m === 0 ? `${h12}:00 ${ampm}` : `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+      const tzSuffix = tzShort ? ` (${tzShort})` : '';
+
+      // daily
+      if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+        return `${timeStr} daily${tzSuffix}`;
+      }
+
+      // specific day(s) of week
+      if (dayOfMonth === '*' && month === '*' && dayOfWeek !== '*') {
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const days = dayOfWeek.split(',').map(d => dayNames[parseInt(d, 10)] ?? d).join('/');
+        return `${timeStr} ${days}${tzSuffix}`;
+      }
+    }
+
+    // Fallback: raw cron + timezone
+    return tzShort ? `${schedule} (${tzShort})` : schedule;
   }
 
   private formatDuration(ms: number): string {
