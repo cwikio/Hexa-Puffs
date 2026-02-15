@@ -15,6 +15,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { ExternalMCPsFileSchema } from './external-config.js';
 import { logger } from '../Utils/logger.js';
+import type { MCPMetadata } from './types.js';
 
 export interface ExternalMCPEntry {
   command: string;
@@ -24,6 +25,7 @@ export interface ExternalMCPEntry {
   required: false; // External MCPs are never required
   sensitive: boolean;
   description?: string;
+  metadata?: MCPMetadata;
 }
 
 const ENV_VAR_PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
@@ -105,6 +107,7 @@ export function loadExternalMCPs(
       required: false,
       sensitive: config.sensitive,
       description: config.description,
+      metadata: config.metadata,
     };
   }
 

@@ -38,6 +38,8 @@
     "mcpName": "guardian",
     "transport": "stdio",
     "sensitive": false,
-    "role": "guardian"
+    "role": "guardian",
+    "label": "Guardian",
+    "toolGroup": "Security"
   }
 }

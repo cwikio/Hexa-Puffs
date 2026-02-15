@@ -92,4 +92,55 @@ describe('selectToolsWithFallback', () => {
     await selectToolsWithFallback('hello', TOOLS, selector);
     expect(selector.getLastSelectionStats).toHaveBeenCalled();
   });
+
+  it('passes mcpMetadata to regex fallback for dynamic tool selection', async () => {
+    const extendedTools: Record<string, CoreTool> = {
+      ...TOOLS,
+      newmcp_action: makeTool('Do new action'),
+    };
+    const metadata = {
+      newmcp: {
+        label: 'New MCP',
+        keywords: ['new action'],
+      },
+    };
+
+    // Regex-only path (no embedding selector)
+    const result = await selectToolsWithFallback('do a new action', extendedTools, null, metadata);
+    expect(result).toHaveProperty('newmcp_action');
+  });
+
+  it('passes mcpMetadata through embedding+regex merge path', async () => {
+    const extendedTools: Record<string, CoreTool> = {
+      ...TOOLS,
+      newmcp_action: makeTool('Do new action'),
+    };
+    const metadata = {
+      newmcp: {
+        label: 'New MCP',
+        keywords: ['new action'],
+      },
+    };
+
+    const mockResult = { send_telegram: extendedTools.send_telegram };
+    const selector = {
+      isInitialized: () => true,
+      selectTools: vi.fn().mockResolvedValue(mockResult),
+      getLastSelectionStats: vi.fn().mockReturnValue({
+        method: 'embedding',
+        selectedCount: 1,
+        totalTools: 4,
+        topScore: 0.85,
+        bottomSelectedScore: 0.85,
+        coreToolCount: 1,
+        aboveThreshold: 1,
+        topTools: [{ name: 'send_telegram', score: 0.85 }],
+      } satisfies ToolSelectionStats),
+      getLastScores: vi.fn().mockReturnValue(new Map()),
+    } as unknown as EmbeddingToolSelector;
+
+    const result = await selectToolsWithFallback('do a new action', extendedTools, selector, metadata);
+    // Regex merge should pick up newmcp_action via metadata keyword route
+    expect(result).toHaveProperty('newmcp_action');
+  });
 });

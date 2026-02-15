@@ -221,4 +221,50 @@ describe('selectToolsForMessage', () => {
       expect(result).toHaveProperty('memory_list_facts');
     });
   });
+
+  // ─── Dynamic metadata groups ──────────────────────────────────
+  describe('metadata-driven dynamic groups', () => {
+    const EXTENDED_TOOLS = buildToolMap([
+      ...ALL_TOOL_NAMES,
+      'newmcp_do_thing', 'newmcp_do_other',
+    ]);
+
+    const mcpMetadata = {
+      newmcp: {
+        label: 'New MCP',
+        toolGroup: 'Custom',
+        keywords: ['newthing', 'custom action'],
+      },
+    };
+
+    it('should auto-generate group for MCP not in hardcoded map', () => {
+      // "newthing" matches the metadata keyword for newmcp
+      const result = selectToolsForMessage('do a newthing', EXTENDED_TOOLS, mcpMetadata);
+      expect(result).toHaveProperty('newmcp_do_thing');
+      expect(result).toHaveProperty('newmcp_do_other');
+    });
+
+    it('should not generate duplicate routes for MCPs already in hardcoded routes', () => {
+      // "telegram" is already in KEYWORD_ROUTES → no duplicate route from metadata
+      const metaWithExisting = {
+        telegram: { keywords: ['telegram', 'message'] },
+      };
+      const result = selectToolsForMessage('send telegram', ALL_TOOLS, metaWithExisting);
+      expect(result).toHaveProperty('telegram_send_message');
+    });
+
+    it('should fall back to default groups when no metadata keywords match', () => {
+      const result = selectToolsForMessage('hello there', EXTENDED_TOOLS, mcpMetadata);
+      // Default groups: search + memory
+      expect(result).toHaveProperty('searcher_web_search');
+      expect(result).toHaveProperty('memory_list_facts');
+      // New MCP tools should NOT be included for generic messages
+      expect(result).not.toHaveProperty('newmcp_do_thing');
+    });
+
+    it('should work with undefined mcpMetadata (backward compat)', () => {
+      const result = selectToolsForMessage('search for cats', ALL_TOOLS, undefined);
+      expect(result).toHaveProperty('searcher_web_search');
+    });
+  });
 });

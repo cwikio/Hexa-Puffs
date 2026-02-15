@@ -27,6 +27,9 @@
   "annabelle": {
     "mcpName": "web",
     "sensitive": true,
-    "timeout": 60000
+    "timeout": 60000,
+    "label": "Browser",
+    "toolGroup": "Browser",
+    "keywords": ["browse", "website", "navigate", "webpage", "screenshot"]
   }
 }

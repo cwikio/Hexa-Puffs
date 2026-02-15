@@ -10,6 +10,7 @@
 import type { IMCPClient, MCPToolDefinition, ToolCallResult } from '../mcp-clients/types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 import { normalizeSkillInput, validateCronExpression } from '../utils/skill-normalizer.js';
+import type { MCPMetadata } from '../config/schema.js';
 
 export interface RoutedTool {
   name: string; // The name exposed to Claude (may be prefixed)
@@ -44,19 +45,9 @@ export class ToolRouter {
   private routes: Map<string, { mcp: IMCPClient; originalName: string }> = new Map();
   private toolDefinitions: Map<string, MCPToolDefinition> = new Map();
   private mcpClients: Map<string, IMCPClient> = new Map();
+  private mcpMetadataMap: Map<string, MCPMetadata> = new Map();
   private logger: Logger;
   private config: ToolRouterConfig;
-
-  private static readonly SERVICE_LABELS: Record<string, string> = {
-    telegram: 'Telegram',
-    onepassword: '1Password',
-    memory: 'Memory',
-    filer: 'Workspace Files',
-    searcher: 'Web Search',
-    guardian: 'Guardian',
-    gmail: 'Gmail',
-    web: 'Browser',
-  };
 
   private static readonly DEFAULT_TOOL_GROUPS: ToolGroup[] = [
     {
@@ -190,7 +181,10 @@ export class ToolRouter {
   };
 
   private getServiceLabel(mcpName: string): string {
-    return ToolRouter.SERVICE_LABELS[mcpName] ?? mcpName;
+    const meta = this.mcpMetadataMap.get(mcpName);
+    if (meta?.label) return meta.label;
+    // Tier 3 fallback: capitalize first letter
+    return mcpName.charAt(0).toUpperCase() + mcpName.slice(1);
   }
 
   /**
@@ -220,10 +214,13 @@ export class ToolRouter {
   }
 
   /**
-   * Register an MCP client for tool discovery
+   * Register an MCP client for tool discovery, with optional manifest metadata.
    */
-  registerMCP(name: string, client: IMCPClient): void {
+  registerMCP(name: string, client: IMCPClient, metadata?: MCPMetadata): void {
     this.mcpClients.set(name, client);
+    if (metadata) {
+      this.mcpMetadataMap.set(name, metadata);
+    }
     this.logger.debug(`Registered MCP: ${name}`);
   }
 
@@ -233,6 +230,7 @@ export class ToolRouter {
    */
   unregisterMCP(name: string): void {
     this.mcpClients.delete(name);
+    this.mcpMetadataMap.delete(name);
     this.logger.debug(`Unregistered MCP: ${name}`);
   }
 
@@ -266,11 +264,12 @@ export class ToolRouter {
 
     // Phase 2: Build routing table with conflict resolution + group tagging
     for (const [toolName, sources] of toolsByName) {
-      const groupLabel = groupIndex.get(toolName);
-
       if (sources.length === 1 && !this.config.alwaysPrefix) {
         // No conflict - use original name
         const { mcpName, tool } = sources[0];
+        // Group: hardcoded index first, then metadata toolGroup fallback
+        const groupLabel = groupIndex.get(toolName)
+          ?? this.mcpMetadataMap.get(mcpName)?.toolGroup;
         const client = this.mcpClients.get(mcpName);
         if (client) {
           this.routes.set(toolName, { mcp: client, originalName: toolName });
@@ -283,6 +282,9 @@ export class ToolRouter {
       } else {
         // Conflict or alwaysPrefix - prefix with MCP name
         for (const { mcpName, tool } of sources) {
+          // Group: hardcoded index first, then metadata toolGroup fallback
+          const groupLabel = groupIndex.get(toolName)
+            ?? this.mcpMetadataMap.get(mcpName)?.toolGroup;
           const prefixedName = `${mcpName}${this.config.separator}${toolName}`;
           const client = this.mcpClients.get(mcpName);
           if (client) {
@@ -347,6 +349,17 @@ export class ToolRouter {
       if (route.originalName === originalName) return exposed;
     }
     return null;
+  }
+
+  /**
+   * Get all stored MCP metadata (for embedding in /tools/list response).
+   */
+  getMCPMetadata(): Record<string, MCPMetadata> {
+    const result: Record<string, MCPMetadata> = {};
+    for (const [name, meta] of this.mcpMetadataMap) {
+      result[name] = meta;
+    }
+    return result;
   }
 
   /**

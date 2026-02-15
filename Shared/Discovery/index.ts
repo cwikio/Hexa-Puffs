@@ -1,6 +1,7 @@
 export type {
   ChannelManifestConfig,
   AnnabelleManifest,
+  MCPMetadata,
   DiscoveredMCP,
 } from './types.js';
 

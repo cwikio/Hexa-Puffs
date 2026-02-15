@@ -100,6 +100,12 @@ The Orchestrator **auto-discovers** MCP servers from sibling directories at star
 | `timeout` | No | `30000` | Default timeout in milliseconds |
 | `required` | No | `false` | If `true`, Orchestrator fails startup when this MCP is unavailable |
 | `httpPort` | No | — | Port for HTTP transport MCPs (ignored for stdio) |
+| `label` | No | capitalize(mcpName) | Pretty display name (e.g., "1Password", "Web Search") |
+| `toolGroup` | No | same as label | Semantic group tag for tool descriptions (e.g., "Communication") |
+| `keywords` | No | — | Keywords that trigger Thinker tool selection (e.g., `["email", "inbox"]`) |
+| `guardianScan` | No | `{input: true, output: true}` | Per-MCP Guardian scan overrides |
+
+All metadata fields are optional. Omitting them triggers auto-generated fallbacks — a new MCP works without any metadata.
 
 ### HTTP MCP Example
 

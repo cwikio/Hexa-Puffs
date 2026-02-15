@@ -640,7 +640,7 @@ export class Agent {
       // Generate response using ReAct pattern (no retries to prevent runaway costs)
       // 90s timeout leaves buffer within ThinkerClient's 120s limit
       const agentAbort = AbortSignal.timeout(90_000);
-      const selectedTools = await selectToolsWithFallback(message.text, this.tools, this.embeddingSelector);
+      const selectedTools = await selectToolsWithFallback(message.text, this.tools, this.embeddingSelector, this.orchestrator.getMCPMetadata());
 
       // Force-include tools required by matched playbooks (they may have been dropped by the tool cap)
       if (selectedTools && context.playbookRequiredTools.length > 0) {
@@ -1429,7 +1429,7 @@ Complete the task step by step, using your available tools. When done, provide a
         }
         logger.info(`Tool selection: method=required_tools, resolved=${Object.keys(selectedTools).length}/${requiredTools.length}`);
       } else {
-        selectedTools = await selectToolsWithFallback(taskInstructions, this.tools, this.embeddingSelector);
+        selectedTools = await selectToolsWithFallback(taskInstructions, this.tools, this.embeddingSelector, this.orchestrator.getMCPMetadata());
       }
       let result;
       try {

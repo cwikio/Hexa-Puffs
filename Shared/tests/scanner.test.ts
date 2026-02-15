@@ -229,4 +229,69 @@ describe('scanForMCPs', () => {
 
     expect(results).toHaveLength(0);
   });
+
+  // ─── Metadata fields ──────────────────────────────────────────
+  describe('metadata', () => {
+    it('parses metadata fields from manifest into DiscoveredMCP.metadata', () => {
+      createMCPDir('Meta-MCP', {
+        name: 'meta-mcp',
+        main: 'dist/index.js',
+        annabelle: {
+          mcpName: 'meta',
+          label: 'My Meta',
+          toolGroup: 'Testing',
+          keywords: ['test', 'meta'],
+          guardianScan: { input: true, output: false },
+        },
+      });
+
+      const results = scanForMCPs(testRoot);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].metadata).toEqual({
+        label: 'My Meta',
+        toolGroup: 'Testing',
+        keywords: ['test', 'meta'],
+        guardianScan: { input: true, output: false },
+      });
+    });
+
+    it('returns undefined metadata fields when manifest omits them', () => {
+      createMCPDir('Minimal-Meta', {
+        name: 'minimal-meta',
+        main: 'dist/index.js',
+        annabelle: { mcpName: 'minimal-meta' },
+      });
+
+      const results = scanForMCPs(testRoot);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].metadata).toEqual({
+        label: undefined,
+        toolGroup: undefined,
+        keywords: undefined,
+        guardianScan: undefined,
+      });
+    });
+
+    it('handles partial metadata (only some fields set)', () => {
+      createMCPDir('Partial-MCP', {
+        name: 'partial',
+        main: 'dist/index.js',
+        annabelle: {
+          mcpName: 'partial',
+          label: 'Partial',
+          keywords: ['partial'],
+        },
+      });
+
+      const results = scanForMCPs(testRoot);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].metadata.label).toBe('Partial');
+      expect(results[0].metadata.keywords).toEqual(['partial']);
+      expect(results[0].metadata.toolGroup).toBeUndefined();
+      expect(results[0].metadata.guardianScan).toBeUndefined();
+    });
+  });
 });

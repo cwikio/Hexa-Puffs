@@ -36,6 +36,13 @@
   },
   "annabelle": {
     "mcpName": "filer",
-    "sensitive": true
+    "sensitive": true,
+    "label": "Workspace Files",
+    "toolGroup": "File Management",
+    "keywords": ["file", "document", "save", "workspace"],
+    "guardianScan": {
+      "input": true,
+      "output": true
+    }
   }
 }

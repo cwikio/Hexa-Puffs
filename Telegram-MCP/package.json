@@ -44,6 +44,13 @@
   "annabelle": {
     "mcpName": "telegram",
     "role": "channel",
-    "sensitive": true
+    "sensitive": true,
+    "label": "Telegram",
+    "toolGroup": "Communication",
+    "keywords": ["telegram", "message", "chat", "group"],
+    "guardianScan": {
+      "input": false,
+      "output": false
+    }
   }
 }

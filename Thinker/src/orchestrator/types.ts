@@ -1,4 +1,13 @@
-import type { z } from 'zod';
+/**
+ * MCP metadata from manifest — used for dynamic tool selection and grouping.
+ * Matches the MCPMetadata interface from Shared/Discovery/types.ts.
+ */
+export interface MCPMetadata {
+  label?: string;
+  toolGroup?: string;
+  keywords?: string[];
+  guardianScan?: { input?: boolean; output?: boolean };
+}
 
 /**
  * Tool definition from Orchestrator
@@ -43,6 +52,7 @@ export interface MCPToolCallResponse {
  */
 export interface MCPToolsListResponse {
   tools: OrchestratorTool[];
+  mcpMetadata?: Record<string, MCPMetadata>;
 }
 
 /**

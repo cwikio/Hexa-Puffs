@@ -11,6 +11,21 @@ export interface ChannelManifestConfig {
   maxMessageAgeMs?: number;
 }
 
+/**
+ * Optional metadata that enriches auto-discovery consumers (ToolRouter, Guardian, Thinker).
+ * All fields are optional — omitted fields trigger Tier 3 auto-generation fallbacks.
+ */
+export interface MCPMetadata {
+  /** Pretty display name (e.g., "Telegram", "1Password"). Fallback: capitalize(mcpName) */
+  label?: string;
+  /** Semantic group for description tagging (e.g., "Communication"). Fallback: same as label */
+  toolGroup?: string;
+  /** Keywords that trigger this MCP's tools in Thinker selection (e.g., ["email", "inbox"]) */
+  keywords?: string[];
+  /** Guardian scan overrides. Omitted = use global defaults (both true) */
+  guardianScan?: { input?: boolean; output?: boolean };
+}
+
 export interface AnnabelleManifest {
   mcpName: string;
   transport?: 'stdio' | 'http';
@@ -24,6 +39,14 @@ export interface AnnabelleManifest {
   command?: string;
   /** Extra args inserted before entryPoint (default: []). e.g. ['run'] for 'uv run <entryPoint>' */
   commandArgs?: string[];
+  /** Pretty display name (e.g., "Telegram", "1Password") */
+  label?: string;
+  /** Semantic group for description tagging (e.g., "Communication") */
+  toolGroup?: string;
+  /** Keywords that trigger this MCP's tools in Thinker selection */
+  keywords?: string[];
+  /** Guardian scan overrides. Omitted = use global defaults (both true) */
+  guardianScan?: { input?: boolean; output?: boolean };
 }
 
 export interface DiscoveredMCP {
@@ -53,4 +76,6 @@ export interface DiscoveredMCP {
   command: string;
   /** Extra args inserted before entryPoint (default: []) */
   commandArgs: string[];
+  /** Optional metadata for ToolRouter, Guardian, and Thinker */
+  metadata: MCPMetadata;
 }

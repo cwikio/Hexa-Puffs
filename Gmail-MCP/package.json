@@ -42,6 +42,13 @@
   },
   "annabelle": {
     "mcpName": "gmail",
-    "sensitive": true
+    "sensitive": true,
+    "label": "Gmail",
+    "toolGroup": "Communication",
+    "keywords": ["email", "mail", "inbox", "draft", "compose", "calendar", "meeting", "schedule", "event"],
+    "guardianScan": {
+      "input": false,
+      "output": true
+    }
   }
 }

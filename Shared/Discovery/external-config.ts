@@ -13,6 +13,15 @@ export const ExternalMCPConfigSchema = z.object({
   timeout: z.number().positive().default(30000),
   sensitive: z.boolean().default(false),
   description: z.string().optional(),
+  metadata: z.object({
+    label: z.string().optional(),
+    toolGroup: z.string().optional(),
+    keywords: z.array(z.string()).optional(),
+    guardianScan: z.object({
+      input: z.boolean().optional(),
+      output: z.boolean().optional(),
+    }).optional(),
+  }).optional(),
 });
 
 export type ExternalMCPConfig = z.infer<typeof ExternalMCPConfigSchema>;

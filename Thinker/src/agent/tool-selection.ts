@@ -2,6 +2,7 @@ import type { CoreTool } from 'ai';
 import type { EmbeddingToolSelector } from './embedding-tool-selector.js';
 import { selectToolsForMessage } from './tool-selector.js';
 import { Logger } from '@mcp/shared/Utils/logger.js';
+import type { MCPMetadata } from '../orchestrator/types.js';
 
 const logger = new Logger('thinker:tool-selection');
 
@@ -71,12 +72,14 @@ function applyToolCap(
  * @param message - The user message text
  * @param allTools - All available tools
  * @param embeddingSelector - The embedding selector (null if not configured)
+ * @param mcpMetadata - Optional MCP metadata for dynamic group/keyword generation
  * @returns Filtered tool map
  */
 export async function selectToolsWithFallback(
   message: string,
   allTools: Record<string, CoreTool>,
   embeddingSelector: EmbeddingToolSelector | null,
+  mcpMetadata?: Record<string, MCPMetadata>,
 ): Promise<Record<string, CoreTool>> {
   if (embeddingSelector?.isInitialized()) {
     try {
@@ -85,7 +88,7 @@ export async function selectToolsWithFallback(
       // Always merge regex keyword-matched tools — they encode curated domain
       // knowledge (e.g. image requests need both search AND telegram groups)
       // that pure semantic similarity can miss.
-      const regexResult = selectToolsForMessage(message, allTools);
+      const regexResult = selectToolsForMessage(message, allTools, mcpMetadata);
       const merged = { ...embeddingResult };
       let regexAdded = 0;
       for (const [name, tool] of Object.entries(regexResult)) {
@@ -111,5 +114,5 @@ export async function selectToolsWithFallback(
 
   // Fallback: existing regex-based selector
   logger.info('Tool selection: method=regex (embedding unavailable)');
-  return applyToolCap(selectToolsForMessage(message, allTools), CORE_TOOL_NAMES, null, MAX_TOOLS);
+  return applyToolCap(selectToolsForMessage(message, allTools, mcpMetadata), CORE_TOOL_NAMES, null, MAX_TOOLS);
 }

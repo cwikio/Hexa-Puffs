@@ -48,6 +48,13 @@
   "annabelle": {
     "mcpName": "memory",
     "transport": "stdio",
-    "sensitive": false
+    "sensitive": false,
+    "label": "Memory",
+    "toolGroup": "Knowledge & Memory",
+    "keywords": ["remember", "memory", "forget", "fact", "contact"],
+    "guardianScan": {
+      "input": false,
+      "output": false
+    }
   }
 }

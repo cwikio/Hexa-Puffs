@@ -1,4 +1,4 @@
-import { getConfig, type Config, type AgentDefinition, type ChannelBinding, getDefaultAgent, loadAgentsFromFile } from '../config/index.js';
+import { getConfig, type Config, type AgentDefinition, type ChannelBinding, type MCPMetadata, getDefaultAgent, loadAgentsFromFile } from '../config/index.js';
 import { guardianConfig } from '../config/guardian.js';
 import { StdioGuardianClient } from '../mcp-clients/stdio-guardian.js';
 import { GuardedMCPClient } from '../mcp-clients/guarded-client.js';
@@ -123,20 +123,25 @@ export class Orchestrator {
       const raw = new StdioMCPClient(name, mcpConfig);
       this.stdioClients.set(name, raw);
 
-      const client = this.maybeGuard(name, raw);
-      this.toolRouter.registerMCP(name, client);
+      const client = this.maybeGuard(name, raw, mcpConfig.metadata);
+      this.toolRouter.registerMCP(name, client, mcpConfig.metadata);
     }
   }
 
   /**
    * Wrap an MCP client with Guardian scanning if configured.
+   * Priority: manifest metadata → guardian.ts legacy maps → global defaults.
    * Returns the original client if Guardian is disabled or no scanning is configured for this MCP.
    */
-  private maybeGuard(mcpName: string, client: IMCPClient): IMCPClient {
+  private maybeGuard(mcpName: string, client: IMCPClient, metadata?: MCPMetadata): IMCPClient {
     if (!this.guardianScanner) return client;
 
-    const scanInput = guardianConfig.input[mcpName] ?? guardianConfig.defaultInput;
-    const scanOutput = guardianConfig.output[mcpName] ?? guardianConfig.defaultOutput;
+    const scanInput = metadata?.guardianScan?.input
+      ?? guardianConfig.input[mcpName]
+      ?? guardianConfig.defaultInput;
+    const scanOutput = metadata?.guardianScan?.output
+      ?? guardianConfig.output[mcpName]
+      ?? guardianConfig.defaultOutput;
 
     if (!scanInput && !scanOutput) return client;
 
@@ -865,8 +870,8 @@ export class Orchestrator {
       this.stdioClients.set(name, raw);
       this.externalMCPNames.add(name);
 
-      const client = this.maybeGuard(name, raw);
-      this.toolRouter.registerMCP(name, client);
+      const client = this.maybeGuard(name, raw, entry.metadata);
+      this.toolRouter.registerMCP(name, client, entry.metadata);
     }
 
     // Rebuild routes if anything changed

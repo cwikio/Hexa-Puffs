@@ -107,7 +107,7 @@ export async function handleListTools(
     logger.debug(`HTTP /tools/list - returning ${allTools.length} tools`);
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ tools: allTools }));
+    res.end(JSON.stringify({ tools: allTools, mcpMetadata: toolRouter.getMCPMetadata() }));
   } catch (error) {
     logger.error('Failed to list tools via HTTP', { error });
     res.writeHead(500, { 'Content-Type': 'application/json' });

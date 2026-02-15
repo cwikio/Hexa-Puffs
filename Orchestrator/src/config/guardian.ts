@@ -41,34 +41,22 @@ export const guardianConfig = {
    * When Thinker/Claude calls a tool, this checks what's being sent
    * BEFORE it reaches the target MCP.
    *
-   * MCPs not listed here inherit `defaultInput`.
+   * Per-MCP scan config is now declared in each MCP's package.json manifest
+   * via the `guardianScan` field. Entries here serve as legacy overrides.
+   * MCPs not listed here and without manifest config inherit `defaultInput`.
    */
-  input: {
-    telegram: false,
-    onepassword: true,
-    memory: false,
-    filer: true,
-    searcher: false,
-    gmail: false,
-    codexec: true,
-  } as Record<string, boolean>,
+  input: {} as Record<string, boolean>,
 
   /**
    * Scan the RESULTS coming back from an MCP (← direction).
    * After an MCP processes a tool call, this checks what it returned
    * BEFORE Thinker/Claude sees the response.
    *
-   * MCPs not listed here inherit `defaultOutput`.
+   * Per-MCP scan config is now declared in each MCP's package.json manifest
+   * via the `guardianScan` field. Entries here serve as legacy overrides.
+   * MCPs not listed here and without manifest config inherit `defaultOutput`.
    */
-  output: {
-    telegram: false,
-    onepassword: false,
-    memory: false,
-    filer: true,
-    searcher: true,
-    gmail: true,
-    codexec: false,
-  } as Record<string, boolean>,
+  output: {} as Record<string, boolean>,
 
   /**
    * Per-agent overrides: allows stricter or more relaxed scanning per agent.

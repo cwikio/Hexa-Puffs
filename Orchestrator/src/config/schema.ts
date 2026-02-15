@@ -1,6 +1,19 @@
 import { z } from 'zod';
 import { AgentDefinitionSchema, ChannelBindingSchema } from './agents.js';
 
+// Metadata from MCP manifest — used by ToolRouter, Guardian, and Thinker
+export const MCPMetadataSchema = z.object({
+  label: z.string().optional(),
+  toolGroup: z.string().optional(),
+  keywords: z.array(z.string()).optional(),
+  guardianScan: z.object({
+    input: z.boolean().optional(),
+    output: z.boolean().optional(),
+  }).optional(),
+});
+
+export type MCPMetadata = z.infer<typeof MCPMetadataSchema>;
+
 // Stdio-based MCP server config (spawns process)
 export const StdioMCPServerConfigSchema = z.object({
   command: z.string(),
@@ -11,6 +24,7 @@ export const StdioMCPServerConfigSchema = z.object({
   required: z.boolean().default(false),
   sensitive: z.boolean().default(false),
   description: z.string().optional(),
+  metadata: MCPMetadataSchema.optional(),
 });
 
 export type StdioMCPServerConfig = z.infer<typeof StdioMCPServerConfigSchema>;

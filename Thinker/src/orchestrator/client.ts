@@ -13,6 +13,7 @@ import type {
   ConversationEntry,
   MCPToolCallResponse,
   MCPToolsListResponse,
+  MCPMetadata,
 } from './types.js';
 
 /**
@@ -23,6 +24,7 @@ export class OrchestratorClient {
   private agentId: string;
   private timeout: number;
   private tools: Map<string, OrchestratorTool> = new Map();
+  private mcpMetadata: Record<string, MCPMetadata> | undefined;
   private toolsCachedAt: number = 0;
   private static readonly TOOL_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -89,6 +91,7 @@ export class OrchestratorClient {
       for (const tool of tools) {
         this.tools.set(tool.name, tool);
       }
+      this.mcpMetadata = response.mcpMetadata;
       this.toolsCachedAt = Date.now();
 
       return tools;
@@ -114,6 +117,13 @@ export class OrchestratorClient {
    */
   getCachedTools(): OrchestratorTool[] {
     return Array.from(this.tools.values());
+  }
+
+  /**
+   * Get cached MCP metadata (populated alongside tools during discovery).
+   */
+  getMCPMetadata(): Record<string, MCPMetadata> | undefined {
+    return this.mcpMetadata;
   }
 
   /**

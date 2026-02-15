@@ -40,6 +40,13 @@
   },
   "annabelle": {
     "mcpName": "searcher",
-    "sensitive": false
+    "sensitive": false,
+    "label": "Web Search",
+    "toolGroup": "Web Search",
+    "keywords": ["search", "news", "weather", "forecast", "find out"],
+    "guardianScan": {
+      "input": false,
+      "output": true
+    }
   }
 }

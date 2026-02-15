@@ -86,6 +86,12 @@ export function scanForMCPs(mcpsRoot: string): DiscoveredMCP[] {
       httpPort: manifest.httpPort,
       command: manifest.command ?? 'node',
       commandArgs: manifest.commandArgs ?? [],
+      metadata: {
+        label: manifest.label,
+        toolGroup: manifest.toolGroup,
+        keywords: manifest.keywords,
+        guardianScan: manifest.guardianScan,
+      },
     };
 
     discovered.push(mcp);

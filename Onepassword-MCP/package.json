@@ -35,6 +35,13 @@
   "annabelle": {
     "mcpName": "onepassword",
     "transport": "stdio",
-    "sensitive": true
+    "sensitive": true,
+    "label": "1Password",
+    "toolGroup": "Secrets",
+    "keywords": ["password", "secret", "credential", "vault", "1password"],
+    "guardianScan": {
+      "input": true,
+      "output": false
+    }
   }
 }

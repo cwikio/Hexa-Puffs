@@ -101,8 +101,32 @@ interface AnnabelleManifest {
     chatRefreshIntervalMs?: number;
     maxMessageAgeMs?: number;
   };
+  // Metadata fields (all optional — omitted fields trigger auto-generated fallbacks)
+  label?: string;          // Pretty display name (e.g., "1Password"). Fallback: capitalize(mcpName)
+  toolGroup?: string;      // Semantic group tag (e.g., "Communication"). Fallback: same as label
+  keywords?: string[];     // Keywords that trigger tool selection in Thinker (e.g., ["email", "inbox"])
+  guardianScan?: {         // Per-MCP Guardian scan overrides. Omitted = global defaults (both true)
+    input?: boolean;
+    output?: boolean;
+  };
 }
 ```
+
+### Manifest Metadata
+
+The optional metadata fields enrich three downstream consumers without requiring any hardcoded maps:
+
+| Field | Purpose | Fallback (Tier 3) |
+|---|---|---|
+| `label` | Pretty name shown in ToolRouter descriptions | `capitalize(mcpName)` |
+| `toolGroup` | Semantic group tag (e.g., "Communication", "Security") | Same as `label` |
+| `keywords` | Thinker's regex tool selector activates this MCP's tools when these keywords match | No auto-route — only selected via embedding similarity or default groups |
+| `guardianScan` | Override whether Guardian scans inputs/outputs for this MCP | Global defaults (`true`/`true`) |
+
+**New MCPs don't need metadata** — the system auto-generates sensible defaults. Add metadata when you want:
+- A prettier label than the mcpName (e.g., `"1Password"` instead of `"onepassword"`)
+- Keyword-based tool routing in Thinker (e.g., `["password", "vault"]` triggers your tools)
+- Custom Guardian scan behavior (e.g., skip scanning for non-sensitive MCPs)
 
 ### Example: Stdio MCP
 
@@ -115,7 +139,11 @@ interface AnnabelleManifest {
   "annabelle": {
     "mcpName": "mytool",
     "transport": "stdio",
-    "sensitive": false
+    "sensitive": false,
+    "label": "My Tool",
+    "toolGroup": "Utilities",
+    "keywords": ["mytool", "utility"],
+    "guardianScan": { "input": true, "output": false }
   }
 }
 ```
@@ -707,7 +735,10 @@ cd Hello-MCP
   "annabelle": {
     "mcpName": "hello",
     "transport": "stdio",
-    "sensitive": false
+    "sensitive": false,
+    "label": "Hello",
+    "toolGroup": "Greetings",
+    "keywords": ["hello", "greet", "greeting"]
   }
 }
 ```

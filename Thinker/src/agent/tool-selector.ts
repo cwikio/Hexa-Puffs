@@ -1,5 +1,6 @@
 import type { CoreTool } from 'ai';
 import { Logger } from '@mcp/shared/Utils/logger.js';
+import type { MCPMetadata } from '../orchestrator/types.js';
 
 const logger = new Logger('thinker:tool-selector');
 
@@ -82,21 +83,70 @@ function expandPattern(pattern: string, allToolNames: string[]): string[] {
 }
 
 /**
+ * Merge hardcoded TOOL_GROUPS with auto-generated groups from MCP metadata.
+ * Any MCP not already in the hardcoded map gets a glob group: `{mcpName}: ['{mcpName}_*']`
+ */
+function getEffectiveGroups(
+  mcpMetadata: Record<string, MCPMetadata> | undefined,
+): Record<string, string[]> {
+  const groups = { ...TOOL_GROUPS };
+  if (mcpMetadata) {
+    for (const mcpName of Object.keys(mcpMetadata)) {
+      if (!groups[mcpName]) {
+        groups[mcpName] = [`${mcpName}_*`];
+      }
+    }
+  }
+  return groups;
+}
+
+/**
+ * Merge hardcoded KEYWORD_ROUTES with keyword routes from MCP metadata.
+ * MCPs with manifest keywords that don't already have a hardcoded route get an auto-generated one.
+ */
+function getEffectiveKeywordRoutes(
+  mcpMetadata: Record<string, MCPMetadata> | undefined,
+): Array<{ pattern: RegExp; groups: string[] }> {
+  const routes = [...KEYWORD_ROUTES];
+  if (mcpMetadata) {
+    for (const [mcpName, meta] of Object.entries(mcpMetadata)) {
+      if (meta.keywords && meta.keywords.length > 0) {
+        // Skip if a hardcoded route already targets this group
+        const hasRoute = routes.some((r) => r.groups.includes(mcpName));
+        if (!hasRoute) {
+          const escaped = meta.keywords.map((k) =>
+            k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+          );
+          routes.push({ pattern: new RegExp(escaped.join('|'), 'i'), groups: [mcpName] });
+        }
+      }
+    }
+  }
+  return routes;
+}
+
+/**
  * Select a subset of tools relevant to the given message.
  * Always includes `core` tools. Adds groups based on keyword matching.
  * Falls back to `DEFAULT_GROUPS` when no keywords match.
+ *
+ * When mcpMetadata is provided, auto-generates tool groups and keyword routes
+ * for MCPs not covered by the hardcoded maps (Tier 3 fallback).
  */
 export function selectToolsForMessage(
   message: string,
   allTools: Record<string, CoreTool>,
+  mcpMetadata?: Record<string, MCPMetadata>,
 ): Record<string, CoreTool> {
   const allToolNames = Object.keys(allTools);
+  const effectiveGroups = getEffectiveGroups(mcpMetadata);
+  const effectiveRoutes = getEffectiveKeywordRoutes(mcpMetadata);
 
   // Determine which groups to activate
   const activeGroups = new Set<string>(['core']);
 
   let matched = false;
-  for (const route of KEYWORD_ROUTES) {
+  for (const route of effectiveRoutes) {
     if (route.pattern.test(message)) {
       for (const group of route.groups) {
         activeGroups.add(group);
@@ -114,7 +164,7 @@ export function selectToolsForMessage(
   // Collect tool names from active groups
   const selectedNames = new Set<string>();
   for (const groupName of activeGroups) {
-    const patterns = TOOL_GROUPS[groupName];
+    const patterns = effectiveGroups[groupName];
     if (!patterns) continue;
     for (const pattern of patterns) {
       for (const name of expandPattern(pattern, allToolNames)) {

@@ -31,6 +31,13 @@
   "annabelle": {
     "mcpName": "codexec",
     "transport": "stdio",
-    "sensitive": true
+    "sensitive": true,
+    "label": "Code Execution",
+    "toolGroup": "Code Execution",
+    "keywords": ["code", "script", "execute", "python", "bash", "calculate"],
+    "guardianScan": {
+      "input": true,
+      "output": false
+    }
   }
 }

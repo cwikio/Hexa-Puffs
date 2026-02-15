@@ -41,6 +41,7 @@ export function loadConfig(): Config {
       timeout: timeout ?? mcp.timeout,
       required: mcp.required,
       sensitive: mcp.sensitive,
+      metadata: mcp.metadata,
     };
   }
 
@@ -137,6 +138,7 @@ export {
   type StdioMCPServerConfig,
   type SecurityConfig,
   type ChannelPollingConfig,
+  type MCPMetadata,
 } from './schema.js';
 
 export {
