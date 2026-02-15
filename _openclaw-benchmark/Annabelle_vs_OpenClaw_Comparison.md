@@ -14,9 +14,9 @@ OpenClaw emphasizes user ownership — "your context and skills live on YOUR com
 
 ## What Is Annabelle?
 
-Annabelle is a personal AI assistant built as a security-first, modular monorepo. It is a solo-developer infrastructure project designed to handle real credentials, real email, and real money with engineering discipline. The system runs as a constellation of processes: an Orchestrator hub (Express HTTP), a Thinker agent runtime (Vercel AI SDK), and 10+ MCP servers (Model Context Protocol) as isolated child processes — plus external third-party MCPs loaded at runtime via hot-reload.
+Annabelle is an MCP-based AI assistant platform designed to parallelise any workflow at scale and be extended in minutes, not days. The system runs as a constellation of independent processes — an Orchestrator hub, an agent runtime, and 10+ MCP servers as isolated child processes — communicating over the open Model Context Protocol standard. Any LLM provider can be plugged in (cloud or local), and any MCP-compatible server can be added with zero code changes via hot-reload.
 
-The defining architectural choice is Guardian — a dedicated, always-on security MCP powered by IBM Granite Guardian that pre-scans every tool input and post-scans every tool output for prompt injection, with per-MCP configuration and fail-closed defaults. Every external MCP is automatically wrapped. Beyond security, the system prioritizes token efficiency (three-path tool selection drops 148+ tools to 3-25 per message), cost controls (sliding-window anomaly detection with auto-pause), and structured memory (SQLite with vector + FTS5 + LIKE hybrid search, automatic fact extraction, confidence scoring, deduplication). Proactive skills run on Inngest cron with a two-tier execution model: simple tasks fire at zero LLM tokens, complex ones get full agent reasoning. The user interface is Telegram-only — one channel, deeply integrated, with slash commands for full system administration.
+The multi-process architecture means every capability runs in its own process with its own memory space. New MCPs — in any language — drop in as sibling directories and are auto-discovered at startup. External third-party MCPs load at runtime from a single config file, automatically wrapped by Guardian, Annabelle's dedicated security layer that pre-scans every tool input and post-scans every tool output for prompt injection. This plug-and-play extensibility, combined with true process-level parallelism across CPU cores, enables concurrent multi-agent workflows where each agent orchestrates its own set of tools independently.
 
 ---
 
@@ -95,20 +95,20 @@ flowchart LR
 
 | | Count |
 |---|---|
-| **Annabelle Ahead** | 31 of 50 dimensions |
-| **Comparable** | 9 of 50 dimensions |
-| **OpenClaw Ahead** | 10 of 50 dimensions |
+| **Annabelle Ahead** | 36 of 55 dimensions |
+| **Comparable** | 9 of 55 dimensions |
+| **OpenClaw Ahead** | 10 of 55 dimensions |
 
 ```mermaid
-pie title Dimension Comparison (50 total)
-    "Annabelle Ahead (31)" : 31
+pie title Dimension Comparison (55 total)
+    "Annabelle Ahead (36)" : 36
     "Comparable (9)" : 9
     "OpenClaw Ahead (10)" : 10
 ```
 
-**Scope:** Core architecture, inference, execution, safety, memory, agents, web, voice, files, email, skills, observability. **Excludes:** Messaging channel breadth (OpenClaw's 13+ channels vs Annabelle's Telegram-only) — this is a separate strategic dimension, not a capability comparison.
+**Scope:** Core architecture, inference, execution, safety, memory, agents, web, voice, files, email, skills, observability, architectural extensibility & parallelism. **Excludes:** Messaging channel breadth (OpenClaw's 13+ channels vs Annabelle's Telegram-only) — this is a separate strategic dimension, not a capability comparison.
 
-**Methodology:** Each of the 12 major categories contains 3-6 sub-dimensions, totaling 50 individual comparisons. Each sub-dimension is scored as **Annabelle**, **Comparable**, or **OpenClaw** based on current implementation status, not roadmap.
+**Methodology:** Each of the 13 major categories contains 3-6 sub-dimensions, totaling 55 individual comparisons. Each sub-dimension is scored as **Annabelle**, **Comparable**, or **OpenClaw** based on current implementation status, not roadmap.
 
 ---
 
@@ -243,6 +243,18 @@ pie title Dimension Comparison (50 total)
 | 48 | **Startup Notification** | Telegram notification on boot: MCP count, external MCPs, changes since last boot (startup diff), failures. | No startup notification. | **Annabelle** — instant visibility into system state changes |
 | 49 | **Test Coverage** | 170+ test files across packages. vitest (Node), pytest (Python). Shared test infrastructure. Per-package + integration tests. | Test suites in `test/` directory. Coverage varies across 69+ modules. | **Annabelle** — stronger testing discipline for a smaller codebase |
 | 50 | **Type Safety** | TypeScript strict mode. Generic `registerTool<T>()`. Zod schemas for all tool inputs. `StandardResponse` contract across MCPs. Zero `any` types policy. | TypeBox for wire protocol. TypeScript across codebase. Less strict — large module count makes enforcement harder. | **Annabelle** — stricter enforcement, zod validation at every boundary |
+
+---
+
+## 13. Architectural Extensibility & Concurrent Parallelism
+
+| # | Dimension | Annabelle | OpenClaw | Edge |
+|---|-----------|-----------|----------|------|
+| 51 | **Process Model** | Multi-process: Orchestrator + Thinker + 10+ MCP child processes. Each MCP runs in its own OS process with independent memory, heap, and event loop. True parallel execution across CPU cores — a blocked MCP doesn't starve others. | Single-process monolith: Gateway embeds agent runtime, channel adapters, and tools in one Node.js event loop. Concurrency is cooperative (async/await). CPU-bound work in one tool blocks the entire pipeline. | **Annabelle** — OS-level parallelism vs single event-loop concurrency |
+| 52 | **Extension Protocol** | MCP (Model Context Protocol) — open, language-agnostic standard. New tools can be written in any language (Node, Python, Go, Rust). Same protocol used by Claude Code, Cursor, Windsurf, and other AI tools. Stdio transport for local MCPs, HTTP for remote. | Proprietary skill format — JavaScript/TypeScript only. Skills run in-process, sharing the Gateway's event loop and memory. MCP support partially available but disabled for HTTP/SSE channels. | **Annabelle** — language-agnostic open standard vs single-language in-process model |
+| 53 | **Add-a-Capability Speed** | Drop a folder with `package.json` manifest → `npm run build` → restart Orchestrator. External MCPs: add one JSON entry → hot-reload (no restart). Auto-discovery scans sibling directories. Guardian wraps automatically. | Write a skill (JS/TS), place in skills directory, restart or wait for lazy load. Or install from ClawHub marketplace. No manifest-based auto-discovery for custom tools. | **Annabelle** — zero-code hot-reload for external MCPs; manifest-based auto-discovery for internal ones |
+| 54 | **Concurrent Multi-Agent** | Each agent spawns as an independent Thinker process with its own LLM connection, tool set, and session state. Multiple agents execute tool calls in parallel across different CPU cores. Subagents cascade-kill on parent stop. | Single-process agents share the event loop. Lane queue isolation (8 concurrent) serialises work within each lane. `sessions` tool creates sub-agents, but all share the same process resources. | **Annabelle** — true multi-core parallelism for concurrent agents vs serialised lane queues |
+| 55 | **Isolation & Fault Tolerance** | A crashed MCP is auto-restarted without affecting the Orchestrator or other MCPs. Memory leaks in one MCP don't propagate. Each process can be independently upgraded, restarted, or replaced. | A crash in any tool or adapter can bring down the entire Gateway process. Memory leaks accumulate in the shared heap. Upgrading one component means restarting the whole system. | **Annabelle** — process isolation provides fault boundaries; monolith is all-or-nothing |
 
 ---
 
@@ -404,7 +416,7 @@ Remaining gaps: voice (specced not built), self-programming (philosophical choic
 | **Weakest at** | Channel breadth, voice, ecosystem size, self-programming | Cost controls, content-level security scanning, token management |
 | **Philosophy** | Depth over reach — fewer features, each secure and tested | Reach over depth — cover every use case, community fills gaps |
 
-Both are solo-developer projects. Annabelle is the more cautious, production-minded system. OpenClaw is the more ambitious, community-driven platform — and v2026.2.14 shows it is now taking security seriously at scale. The choice depends on whether you prioritize safety and efficiency (Annabelle) or flexibility and ecosystem (OpenClaw).
+Annabelle is the more cautious, production-minded system — extensible by design, with plug-and-play parallelism that scales across cores. OpenClaw is the more ambitious, community-driven platform — and v2026.2.14 shows it is now taking security seriously at scale. The choice depends on whether you prioritize safety, efficiency, and architectural extensibility (Annabelle) or flexibility and ecosystem breadth (OpenClaw).
 
 ---
 
