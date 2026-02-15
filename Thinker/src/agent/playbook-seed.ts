@@ -3,24 +3,24 @@
  * Idempotent: existing playbooks are never overwritten.
  */
 
-import type { OrchestratorClient } from '../orchestrator/client.js';
-import type { TraceContext } from '../tracing/types.js';
-import { Logger } from '@mcp/shared/Utils/logger.js';
+import type { OrchestratorClient } from '../orchestrator/client.js'
+import type { TraceContext } from '../tracing/types.js'
+import { Logger } from '@mcp/shared/Utils/logger.js'
 
-const logger = new Logger('thinker:playbook-seed');
+const logger = new Logger('thinker:playbook-seed')
 
 interface PlaybookSeed {
-  name: string;
-  description: string;
-  trigger_type: 'event';
+  name: string
+  description: string
+  trigger_type: 'event'
   trigger_config: {
-    keywords: string[];
-    priority: number;
-  };
-  instructions: string;
-  required_tools: string[];
-  max_steps: number;
-  notify_on_completion: boolean;
+    keywords: string[]
+    priority: number
+  }
+  instructions: string
+  required_tools: string[]
+  max_steps: number
+  notify_on_completion: boolean
 }
 
 export const DEFAULT_PLAYBOOKS: PlaybookSeed[] = [
@@ -105,7 +105,7 @@ User asks to schedule something, check their calendar, or find available time.
     description: 'Search the web for information and optionally share findings',
     trigger_type: 'event',
     trigger_config: {
-      keywords: ['search for', 'find out', 'look up', 'research', 'what is', 'tell me about', 'latest news'],
+      keywords: ['search for', 'find out', 'look up', 'research', 'what is', 'tell me about', 'latest news', 'news', 'headlines', "what's new"],
       priority: 5,
     },
     instructions: `## WHEN TO USE
@@ -286,21 +286,7 @@ CONSTRAINTS:
     description: 'Check system status, what services are running, what is broken',
     trigger_type: 'event',
     trigger_config: {
-      keywords: [
-        "what's broken",
-        'what is broken',
-        'system status',
-        'health check',
-        'are you ok',
-        'are you working',
-        'is everything running',
-        "what's running",
-        'what is running',
-        'service status',
-        'any issues',
-        'any problems',
-        'diagnostics',
-      ],
+      keywords: ["what's broken", 'what is broken', 'system status', 'health check', 'are you ok', 'are you working', 'is everything running', "what's running", 'what is running', 'service status', 'any issues', 'any problems', 'diagnostics'],
       priority: 15,
     },
     instructions: `## WHEN TO USE
@@ -330,19 +316,7 @@ User asks about system health, what's working/broken, or general diagnostics.
     description: 'Clean up, delete, or purge messages from a chat',
     trigger_type: 'event',
     trigger_config: {
-      keywords: [
-        'clean up messages',
-        'clean up',
-        'cleanup messages',
-        'cleanup',
-        'delete messages',
-        'clear messages',
-        'purge messages',
-        'remove messages',
-        'clear chat',
-        'clean test messages',
-        'delete test messages',
-      ],
+      keywords: ['clean up messages', 'clean up', 'cleanup messages', 'cleanup', 'delete messages', 'clear messages', 'purge messages', 'remove messages', 'clear chat', 'clean test messages', 'delete test messages'],
       priority: 10,
     },
     instructions: `## WHEN TO USE
@@ -369,11 +343,7 @@ User asks to clean up, delete, or purge messages from a Telegram chat.
     description: 'Browse websites, extract information, fill forms, and take screenshots',
     trigger_type: 'event',
     trigger_config: {
-      keywords: [
-        'browse', 'website', 'webpage', 'open page', 'go to', 'visit site',
-        'screenshot', 'scrape', 'fill form', 'login site', 'web page',
-        'www', 'http', 'navigate to', 'open url',
-      ],
+      keywords: ['browse', 'website', 'webpage', 'open page', 'go to', 'visit site', 'screenshot', 'scrape', 'fill form', 'login site', 'web page', 'www', 'http', 'navigate to', 'open url'],
       priority: 10,
     },
     instructions: `## WHEN TO USE
@@ -405,11 +375,7 @@ User asks to interact with a website: fill forms, click buttons, take screenshot
 - If a page requires login, fill credentials step by step and confirm before submitting
 - Keep interactions minimal — navigate, snapshot, extract, done
 - Call web_browser_close when you are completely done browsing to free resources`,
-    required_tools: [
-      'web_browser_navigate', 'web_browser_snapshot', 'web_browser_click',
-      'web_browser_type', 'web_browser_take_screenshot', 'web_browser_tabs',
-      'web_browser_fill_form', 'web_browser_navigate_back', 'web_browser_close',
-    ],
+    required_tools: ['web_browser_navigate', 'web_browser_snapshot', 'web_browser_click', 'web_browser_type', 'web_browser_take_screenshot', 'web_browser_tabs', 'web_browser_fill_form', 'web_browser_navigate_back', 'web_browser_close'],
     max_steps: 10,
     notify_on_completion: false,
   },
@@ -418,14 +384,7 @@ User asks to interact with a website: fill forms, click buttons, take screenshot
     description: 'Create recurring scheduled skills, reminders, or one-shot notifications from natural language',
     trigger_type: 'event',
     trigger_config: {
-      keywords: [
-        'cron', 'remind me', 'recurring', 'every minute', 'every hour', 'every day',
-        'every week', 'every month', 'every morning', 'every evening',
-        'schedule task', 'background job', 'repeat', 'daily at', 'weekly',
-        'hourly', 'once a day', 'once a week', 'times a day', 'times a week',
-        'per minute', 'per hour', 'per day', 'at 3pm', 'at noon', 'tomorrow at',
-        'remind me at', 'alert me', 'notify me',
-      ],
+      keywords: ['cron', 'remind me', 'recurring', 'every minute', 'every hour', 'every day', 'every week', 'every month', 'every morning', 'every evening', 'schedule task', 'background job', 'repeat', 'daily at', 'weekly', 'hourly', 'once a day', 'once a week', 'times a day', 'times a week', 'per minute', 'per hour', 'per day', 'at 3pm', 'at noon', 'tomorrow at', 'remind me at', 'alert me', 'notify me'],
       priority: 10,
     },
     instructions: `## WHEN TO USE
@@ -522,11 +481,7 @@ For "remind me at 3pm" or "remind me tomorrow at 9am":
     description: 'Check Vercel deployments, build logs, and project status',
     trigger_type: 'event',
     trigger_config: {
-      keywords: [
-        'vercel', 'deployment', 'deploy', 'build log', 'build error',
-        'production deploy', 'preview deploy', 'vercel project',
-        'vercel status', 'deployment status', 'build status',
-      ],
+      keywords: ['vercel', 'deployment', 'deploy', 'build log', 'build error', 'production deploy', 'preview deploy', 'vercel project', 'vercel status', 'deployment status', 'build status'],
       priority: 10,
     },
     instructions: `## WHEN TO USE
@@ -558,32 +513,25 @@ IMPORTANT: Only these Vercel tools exist. Do NOT call vercel_list_teams, vercel_
 - Filter getDeployments by target="production" for prod-only views
 - Use "app" parameter (not "project" or "name") to filter by project name
 - ALWAYS use real IDs from API responses — never guess or make up IDs`,
-    required_tools: [
-      'vercel_getDeployments', 'vercel_getDeployment', 'vercel_getDeploymentEvents',
-      'vercel_listDeploymentFiles', 'vercel_getDeploymentFileContents',
-    ],
+    required_tools: ['vercel_getDeployments', 'vercel_getDeployment', 'vercel_getDeploymentEvents', 'vercel_listDeploymentFiles', 'vercel_getDeploymentFileContents'],
     max_steps: 8,
     notify_on_completion: false,
   },
-];
+]
 
 /**
  * Seed default playbooks into Memorizer.
  * Creates new playbooks and updates existing ones if instructions have changed.
  */
-export async function seedPlaybooks(
-  orchestrator: OrchestratorClient,
-  agentId: string,
-  trace?: TraceContext
-): Promise<number> {
-  const { skills: existing } = await orchestrator.listSkills(agentId, 'event', undefined, trace);
-  const existingByName = new Map(existing.map((s) => [s.name as string, s]));
+export async function seedPlaybooks(orchestrator: OrchestratorClient, agentId: string, trace?: TraceContext): Promise<number> {
+  const { skills: existing } = await orchestrator.listSkills(agentId, 'event', undefined, trace)
+  const existingByName = new Map(existing.map((s) => [s.name as string, s]))
 
-  let seeded = 0;
-  let updated = 0;
+  let seeded = 0
+  let updated = 0
 
   for (const playbook of DEFAULT_PLAYBOOKS) {
-    const existingSkill = existingByName.get(playbook.name);
+    const existingSkill = existingByName.get(playbook.name)
 
     if (existingSkill) {
       // Update if instructions changed
@@ -597,15 +545,15 @@ export async function seedPlaybooks(
             required_tools: playbook.required_tools,
             max_steps: playbook.max_steps,
           },
-          trace
-        );
+          trace,
+        )
         if (updateResponse.success) {
-          updated++;
+          updated++
         } else {
-          logger.error(`Failed to update playbook "${playbook.name}"`, updateResponse.error);
+          logger.error(`Failed to update playbook "${playbook.name}"`, updateResponse.error)
         }
       }
-      continue;
+      continue
     }
 
     const response = await orchestrator.executeTool(
@@ -621,19 +569,19 @@ export async function seedPlaybooks(
         max_steps: playbook.max_steps,
         notify_on_completion: playbook.notify_on_completion,
       },
-      trace
-    );
+      trace,
+    )
 
     if (response.success) {
-      seeded++;
+      seeded++
     } else {
-      logger.error(`Failed to seed playbook "${playbook.name}"`, response.error);
+      logger.error(`Failed to seed playbook "${playbook.name}"`, response.error)
     }
   }
 
   if (seeded > 0 || updated > 0) {
-    logger.info(`Playbooks: ${seeded} seeded, ${updated} updated (${existing.length} total)`);
+    logger.info(`Playbooks: ${seeded} seeded, ${updated} updated (${existing.length} total)`)
   }
 
-  return seeded + updated;
+  return seeded + updated
 }
