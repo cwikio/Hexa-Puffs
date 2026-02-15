@@ -62,10 +62,7 @@ The central orchestration layer for Annabelle AI Assistant. The Orchestrator act
 │  │Memory  │ ┌────────┐           │  │                        │
 │  │(stdio) │ │CodeExec│           │  │                        │
 │  └────────┘ │(stdio) │           │  │                        │
-│  ┌────────┐ └────────┘           │  │                        │
-│  │LinkedIn│                      │  │                        │
-│  │(python)│                      │  │                        │
-│  └────────┘                      │  │                        │
+│             └────────┘           │  │                        │
 └──────────────────────────────────┘  └────────────────────────┘
 ```
 
@@ -846,7 +843,6 @@ Caller → Orchestrator → [GuardedMCPClient] → Guardian scan → Downstream 
 | Gmail | Yes | Yes | Scan email content both ways |
 | Memory | Yes | No | Protect stored facts from injection |
 | Searcher | No | No | Search queries are low-risk |
-| LinkedIn | No | No | Public data, low injection risk |
 | CodeExec | Yes | No | Code args are high-risk; output follows |
 
 ### Per-Agent Guardian Overrides

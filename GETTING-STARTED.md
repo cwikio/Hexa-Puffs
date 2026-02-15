@@ -42,12 +42,6 @@ done
 wait
 ```
 
-For Python MCPs (LinkedIn-MCP):
-
-```bash
-cd LinkedIn-MCP && uv sync && cd ..
-```
-
 Or use the rebuild script which handles build order automatically:
 
 ```bash
@@ -119,7 +113,7 @@ This builds the Shared package first, then all others in parallel.
 This starts (in order):
 1. Inngest Dev Server (port 8288)
 2. Ollama + Guardian model (if available)
-3. Orchestrator (8010) — auto-discovers and spawns all MCPs via stdio (Guardian, 1Password, Memorizer, Filer, Telegram, Searcher, Gmail, Browser, CodeExec, LinkedIn)
+3. Orchestrator (8010) — auto-discovers and spawns all MCPs via stdio (Guardian, 1Password, Memorizer, Filer, Telegram, Searcher, Gmail, Browser, CodeExec)
 4. Thinker agent(s) (8006+) — spawned by Orchestrator from `agents.json`
 5. Cron skill seeding + system snapshot (background)
 

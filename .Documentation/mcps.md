@@ -235,30 +235,6 @@
 - Timeout (60s) → Complex pages may take too long to load
 - "offline" in `/status` → Browser MCP not responding; may need restart
 
-## LinkedIn
-
-**Purpose:** LinkedIn messaging, profile viewing, posts, search, and networking.
-**Transport:** Stdio | **Sensitive:** No | **Language:** Python 3.11+ (FastMCP)
-
-**Tools:**
-
-*Profile:* `get_profile`, `get_own_profile`
-*Messaging:* `get_conversations`, `get_conversation`, `send_message`
-*Posts:* `get_feed`, `create_post`
-*Search:* `search_people`, `search_companies`
-*Network:* `get_connections`, `send_connection_request`
-
-**Configuration:**
-- `LINKEDIN_USERNAME` — LinkedIn email/username
-- `LINKEDIN_PASSWORD` — LinkedIn password
-
-**Dependencies:** `linkedin-api` (unofficial), `fastmcp`, Python 3.11+
-
-**Common failures:**
-- `LINKEDIN_API_RESTRICTED` — Session expired or account restricted. Clear cookies and restart.
-- Empty search results — LinkedIn rate-limits search aggressively. Messaging module falls back to `_resolve_via_conversations()`.
-- `status: 429` — Rate limited. Wait and retry.
-
 ---
 
 ## Key Files

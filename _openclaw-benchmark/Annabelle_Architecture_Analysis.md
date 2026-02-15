@@ -188,8 +188,8 @@ The Orchestrator is an Express HTTP server on port 8010, implemented across `Orc
       Guardian  1Password   Filer         Memorizer   CodeExec   Searcher
       (stdio)   (stdio)    (stdio)        (stdio)     (stdio)    (stdio)
          │          │          │               │          │          │
-      Gmail    Telegram    Browser         LinkedIn   External MCPs
-      (stdio)   (stdio)    (stdio)        (Python)   (hot-reload)
+      Gmail    Telegram    Browser         External MCPs
+      (stdio)   (stdio)    (stdio)        (hot-reload)
 ```
 
 The Orchestrator handles: MCP lifecycle management (spawn, health check, auto-restart), tool routing via the ToolRouter (prefixed names → correct MCP), agent management (lazy-spawn, idle-kill, subagent coordination), channel polling (Telegram message ingestion), slash command processing, Guardian security integration, Inngest function registration, and startup notification via Telegram.
@@ -211,7 +211,6 @@ Each MCP is spawned as a stdio child process. The Orchestrator wraps each one in
 | Gmail | Email + Google Calendar via OAuth | Stdio | Yes |
 | Telegram | Messaging via MTProto protocol | Stdio | Yes |
 | Browser | Headless Chromium via Playwright | Stdio | Yes |
-| LinkedIn | Profile, messaging, search (Python/FastMCP) | Stdio | No |
 
 External MCPs (PostHog, Vercel, Neon, GitHub, etc.) are declared in `external-mcps.json` and hot-reloaded at runtime via `ExternalMCPWatcher` — no restart required.
 
@@ -664,7 +663,6 @@ MCPs/
 ├── CodeExec-MCP/              # Code execution
 ├── Searcher-MCP/              # Web search (Brave)
 ├── Browser-MCP/               # Headless Chromium
-├── LinkedIn-MCP/              # Python/FastMCP
 ├── Shared/                    # @mcp/shared (types, registerTool, discovery)
 ├── _scripts/                  # Seed scripts
 ├── .documentation/            # System documentation (15 files)
@@ -692,9 +690,8 @@ MCPs/
 | Search | Brave Search API | Web/news/image search |
 | Build | `tsc` (per-package) | TypeScript compilation |
 | Scheduling | Inngest (dev server) | Cron skills, background jobs |
-| Python MCPs | FastMCP, `linkedin-api` | LinkedIn integration |
 
-Runtime requirement: **Node.js ≥ 20**, **Python 3.11+** (for LinkedIn-MCP).
+Runtime requirement: **Node.js ≥ 20**.
 
 ---
 

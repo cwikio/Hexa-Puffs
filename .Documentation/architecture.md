@@ -16,13 +16,12 @@
 | Searcher | Stdio MCP | - | Web/news/image search via Brave API |
 | Gmail | Stdio MCP | - | Email and Google Calendar via OAuth |
 | Telegram | Stdio MCP | - | Telegram messaging via MTProto |
-| LinkedIn | Stdio MCP | - | LinkedIn messaging, profiles, search (Python/FastMCP) |
 | Browser | Stdio MCP | - | Headless Chromium via Playwright |
 | Inngest | Job scheduler | 8288 | Cron jobs, background tasks, scheduled skills |
 
 ## Process Model
 
-All stdio MCPs are **child processes** spawned by the Orchestrator. They communicate via stdin/stdout using the MCP JSON-RPC protocol. The Orchestrator is the only process that talks to all MCPs. Non-Node MCPs (e.g. LinkedIn-MCP in Python) are spawned using the `command` field from their manifest (e.g. `.venv/bin/python`) instead of `node`.
+All stdio MCPs are **child processes** spawned by the Orchestrator. They communicate via stdin/stdout using the MCP JSON-RPC protocol. The Orchestrator is the only process that talks to all MCPs. Non-Node MCPs can be spawned using the `command` field from their manifest (e.g. `.venv/bin/python`) instead of `node`.
 
 Thinker is a **separate Node.js process** that exposes a REST API. The Orchestrator communicates with it via HTTP. Thinker never talks to MCPs directly — all tool calls go through the Orchestrator.
 

@@ -13,9 +13,9 @@ Annabelle is a personal AI assistant built on MCP (Model Context Protocol) archi
 
 ---
 
-### Claude Desktop Integration
+### MCP Client Integration (Optional)
 
-To use Annabelle as an MCP server in Claude Desktop, edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Annabelle works standalone via Telegram. Optionally, any MCP-compatible client (Claude Desktop, Claude Code, Cursor, etc.) can connect to the Orchestrator as an additional interface. For example, to use with Claude Desktop, edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -45,15 +45,17 @@ Replace `<repo-root>` with the absolute path to your cloned repository.
 
 The current architecture uses **Orchestrator as an agent router and protocol bridge**:
 
-- **Claude Desktop/Code** connects via MCP stdio protocol
+- **Telegram** is the primary user interface — Orchestrator polls for messages and routes them to Thinker agents
 - **Thinker agents** are spawned and managed by Orchestrator's AgentManager
-- **Orchestrator** polls channels (Telegram), routes messages to the correct agent, enforces per-agent tool policies
+- **Orchestrator** routes messages to the correct agent, enforces per-agent tool policies, and exposes a standard MCP interface
+- **MCP clients** (Claude Desktop, Cursor, etc.) can optionally connect via stdio for direct tool access
 - **Downstream MCPs** are all spawned by Orchestrator via stdio as child processes (auto-discovered from `package.json` manifests)
 
 ```mermaid
 flowchart TB
-    subgraph UI["User Interface Layer"]
-        Claude["Claude Desktop / Claude Code"]
+    subgraph UI["User Interface"]
+        Telegram_UI["Telegram (primary)"]
+        MCPClients["MCP Clients (optional)<br/>Claude Desktop, Cursor, etc."]
     end
 
     subgraph Orchestrator["Orchestrator MCP Server (:8010)"]
@@ -88,7 +90,6 @@ flowchart TB
         Searcher["Searcher MCP<br/>(Brave Search)"]
         Gmail["Gmail MCP<br/>(email, OAuth2)"]
         CodeExec["CodeExec MCP<br/>(sandboxed execution)"]
-        LinkedIn["LinkedIn MCP<br/>(Python, FastMCP)"]
     end
 
     subgraph External["External Services"]
@@ -97,7 +98,8 @@ flowchart TB
         LLM["LLM Provider<br/>(Groq / LM Studio / Ollama)"]
     end
 
-    Claude -->|"MCP Protocol (stdio)"| Orchestrator
+    Telegram_UI -->|"via ChannelPoller"| Orchestrator
+    MCPClients -.->|"MCP Protocol (stdio)"| Orchestrator
     ChannelPoller -->|"polls via ToolRouter"| Telegram
     MsgRouter -->|"routes messages"| AgentMgr
     AgentMgr -->|"HTTP POST /process-message"| Agents
@@ -115,18 +117,18 @@ flowchart TB
 ┌─────────────────────────────────────────────────────────────────┐
 │                      USER INTERFACE LAYER                        │
 │                                                                  │
-│  ┌─────────────────────────┐                                    │
-│  │  Claude Desktop/Code    │                                    │
-│  │  (MCP client)           │                                    │
-│  └───────────┬─────────────┘                                    │
-│              │ stdio                                            │
-└──────────────┼──────────────────────────────────────────────────┘
-               ↓
+│  ┌─────────────────────────┐  ┌──────────────────────────────┐  │
+│  │  Telegram (primary)     │  │  MCP Clients (optional)      │  │
+│  │  via ChannelPoller      │  │  Claude Desktop, Cursor, etc │  │
+│  └───────────┬─────────────┘  └───────────────┬──────────────┘  │
+│              │                                │ stdio           │
+└──────────────┼────────────────────────────────┼─────────────────┘
+               ↓                                ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │                   ORCHESTRATOR MCP SERVER (:8010)                │
 │                                                                  │
 │  HTTP REST API: /health, /tools/list, /tools/call               │
-│  MCP stdio: Standard MCP protocol for Claude Desktop            │
+│  MCP stdio: Standard MCP protocol for any compatible client     │
 │                                                                  │
 │  148+ Tools (passthrough): send_message, store_fact, create_file│
 │                                                                  │
@@ -168,10 +170,10 @@ flowchart TB
 │  │ Telegram │ │ Searcher │ │  Gmail   │ │ Browser  │          │
 │  │   MCP    │ │   MCP    │ │   MCP    │ │   MCP    │          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
-│  ┌──────────┐ ┌──────────┐                                     │
-│  │ CodeExec │ │ LinkedIn │                                     │
-│  │   MCP    │ │   MCP    │                                     │
-│  └──────────┘ └──────────┘                                     │
+│  ┌──────────┐                                                  │
+│  │ CodeExec │                                                  │
+│  │   MCP    │                                                  │
+│  └──────────┘                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -179,9 +181,9 @@ flowchart TB
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│  Claude Desktop / LM Studio    OR       Custom Web UI           │
+│  MCP Clients (optional)        OR       Custom Web UI           │
 │       │                                    │                    │
-│       │ MCP                                │ REST API           │
+│       │ MCP stdio                          │ REST API           │
 │       ↓                                    ↓                    │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │              ORCHESTRATOR SERVICE                        │   │
@@ -211,16 +213,26 @@ flowchart TB
 
 The architecture supports **multiple AI backends** interchangeably:
 
-### Phase 1: MCP Client Applications
+### Thinker Agents (Primary)
 
-| Application        | AI Model               | Connection      | Notes                                  |
-| ------------------ | ---------------------- | --------------- | -------------------------------------- |
-| **Claude Desktop** | Claude (cloud)         | MCP stdio       | Best tool use, paid                    |
-| **Claude Code**    | Claude (cloud)         | MCP stdio       | Terminal-based                         |
-| **Thinker agents** | Groq/LM Studio/Ollama  | Spawned by Orch | Per-agent LLM config, passive runtime  |
-| **LM Studio**      | Local models           | MCP stdio       | Free, private, variable quality        |
+Thinker agents are the primary way Annabelle processes messages. They receive messages from Orchestrator (routed from Telegram) and use configurable LLM providers:
 
-All can connect to the Orchestrator and use your tools.
+| Provider | Type | Notes |
+| --- | --- | --- |
+| **Groq** | Cloud | Fast inference, default provider |
+| **LM Studio** | Local | Free, private, variable quality |
+| **Ollama** | Local | Free, good for smaller models |
+
+### MCP Clients (Optional)
+
+Any MCP-compatible application can also connect to the Orchestrator for direct tool access:
+
+| Application | Connection | Notes |
+| --- | --- | --- |
+| Claude Desktop | MCP stdio | Best tool use, paid |
+| Claude Code | MCP stdio | Terminal-based |
+| Cursor | MCP stdio | IDE integration |
+| LM Studio | MCP stdio | Free, private |
 
 ### Thinker LLM Configuration
 
@@ -281,7 +293,7 @@ The orchestrator's core logic works with ANY model:
 
 ### Orchestrator (MCP Server)
 
-The orchestrator is itself an **MCP server** that Claude Desktop/Code connects to. It exposes high-level tools, manages multiple Thinker agent instances, and internally coordinates all other MCP servers.
+The orchestrator is the **central hub** of the system. It exposes high-level tools, manages multiple Thinker agent instances, polls Telegram for messages, and internally coordinates all other MCP servers. It also serves as an MCP server that any compatible client can connect to.
 
 **Key Responsibilities:**
 
@@ -289,7 +301,7 @@ The orchestrator is itself an **MCP server** that Claude Desktop/Code connects t
 - **Channel polling** - Polls Telegram for new messages via ChannelPoller (replaces Thinker's old direct polling)
 - **Tool policy enforcement** - Per-agent `allowedTools`/`deniedTools` glob patterns filter which tools each agent can use
 - **Per-agent Guardian overrides** - Agent-specific input/output scan flags merged on top of global defaults
-- Expose passthrough tools to Claude (original MCP tool names like `send_message`, `store_fact`, `create_file`)
+- Expose passthrough tools to MCP clients (original MCP tool names like `send_message`, `store_fact`, `create_file`)
 - Auto-discover tools from downstream MCPs via ToolRouter
 - Security enforcement via Guardian MCP
 - Session management (scoped by agentId)
@@ -391,16 +403,6 @@ Sandboxed code execution in Python, Node.js, and Bash. Supports one-shot executi
 - Environment variables stripped before execution (no credential leaks)
 - Package installation with Guardian-scannable package names
 - Docker sandbox mode designed but not yet implemented (Phase 5)
-
-### LinkedIn MCP
-
-**Status:** ✅ Implemented
-
-LinkedIn integration via Python FastMCP. First non-Node MCP in the monorepo.
-
-- Profile viewing, search, messaging, network management, feed posts
-- Uses `linkedin-api` Python library
-- Auto-discovered by Orchestrator with `"command": ".venv/bin/python"` manifest
 
 ### Thinker (Agent Runtime)
 
@@ -764,7 +766,7 @@ Layer 7: LLM Cost Controls
 
 ### Phase 1: Foundation ✅ Complete
 
-**Goal:** Working MCP-based system with Claude Desktop and autonomous AI agent
+**Goal:** Working MCP-based system with autonomous AI agents accessible via Telegram
 
 **Components:**
 
@@ -775,7 +777,6 @@ Layer 7: LLM Cost Controls
 - ✅ Filer MCP - File operations with grants
 - ✅ Browser MCP - Headless browser automation via Playwright
 - ✅ CodeExec MCP - Sandboxed code execution (Python, Node.js, Bash)
-- ✅ LinkedIn MCP - LinkedIn integration (Python, FastMCP)
 - ✅ Orchestrator MCP - Central coordination with 148+ tools (protocol bridge)
 - ✅ Searcher MCP - Web search via Brave Search
 - ✅ Gmail MCP - Email management with OAuth2
@@ -785,7 +786,7 @@ Layer 7: LLM Cost Controls
 **How it works:**
 
 - Orchestrator acts as an **agent router and protocol bridge**:
-  - Accepts MCP stdio from Claude Desktop/Code
+  - Accepts MCP stdio connections from any compatible client (Claude Desktop, Cursor, etc.)
   - Spawns and manages Thinker agent instances via AgentManager
   - Polls Telegram via ChannelPoller, routes messages to agents via MessageRouter
   - Auto-discovers and spawns all MCPs via stdio from `package.json` manifests
@@ -805,7 +806,7 @@ Layer 7: LLM Cost Controls
 
 ### Phase 2: Custom UI (Future)
 
-**Goal:** Add custom web interface alongside Claude Desktop
+**Goal:** Add custom web interface alongside existing Telegram and MCP access
 
 **Add:**
 
@@ -816,7 +817,8 @@ Layer 7: LLM Cost Controls
 
 **Still works:**
 
-- Claude Desktop via MCP (backward compatible)
+- Telegram via Thinker agents
+- MCP clients via stdio (backward compatible)
 - All existing functionality
 
 ### Phase 3: Enhanced Memory
@@ -861,7 +863,6 @@ Layer 7: LLM Cost Controls
 | Browser automation   | Browser-MCP/README.md         | Playwright headless browser            |
 | Searcher             | Searcher-MCP/testing.md       | Brave Search integration               |
 | CodeExec             | CodeExec-MCP/README.md        | Sandboxed code execution               |
-| LinkedIn             | LinkedIn-MCP/README.md        | Python FastMCP, LinkedIn API           |
 | Getting started      | GETTING-STARTED.md            | Setup guide for new developers         |
 | Adding new MCPs      | HOW-TO-ADD-NEW-MPC.md         | Full MCP creation/integration guide    |
 | Testing guide        | TESTING.md                    | Multi-level test strategy              |

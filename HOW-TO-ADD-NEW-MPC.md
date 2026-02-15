@@ -145,16 +145,16 @@ For MCPs written in Python (or any non-Node language), set `command` to the exec
 
 ```json
 {
-  "name": "linkedin-mcp-server",
+  "name": "weather-mcp-server",
   "version": "1.0.0",
   "main": "src/main.py",
   "scripts": {
     "build": "uv sync",
     "start": ".venv/bin/python src/main.py",
-    "test": ".venv/bin/pytest tests/ -v --ignore=tests/e2e"
+    "test": ".venv/bin/pytest tests/ -v"
   },
   "annabelle": {
-    "mcpName": "linkedin",
+    "mcpName": "weather",
     "command": ".venv/bin/python",
     "sensitive": false
   }

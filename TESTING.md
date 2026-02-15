@@ -40,7 +40,6 @@ Each MCP has its own test suite that can be run independently:
 | Telegram | stdio | `cd Telegram-MCP && npm test` | Message send/receive, chat management |
 | Searcher | stdio | `cd Searcher-MCP && npm test` | Web/news/image search |
 | Gmail | stdio | `cd Gmail-MCP && npm test` | Email and calendar operations |
-| LinkedIn | stdio | `cd LinkedIn-MCP && .venv/bin/pytest tests/ -v --ignore=tests/e2e` | Profile, messaging, search, network, posts |
 | Orchestrator | HTTP :8010 | `cd Orchestrator && npm test` | Routing, discovery, workflows, jobs |
 
 ## Level 3 Workflow Tests
@@ -82,7 +81,7 @@ Before running integration/workflow tests, ensure the stack is running:
 ./start-all.sh
 ```
 
-Note: All MCPs are stdio — spawned by Orchestrator as child processes. `start-all.sh` launches Inngest, Ollama, and Orchestrator (which auto-discovers and spawns all MCPs + Thinker agents). Unit tests (`npm test` per package) don't require running services. Python MCPs (LinkedIn) use `pytest` instead of `vitest`.
+Note: All MCPs are stdio — spawned by Orchestrator as child processes. `start-all.sh` launches Inngest, Ollama, and Orchestrator (which auto-discovers and spawns all MCPs + Thinker agents). Unit tests (`npm test` per package) don't require running services.
 
 ### External Dependencies
 

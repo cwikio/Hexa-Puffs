@@ -10,14 +10,9 @@ There is no root package.json. Run npm commands inside each package directory.
 - Register via `registerTool()` from `@mcp/shared`
 - Return structured objects using `StandardResponse` from `@mcp/shared`
 
-**Python** MCPs (e.g. LinkedIn-MCP) use FastMCP:
-- Define tools via `@mcp.tool()` decorators
-- Return dicts with `success`/`data`/`error` fields matching `StandardResponse` shape
-
 ## Testing
 - Full suite: `./test.sh`
 - Single Node package: `cd <Package> && npx vitest run`
-- Python MCPs: `cd LinkedIn-MCP && .venv/bin/pytest tests/ -v --ignore=tests/e2e`
 - Quick health check: `./test.sh --quick`
 
 ## Scripts

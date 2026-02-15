@@ -294,7 +294,7 @@ The cache stores base64-encoded `Float32Array` embeddings keyed by `"toolName: d
 | `LMSTUDIO_EMBEDDING_MODEL` | (auto) | LM Studio embedding model |
 | `EMBEDDING_CACHE_DIR` | `~/.annabelle/data` | Directory for cache file |
 
-**Tool groups:** Keyword routes map message patterns to tool groups (search, email, calendar, files, passwords, browser, jobs, codexec, linkedin). LinkedIn route matches patterns like `linkedin|connection request|professional network|linkedin message`.
+**Tool groups:** Keyword routes map message patterns to tool groups (search, email, calendar, files, passwords, browser, jobs, codexec). Each group has a regex pattern that triggers it.
 
 ### 4b. Sliding Tools (Sticky Tool Injection)
 
@@ -333,7 +333,7 @@ After the user goes idle, Thinker automatically reviews recent conversation turn
 
 ### 4d. Conversation Loop Resilience
 
-**Tool Recovery:** Some LLMs (Groq/Llama) emit tool calls as text instead of structured JSON (e.g. "I'll call `linkedin_send_message`..."). The agent detects these patterns and executes the recovered tool call.
+**Tool Recovery:** Some LLMs (Groq/Llama) emit tool calls as text instead of structured JSON (e.g. "I'll call `memory_store_fact`..."). The agent detects these patterns and executes the recovered tool call.
 
 **Hallucination Guard:** Detects when the model claims to have performed an action ("I've sent the email") but called no tools. Retries the turn with `toolChoice: 'required'` to force actual tool use.
 

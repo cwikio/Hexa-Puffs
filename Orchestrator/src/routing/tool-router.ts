@@ -56,7 +56,6 @@ export class ToolRouter {
     guardian: 'Guardian',
     gmail: 'Gmail',
     web: 'Browser',
-    linkedin: 'LinkedIn',
   };
 
   private static readonly DEFAULT_TOOL_GROUPS: ToolGroup[] = [
@@ -144,17 +143,6 @@ export class ToolRouter {
       description: 'Send and download media files',
       tools: ['send_media', 'download_media'],
     },
-    {
-      label: 'LinkedIn',
-      description: 'LinkedIn profile viewing, posting, messaging, and networking',
-      tools: [
-        'get_profile', 'get_own_profile', 'search_people',
-        'get_feed_posts', 'react_to_post',
-        'send_message', 'get_conversations', 'get_conversation',
-        'get_connections', 'send_connection_request',
-        'search_companies', 'get_company',
-      ],
-    },
   ];
 
   /** Workflow hints: after calling tool X, suggest tools Y and Z */
@@ -199,12 +187,6 @@ export class ToolRouter {
     // Secrets — after reading a secret, use it
     read_secret:      { suggest: ['store_fact'], tip: 'Never send secrets via message — store reference only' },
 
-    // LinkedIn — after viewing, engage; after posting, track
-    get_feed_posts:           { suggest: ['react_to_post', 'comment_on_post', 'store_fact'], tip: 'Engage with interesting posts or save insights' },
-    get_profile:              { suggest: ['send_message', 'send_connection_request', 'store_fact'], tip: 'Reach out or save contact info to memory' },
-    search_people:            { suggest: ['get_profile', 'send_connection_request'] },
-    create_post:              { suggest: ['get_feed_posts', 'store_fact'], tip: 'Check engagement later' },
-    send_connection_request:  { suggest: ['store_fact'], tip: 'Log the outreach in memory' },
   };
 
   private getServiceLabel(mcpName: string): string {
