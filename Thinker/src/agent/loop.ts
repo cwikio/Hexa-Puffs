@@ -19,6 +19,7 @@ import { PlaybookCache } from './playbook-cache.js';
 import { classifyMessage } from './playbook-classifier.js';
 import { seedPlaybooks } from './playbook-seed.js';
 import { selectToolsWithFallback, CORE_TOOL_NAMES } from './tool-selection.js';
+import { TOOL_GROUPS } from './tool-selector.js';
 import { EmbeddingToolSelector } from './embedding-tool-selector.js';
 import { createEmbeddingProviderFromEnv } from './embedding-config.js';
 import { extractFactsFromConversation, loadExtractionPromptTemplate } from './fact-extractor.js';
@@ -660,20 +661,57 @@ export class Agent {
       // Sticky tools: inject tools used in recent turns so follow-up messages
       // ("what about the other one?") can still call them even when the embedding
       // selector doesn't match them for the current message.
+      // Also injects sibling tools from the same group — e.g. if gmail_list_emails
+      // was used, gmail_get_email is also injected for full-content follow-ups.
       if (state.recentToolsByTurn.length > 0) {
         const coreSet = new Set(CORE_TOOL_NAMES);
+        const allToolNames = Object.keys(this.tools);
         const stickyNames: string[] = [];
 
-        // Iterate newest turn first so most recent tools get priority
+        // Collect exact tools used in recent turns (newest first)
+        const usedNames: string[] = [];
         for (let i = state.recentToolsByTurn.length - 1; i >= 0; i--) {
           for (const name of state.recentToolsByTurn[i].tools) {
-            if (
-              !selectedTools[name] &&
-              this.tools[name] &&
-              !coreSet.has(name) &&
-              !stickyNames.includes(name)
-            ) {
-              stickyNames.push(name);
+            if (!coreSet.has(name) && !usedNames.includes(name)) {
+              usedNames.push(name);
+            }
+          }
+        }
+
+        // Expand to group siblings: find groups each used tool belongs to,
+        // then include all tools from those groups.
+        const siblingGroups = new Set<string>();
+        for (const usedName of usedNames) {
+          for (const [groupName, patterns] of Object.entries(TOOL_GROUPS)) {
+            if (groupName === 'core') continue;
+            for (const pattern of patterns) {
+              if (pattern.includes('*')) {
+                const re = new RegExp(`^${pattern.replace(/\*/g, '.*')}$`);
+                if (re.test(usedName)) siblingGroups.add(groupName);
+              } else if (pattern === usedName) {
+                siblingGroups.add(groupName);
+              }
+            }
+          }
+        }
+
+        // Add exact used tools first, then sibling tools
+        for (const name of usedNames) {
+          if (!selectedTools[name] && this.tools[name] && !stickyNames.includes(name)) {
+            stickyNames.push(name);
+          }
+        }
+        for (const groupName of siblingGroups) {
+          const patterns = TOOL_GROUPS[groupName];
+          if (!patterns) continue;
+          for (const pattern of patterns) {
+            const expanded = pattern.includes('*')
+              ? allToolNames.filter(n => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`).test(n))
+              : [pattern];
+            for (const name of expanded) {
+              if (!selectedTools[name] && this.tools[name] && !coreSet.has(name) && !stickyNames.includes(name)) {
+                stickyNames.push(name);
+              }
             }
           }
         }

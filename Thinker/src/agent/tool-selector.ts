@@ -7,7 +7,7 @@ const logger = new Logger('thinker:tool-selector');
  * Tool groups — core is always included.
  * Glob patterns (e.g. "memory_*") are expanded against the full tool map at runtime.
  */
-const TOOL_GROUPS: Record<string, string[]> = {
+export const TOOL_GROUPS: Record<string, string[]> = {
   core: ['send_telegram', 'store_fact', 'search_memories', 'get_status', 'spawn_subagent'],
   search: ['searcher_web_search', 'searcher_news_search', 'searcher_image_search', 'searcher_web_fetch'],
   memory: ['memory_*'],
