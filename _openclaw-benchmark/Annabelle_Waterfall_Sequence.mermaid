@@ -1,0 +1,73 @@
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant TG as Telegram MCP
+    participant O as Orchestrator (:8010)
+    participant G as Guardian
+    participant AM as AgentManager
+    participant TH as Thinker (:8006)
+    participant MEM as Memorizer (SQLite)
+    participant LLM as LLM Provider
+    participant TR as ToolRouter
+    participant MCP as Target MCP
+
+    U->>TG: Send message via Telegram
+    Note over TG: MTProto protocol
+    O->>TG: Poll get_new_messages (10s interval)
+    TG-->>O: New message payload
+
+    Note over O: Slash command check
+    O->>O: SlashCommandHandler.match()
+
+    O->>G: Input scan (if enabled)
+    G-->>O: Allowed / Blocked
+
+    O->>AM: Check agent status
+    AM-->>O: Running / Paused / Stopped
+    Note over AM: Lazy-spawn if stopped
+
+    O->>TH: POST /process-message
+
+    rect rgb(235, 245, 255)
+        Note over TH,MCP: Thinker Agent Loop
+
+        TH->>MEM: get_profile + retrieve_memories
+        MEM-->>TH: Profile + top 5 facts
+
+        TH->>TH: Build context (6 layers)
+        Note over TH: Persona + Profile + Memories<br/>+ Playbooks + Date + Chat ID
+
+        TH->>TH: Select tools
+        Note over TH: Embedding + Regex merge<br/>OR required_tools direct<br/>Capped at 25 tools
+
+        TH->>TH: Inject sticky tools (last 3 turns)
+
+        TH->>LLM: generateText() with system prompt + tools
+        loop Reasoning Steps (maxSteps=8)
+            LLM-->>TH: Response (text or tool calls)
+            alt Tool call in response
+                TH->>TH: Normalize args (coerce, strip, inject)
+                TH->>O: POST /tools/call
+                O->>TR: Resolve prefixed name → MCP
+                TR->>G: Input scan (per-MCP config)
+                G-->>TR: Allowed
+                TR->>MCP: Execute original tool name
+                Note over MCP: Stdio child process
+                MCP-->>TR: Tool result
+                TR->>G: Output scan (per-MCP config)
+                G-->>TR: Allowed
+                TR-->>O: Result
+                O-->>TH: Tool result
+                TH->>LLM: Feed result → next step
+            end
+        end
+
+        Note over TH: Check for hallucination
+        TH->>TH: Record token usage (CostMonitor)
+        TH->>TH: Save turn to session JSONL
+        TH->>TH: Schedule fact extraction (5-min timer)
+    end
+
+    TH-->>O: Response + toolsUsed + tokens
+    O->>TG: telegram_send_message
+    TG-->>U: Delivery confirmation

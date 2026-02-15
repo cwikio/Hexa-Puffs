@@ -1,0 +1,55 @@
+flowchart TD
+    A["Inbound Message<br/>(Telegram via MTProto polling)"] --> B["Orchestrator<br/>ChannelManager receives message"]
+    B --> C{"Slash<br/>Command?"}
+    C -->|Yes| D["SlashCommandHandler<br/>/status, /logs, /kill, /security, /cron..."]
+    D --> E["RESPONSE SENT<br/>Direct to Telegram"]
+    C -->|No| F{"Guardian<br/>Input Scan?"}
+    F -->|Blocked| G["BLOCKED<br/>Prompt injection detected"]
+    F -->|Allowed| H{"Agent<br/>Paused?"}
+    H -->|Yes| I["BLOCKED<br/>Cost controls active"]
+    H -->|No| J["AgentManager<br/>Lazy-spawn Thinker if needed"]
+    J --> K["Dispatch to Thinker<br/>POST /process-message"]
+
+    K --> L["Phase 1: Build Context<br/>Persona + Profile + Memories<br/>+ Playbooks + Date/Time"]
+    L --> M["Phase 2: Select Tools<br/>Embedding + Regex merge<br/>(capped at 25 tools)"]
+    M --> N["Phase 3: LLM Reasoning<br/>Groq / LM Studio / Ollama<br/>via Vercel AI SDK"]
+
+    N --> O{"Tool Call<br/>in Response?"}
+    O -->|No| P{"Model<br/>Done?"}
+    P -->|No| N
+    P -->|Yes| Q{"Hallucination<br/>Detected?"}
+    Q -->|Yes| R["Retry with<br/>toolChoice: required<br/>temp capped at 0.3"]
+    R --> N
+    Q -->|No| S["Phase 4: Save Session<br/>Append to JSONL"]
+    S --> T["Phase 5: Record Cost<br/>Sliding window monitor"]
+    T --> U["Schedule Fact Extraction<br/>5-min idle timer"]
+    U --> V["RESPONSE DELIVERED<br/>via Telegram MCP"]
+
+    O -->|Yes| W["Normalize Args<br/>coerce booleans, strip nulls<br/>inject chat_id"]
+    W --> X["POST /tools/call<br/>Orchestrator HTTP API"]
+    X --> Y["ToolRouter<br/>Strip prefix → resolve MCP"]
+    Y --> Z{"Guardian<br/>Scans Tool?"}
+    Z -->|Input scan| AA["Guardian scan_content<br/>on args"]
+    AA -->|Blocked| AB["SecurityError<br/>Tool never executes"]
+    AB --> N
+    AA -->|Allowed| AC["MCP Executes Tool<br/>(stdio child process)"]
+    Z -->|No scan| AC
+    AC --> AD{"Guardian<br/>Output Scan?"}
+    AD -->|Scan| AE["Guardian scan_content<br/>on result"]
+    AE -->|Blocked| AF["SecurityError<br/>Result discarded"]
+    AF --> N
+    AE -->|Allowed| AG["Result → Thinker<br/>LLM continues with result"]
+    AD -->|No scan| AG
+    AG --> N
+
+    style A fill:#D6EAF8,stroke:#2C3E50,color:#000
+    style E fill:#E8DAEF,stroke:#6C3483,color:#000
+    style G fill:#FADBD8,stroke:#C0392B,color:#000
+    style I fill:#FADBD8,stroke:#C0392B,color:#000
+    style AB fill:#FADBD8,stroke:#C0392B,color:#000
+    style AF fill:#FADBD8,stroke:#C0392B,color:#000
+    style V fill:#D5F5E3,stroke:#1E8449,color:#000
+    style K fill:#D6EAF8,stroke:#154360,color:#000
+    style N fill:#E8DAEF,stroke:#6C3483,color:#000
+    style AC fill:#FEF9E7,stroke:#D68910,color:#000
+    style AG fill:#FEF9E7,stroke:#D68910,color:#000
