@@ -26,6 +26,16 @@ export interface BraveWebResult {
   page_age?: string;
   language?: string;
   family_friendly?: boolean;
+  extra_snippets?: string[];
+}
+
+export interface BraveInfoboxResult {
+  title: string;
+  description: string;
+  long_desc?: string;
+  attributes?: Array<{ label: string; value: string }>;
+  website?: { url: string };
+  images?: Array<{ src: string }>;
 }
 
 export interface BraveNewsResult {
@@ -55,6 +65,9 @@ export interface BraveWebSearchResponse {
   };
   news?: {
     results: BraveNewsResult[];
+  };
+  infobox?: {
+    results: BraveInfoboxResult[];
   };
 }
 
@@ -141,6 +154,7 @@ export async function webSearch(
     offset: params.offset,
     freshness: mapFreshness(params.freshness),
     safesearch: params.safesearch,
+    extra_snippets: 1,
   });
 }
 

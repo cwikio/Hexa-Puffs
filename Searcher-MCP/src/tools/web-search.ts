@@ -64,12 +64,21 @@ export interface WebSearchResult {
   url: string;
   description: string;
   age?: string;
+  extra_snippets?: string[];
+}
+
+export interface InfoboxResult {
+  title: string;
+  description: string;
+  long_desc?: string;
+  attributes?: Array<{ label: string; value: string }>;
 }
 
 export interface WebSearchData {
   results: WebSearchResult[];
   total_count: number;
   query: string;
+  infobox?: InfoboxResult[];
 }
 
 export type WebSearchToolResult = StandardResponse<WebSearchData>;
@@ -85,17 +94,37 @@ export async function handleWebSearch(
   });
 
   const results: WebSearchResult[] = (response.web?.results || []).map(
-    (result) => ({
-      title: result.title,
-      url: result.url,
-      description: result.description,
-      age: result.age || result.page_age,
-    })
+    (result) => {
+      const item: WebSearchResult = {
+        title: result.title,
+        url: result.url,
+        description: result.description,
+        age: result.age || result.page_age,
+      };
+      if (result.extra_snippets?.length) {
+        item.extra_snippets = result.extra_snippets;
+      }
+      return item;
+    }
   );
 
-  return {
+  const data: WebSearchData = {
     results,
     total_count: results.length,
     query: response.query.original,
   };
+
+  if (response.infobox?.results?.length) {
+    data.infobox = response.infobox.results.map((box) => {
+      const item: InfoboxResult = {
+        title: box.title,
+        description: box.description,
+      };
+      if (box.long_desc) item.long_desc = box.long_desc;
+      if (box.attributes?.length) item.attributes = box.attributes;
+      return item;
+    });
+  }
+
+  return data;
 }
