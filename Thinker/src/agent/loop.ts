@@ -33,6 +33,72 @@ const STICKY_TOOLS_LOOKBACK = parseInt(process.env.THINKER_STICKY_TOOLS_LOOKBACK
 const STICKY_TOOLS_MAX = parseInt(process.env.THINKER_STICKY_TOOLS_MAX ?? '8', 10);
 
 /**
+ * Extract text from a CoreMessage content field.
+ *
+ * Assistant messages from the Vercel AI SDK may store content as a string
+ * (plain text) or an array of content blocks (text + tool-call parts).
+ * Returns null when there is no meaningful text.
+ */
+function extractMessageText(content: CoreMessage['content']): string | null {
+  if (typeof content === 'string') return content || null;
+  if (Array.isArray(content)) {
+    const texts: string[] = [];
+    for (const part of content) {
+      if (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'text' &&
+        'text' in part
+      ) {
+        const t = (part as { type: 'text'; text: string }).text;
+        if (t) texts.push(t);
+      }
+    }
+    return texts.length > 0 ? texts.join('\n') : null;
+  }
+  return null;
+}
+
+/**
+ * Walk a CoreMessage array and return properly-paired user/assistant text
+ * turns. For each user message, captures the last assistant text before the
+ * next user message, so multi-step tool-calling flows collapse into a single
+ * turn with the final answer. Only emits complete pairs.
+ */
+function extractTextTurns(
+  messages: CoreMessage[],
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  const result: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  let pendingUser: string | null = null;
+  let lastAssistantText: string | null = null;
+
+  for (const m of messages) {
+    if (m.role === 'user') {
+      // Flush previous complete turn
+      if (pendingUser !== null && lastAssistantText !== null) {
+        result.push({ role: 'user', content: pendingUser });
+        result.push({ role: 'assistant', content: lastAssistantText });
+      }
+      pendingUser = extractMessageText(m.content) ?? '';
+      lastAssistantText = null;
+    } else if (m.role === 'assistant') {
+      const text = extractMessageText(m.content);
+      if (text) lastAssistantText = text;
+    }
+    // Skip 'system' and 'tool' messages
+  }
+
+  // Flush final complete turn
+  if (pendingUser !== null && lastAssistantText !== null) {
+    result.push({ role: 'user', content: pendingUser });
+    result.push({ role: 'assistant', content: lastAssistantText });
+  }
+
+  return result;
+}
+
+/**
  * Default system prompt for the agent (used when no persona file is loaded)
  */
 const DEFAULT_SYSTEM_PROMPT = `You are Annabelle, a helpful AI assistant communicating via Telegram.
@@ -1093,11 +1159,10 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
 
           // Run compaction if needed
           if (this.sessionStore.shouldCompact(message.chatId)) {
-            // Filter to user/assistant text messages (CoreMessage may include system/tool roles)
-            const textMessages = state.messages.filter(
-              (m): m is { role: 'user' | 'assistant'; content: string } =>
-                (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string'
-            );
+            // Extract properly-paired user/assistant text turns from the full
+            // CoreMessage history (which includes tool-call and tool-result messages
+            // with array content that a simple typeof-string filter would drop).
+            const textMessages = extractTextTurns(state.messages);
             const compactionModel = this.modelFactory.getCompactionModel();
             const compactionResult = await this.sessionStore.compact(
               message.chatId,
@@ -1526,14 +1591,10 @@ Complete the task step by step, using your available tools. When done, provide a
     logger.info(`[fact-extraction] Running for chat ${chatId} (${state.messages.length} messages)`);
 
     try {
-      // Gather recent text messages
+      // Gather recent text turns (properly extracts text from tool-calling
+      // assistant messages that store content as arrays).
       const maxMessages = this.config.factExtraction.maxTurns * 2;
-      const recentMessages = state.messages
-        .filter(
-          (m): m is { role: 'user' | 'assistant'; content: string } =>
-            (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string',
-        )
-        .slice(-maxMessages);
+      const recentMessages = extractTextTurns(state.messages).slice(-maxMessages);
 
       if (recentMessages.length < minMessages) return;
 
