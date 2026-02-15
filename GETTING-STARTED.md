@@ -36,10 +36,16 @@ cd Shared && npm install && npm run build && cd ..
 Then install all other packages:
 
 ```bash
-for dir in Orchestrator Thinker Guardian Memorizer-MCP Filer-MCP Telegram-MCP Searcher-MCP Gmail-MCP Onepassword-MCP Browser-MCP; do
+for dir in Orchestrator Thinker Guardian Memorizer-MCP Filer-MCP Telegram-MCP Searcher-MCP Gmail-MCP Onepassword-MCP Browser-MCP CodeExec-MCP; do
   (cd "$dir" && npm install) &
 done
 wait
+```
+
+For Python MCPs (LinkedIn-MCP):
+
+```bash
+cd LinkedIn-MCP && uv sync && cd ..
 ```
 
 Or use the rebuild script which handles build order automatically:
@@ -53,7 +59,7 @@ Or use the rebuild script which handles build order automatically:
 Copy `.env.example` files across all packages:
 
 ```bash
-for dir in Orchestrator Thinker Guardian Memorizer-MCP Filer-MCP Telegram-MCP Searcher-MCP Gmail-MCP Onepassword-MCP; do
+for dir in Orchestrator Thinker Guardian Memorizer-MCP Filer-MCP Telegram-MCP Searcher-MCP Gmail-MCP Onepassword-MCP CodeExec-MCP; do
   [ -f "$dir/.env.example" ] && cp "$dir/.env.example" "$dir/.env"
 done
 ```
@@ -112,9 +118,10 @@ This builds the Shared package first, then all others in parallel.
 
 This starts (in order):
 1. Inngest Dev Server (port 8288)
-2. HTTP MCPs: Telegram (8002), Searcher (8007), Gmail (8008)
-3. Orchestrator (8010) — which spawns stdio MCPs: Guardian, 1Password, Memorizer, Filer
+2. Ollama + Guardian model (if available)
+3. Orchestrator (8010) — auto-discovers and spawns all MCPs via stdio (Guardian, 1Password, Memorizer, Filer, Telegram, Searcher, Gmail, Browser, CodeExec, LinkedIn)
 4. Thinker agent(s) (8006+) — spawned by Orchestrator from `agents.json`
+5. Cron skill seeding + system snapshot (background)
 
 Watch for health check output. All services should show green checkmarks.
 
@@ -188,5 +195,6 @@ cd Shared && npm run build && cd ..
 ## What's Next
 
 - Read the [Architecture Overview](README.md) for how the system works
-- See [Orchestrator README](Orchestrator/README.md) for adding new MCPs
-- See [TESTING.md](Orchestrator/tests/TESTING.md) for running the test suite
+- See [How to Add a New MCP](HOW-TO-ADD-NEW-MPC.md) for creating or integrating new MCPs
+- See [TESTING.md](TESTING.md) for running the test suite
+- See [.documentation/](.documentation/) for detailed system documentation (15 files covering architecture, tools, commands, sessions, memory, startup, and more)

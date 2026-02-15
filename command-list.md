@@ -8,9 +8,9 @@ Slash commands are intercepted by the Orchestrator before reaching the LLM. They
 | --- | --- |
 | `/status` | System status — MCPs, agents, uptime, Telegram polling, Inngest state |
 | `/status summary` | AI-powered health audit — logs, security, memory, cron jobs, skills |
+| `/diagnose` | Deep system diagnosis — 22 automated checks with severity and recommendations |
 | `/browser` | Browser status — MCP availability, proxy config, open tabs |
-| `/info` | Full info page — all commands, tools by MCP, active skills |
-| `/help` | Same as `/info` |
+| `/help` | Full info page — all commands, tools by MCP, active skills |
 
 ## Kill Switch
 
@@ -59,11 +59,21 @@ Halt state persists to disk (`~/.annabelle/data/halt.json`) — if the Orchestra
 | `/delete <N>h` | Delete bot messages from the last N hours (max 168) |
 | `/delete <N>` | Delete the last N bot messages (max 500) |
 
+## Diagnostics
+
+| Command | Description |
+| --- | --- |
+| `/diagnose` | Runs 22 automated health checks across 7 categories: services, embedding & search, logs, cron & jobs, tools, data, security. Returns findings sorted by severity (critical → warning → info). |
+
+The 22 checks cover: MCP health, agent health, Inngest health, cost status, halt state, Ollama connectivity, cache sizes, log file sizes, error rate baseline, trace freshness, stale cron jobs, failed skills, failed tasks, queue depth, tool count drift, Guardian availability, data directory size, session count, documentation freshness, threat rate, scan quality. See `.documentation/commands.md` for full details.
+
+---
+
 ## HTTP API Equivalents
 
 The kill switch is also available via HTTP (for programmatic access):
 
-```
+```bash
 POST /kill    { "target": "all" | "thinker" | "telegram" | "inngest" }
 POST /resume  { "target": "all" | "thinker" | "telegram" | "inngest" }
 ```

@@ -122,6 +122,8 @@ interface AnnabelleManifest {
 
 ### Example: HTTP MCP
 
+> **Note:** All current MCPs use stdio transport. HTTP transport is supported by the scanner but not used by any built-in MCPs. Prefer stdio for new MCPs — it's simpler (no port management) and gets automatic Guardian wrapping.
+
 ```json
 {
   "name": "mytool-mcp-server",

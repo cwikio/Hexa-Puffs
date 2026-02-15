@@ -37,9 +37,9 @@ Each MCP has its own test suite that can be run independently:
 | Memorizer | stdio | `cd Memorizer-MCP && npm test` | Facts, conversations, profiles |
 | 1Password | stdio | `cd Onepassword-MCP && npm test` | Vault reading (read-only) |
 | CodeExec | stdio | `cd CodeExec-MCP && npm test` | Sandboxed code execution |
-| Telegram | HTTP :8002 | `cd Telegram-MCP && npm test` | Message send/receive, chat management |
-| Searcher | HTTP :8007 | `cd Searcher-MCP && npm test` | Web/news/image search |
-| Gmail | HTTP :8008 | `cd Gmail-MCP && npm test` | Email and calendar operations |
+| Telegram | stdio | `cd Telegram-MCP && npm test` | Message send/receive, chat management |
+| Searcher | stdio | `cd Searcher-MCP && npm test` | Web/news/image search |
+| Gmail | stdio | `cd Gmail-MCP && npm test` | Email and calendar operations |
 | LinkedIn | stdio | `cd LinkedIn-MCP && .venv/bin/pytest tests/ -v --ignore=tests/e2e` | Profile, messaging, search, network, posts |
 | Orchestrator | HTTP :8010 | `cd Orchestrator && npm test` | Routing, discovery, workflows, jobs |
 
@@ -82,7 +82,7 @@ Before running integration/workflow tests, ensure the stack is running:
 ./start-all.sh
 ```
 
-Note: Stdio MCPs (Guardian, Filer, Memorizer, 1Password, CodeExec, LinkedIn) are spawned by Orchestrator — they don't need individual launch commands. Only HTTP MCPs (Telegram, Searcher, Gmail) and Orchestrator itself are started by `start-all.sh`. Unit tests (`npm test` per package) don't require running services. Python MCPs (LinkedIn) use `pytest` instead of `vitest`.
+Note: All MCPs are stdio — spawned by Orchestrator as child processes. `start-all.sh` launches Inngest, Ollama, and Orchestrator (which auto-discovers and spawns all MCPs + Thinker agents). Unit tests (`npm test` per package) don't require running services. Python MCPs (LinkedIn) use `pytest` instead of `vitest`.
 
 ### External Dependencies
 

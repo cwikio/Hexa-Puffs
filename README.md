@@ -48,7 +48,7 @@ The current architecture uses **Orchestrator as an agent router and protocol bri
 - **Claude Desktop/Code** connects via MCP stdio protocol
 - **Thinker agents** are spawned and managed by Orchestrator's AgentManager
 - **Orchestrator** polls channels (Telegram), routes messages to the correct agent, enforces per-agent tool policies
-- **Downstream MCPs** are spawned by Orchestrator via stdio, or connected via HTTP for services that run independently
+- **Downstream MCPs** are all spawned by Orchestrator via stdio as child processes (auto-discovered from `package.json` manifests)
 
 ```mermaid
 flowchart TB
@@ -58,7 +58,7 @@ flowchart TB
 
     subgraph Orchestrator["Orchestrator MCP Server (:8010)"]
         direction TB
-        Tools["70+ Tools (passthrough)<br/>send_message, store_fact, send_email, etc."]
+        Tools["148+ Tools (passthrough)<br/>send_message, store_fact, send_email, etc."]
         Security["Security Coordinator<br/>(Guardian integration)"]
         HTTPAPI["HTTP REST API<br/>/tools/list, /tools/call"]
         subgraph MultiAgent["Multi-Agent Layer"]
@@ -78,24 +78,17 @@ flowchart TB
         AgentN["Thinker :801N<br/>(...)"]
     end
 
-    subgraph MCPs["Downstream MCP Servers (spawned via stdio)"]
+    subgraph MCPs["Downstream MCP Servers (all spawned via stdio)"]
         Guardian["Guardian MCP<br/>(security scanning)"]
         OnePass["1Password MCP<br/>(credentials)"]
         Memory["Memory MCP<br/>(facts, conversations)"]
         Filer["Filer MCP<br/>(file operations)"]
         Browser["Browser MCP<br/>(web automation)"]
-    end
-
-    subgraph HTTPMCPs["HTTP MCP Services (independent)"]
-        Telegram["Telegram MCP<br/>:8002<br/>(messaging)"]
-        Searcher["Searcher MCP<br/>:8007<br/>(Brave Search)"]
-        Gmail["Gmail MCP<br/>:8008<br/>(email)"]
-    end
-
-    subgraph TelegramInternals["Telegram MCP Internals"]
-        GramJS["GramJS Client<br/>(MTProto)"]
-        EventHandler["NewMessage<br/>Event Handler"]
-        Queue["Message Queue<br/>(max 1000)"]
+        Telegram["Telegram MCP<br/>(messaging, MTProto)"]
+        Searcher["Searcher MCP<br/>(Brave Search)"]
+        Gmail["Gmail MCP<br/>(email, OAuth2)"]
+        CodeExec["CodeExec MCP<br/>(sandboxed execution)"]
+        LinkedIn["LinkedIn MCP<br/>(Python, FastMCP)"]
     end
 
     subgraph External["External Services"]
@@ -110,25 +103,15 @@ flowchart TB
     AgentMgr -->|"HTTP POST /process-message"| Agents
     Agents -->|"HTTP REST API"| HTTPAPI
     Agents -->|"API calls"| LLM
-    Orchestrator -->|stdio| Guardian
-    Orchestrator -->|stdio| OnePass
-    Orchestrator -->|stdio| Memory
-    Orchestrator -->|stdio| Filer
-    Orchestrator -->|stdio| Browser
-    Orchestrator -->|HTTP| Telegram
-    Orchestrator -->|HTTP| Searcher
-    Orchestrator -->|HTTP| Gmail
+    Orchestrator -->|stdio| MCPs
     Jobs -->|Events| InngestDev
 
-    Telegram --> GramJS
-    GramJS --> EventHandler
-    EventHandler --> Queue
-    GramJS <-->|MTProto| TelegramAPI
+    Telegram <-->|MTProto| TelegramAPI
 ```
 
 **ASCII Fallback:**
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                      USER INTERFACE LAYER                        │
 │                                                                  │
@@ -145,7 +128,7 @@ flowchart TB
 │  HTTP REST API: /health, /tools/list, /tools/call               │
 │  MCP stdio: Standard MCP protocol for Claude Desktop            │
 │                                                                  │
-│  70+ Tools (passthrough): send_message, store_fact, create_file │
+│  148+ Tools (passthrough): send_message, store_fact, create_file│
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  Multi-Agent Layer                                        │   │
@@ -172,27 +155,24 @@ flowchart TB
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                  │
 │  Security Coordinator (Guardian integration)                     │
-└──────────────┬──────────────────────────────────┬───────────────┘
-               │ stdio (spawns child processes)   │ HTTP
-               ↓                                  ↓
-┌──────────────────────────────────┐ ┌────────────────────────────┐
-│  STDIO MCP SERVERS (spawned)     │ │  HTTP MCP SERVICES         │
-│  ┌──────────┐ ┌──────────┐      │ │  ┌──────────┐              │
-│  │ Guardian │ │ 1Password│      │ │  │ Telegram │              │
-│  │   MCP    │ │   MCP    │      │ │  │ (:8002)  │              │
-│  │ (stdio)  │ │ (stdio)  │      │ │  └──────────┘              │
-│  └──────────┘ └──────────┘      │ │  ┌──────────┐              │
-│  ┌──────────┐ ┌──────────┐      │ │  │ Searcher │              │
-│  │  Memory  │ │ File Ops │      │ │  │ (:8007)  │              │
-│  │   MCP    │ │   MCP    │      │ │  └──────────┘              │
-│  │ (stdio)  │ │ (stdio)  │      │ │  ┌──────────┐              │
-│  └──────────┘ └──────────┘      │ │  │  Gmail   │              │
-│  ┌──────────┐                   │ │  │ (:8008)  │              │
-│  │ Browser  │                   │ │  └──────────┘              │
-│  │   MCP    │                   │ │                            │
-│  │ (stdio)  │                   │ └────────────────────────────┘
-│  └──────────┘                   │
-└──────────────────────────────────┘
+└──────────────┬──────────────────────────────────────────────────┘
+               │ stdio (spawns all MCPs as child processes)
+               ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  MCP SERVERS (all spawned via stdio)                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │ Guardian │ │ 1Password│ │  Memory  │ │ File Ops │          │
+│  │   MCP    │ │   MCP    │ │   MCP    │ │   MCP    │          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │ Telegram │ │ Searcher │ │  Gmail   │ │ Browser  │          │
+│  │   MCP    │ │   MCP    │ │   MCP    │ │   MCP    │          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐ ┌──────────┐                                     │
+│  │ CodeExec │ │ LinkedIn │                                     │
+│  │   MCP    │ │   MCP    │                                     │
+│  └──────────┘ └──────────┘                                     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Phase 2: Custom UI (Future)
@@ -252,7 +232,7 @@ THINKER_LLM_PROVIDER=groq  # groq | lmstudio | ollama
 
 # Groq (cloud, fast, default)
 GROQ_API_KEY=gsk_...
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
 
 # LM Studio (local)
 LMSTUDIO_BASE_URL=http://localhost:1234/v1
@@ -357,7 +337,7 @@ Secure credential retrieval. AI never sees raw credentials - only gets tokens/re
 
 **Status:** ✅ Implemented
 
-Send notifications and receive commands via Telegram. Uses **GramJS** (MTProto protocol) for user account access (not bot API).
+Send notifications and receive commands via Telegram. Uses **GramJS** (MTProto protocol) for user account access (not bot API). Spawned by Orchestrator via stdio.
 
 **Key Features:**
 
@@ -370,27 +350,25 @@ Send notifications and receive commands via Telegram. Uses **GramJS** (MTProto p
 
 **Status:** ✅ Implemented
 
-Web search via Brave Search API. Runs as an independent HTTP service on port 8007.
+Web search via Brave Search API. Spawned by Orchestrator via stdio.
 
 **Key Features:**
 
 - `web_search` - General web search
 - `news_search` - News-specific search
-- HTTP transport (not spawned by Orchestrator)
+- `image_search` - Image search
 
 ### Gmail MCP
 
 **Status:** ✅ Implemented
 
-Email management via Gmail API with OAuth2 authentication. Runs as an independent HTTP service on port 8008.
+Email management via Gmail API with OAuth2 authentication. Spawned by Orchestrator via stdio.
 
 **Key Features:**
 
 - 30 tools covering messages, drafts, labels, attachments, filters, and calendar
 - OAuth2 authentication (credentials stored at `~/.annabelle/gmail/`)
-- Optional background email polling with configurable interval
-- Optional Telegram notifications for new emails
-- HTTP transport (not spawned by Orchestrator)
+- Label name resolution (case-insensitive names, not just IDs)
 
 ### Browser MCP
 
@@ -400,6 +378,29 @@ Headless browser automation via Playwright. Enables agents to navigate web pages
 
 - Uses `@playwright/mcp` for browser control
 - Spawned via stdio by Orchestrator (auto-discovered as "web" MCP)
+
+### CodeExec MCP
+
+**Status:** ✅ Implemented
+
+Sandboxed code execution in Python, Node.js, and Bash. Supports one-shot execution and persistent REPL sessions.
+
+- `execute_code` - Run code in a sandboxed subprocess
+- Script library: `save_script`, `get_script`, `list_scripts`, `search_scripts`, `run_script`
+- Persistent sessions: `start_session`, `send_to_session`, `close_session`
+- Environment variables stripped before execution (no credential leaks)
+- Package installation with Guardian-scannable package names
+- Docker sandbox mode designed but not yet implemented (Phase 5)
+
+### LinkedIn MCP
+
+**Status:** ✅ Implemented
+
+LinkedIn integration via Python FastMCP. First non-Node MCP in the monorepo.
+
+- Profile viewing, search, messaging, network management, feed posts
+- Uses `linkedin-api` Python library
+- Auto-discovered by Orchestrator with `"command": ".venv/bin/python"` manifest
 
 ### Thinker (Agent Runtime)
 
@@ -620,7 +621,8 @@ Orchestrator spawns and manages multiple Thinker instances, each with its own LL
       "enabled": true,
       "port": 8006,
       "llmProvider": "groq",
-      "model": "llama-3.3-70b-versatile",
+      "model": "meta-llama/llama-4-maverick-17b-128e-instruct",
+      "temperature": 0.6,
       "systemPrompt": "",
       "allowedTools": [],
       "deniedTools": [],
@@ -768,15 +770,17 @@ Layer 7: LLM Cost Controls
 
 - ✅ Security MCP (Guardian) - Prompt injection detection
 - ✅ 1Password MCP - Secure credential retrieval
-- ✅ Telegram MCP - Messaging with real-time event handling (HTTP :8002)
+- ✅ Telegram MCP - Messaging with real-time event handling
 - ✅ Memory MCP - Fact storage, conversations, profiles, vector search
 - ✅ Filer MCP - File operations with grants
 - ✅ Browser MCP - Headless browser automation via Playwright
-- ✅ Orchestrator MCP - Central coordination with 70+ tools (protocol bridge)
-- ✅ Searcher MCP - Web search via Brave Search (HTTP :8007)
-- ✅ Gmail MCP - Email management with OAuth2 (HTTP :8008)
+- ✅ CodeExec MCP - Sandboxed code execution (Python, Node.js, Bash)
+- ✅ LinkedIn MCP - LinkedIn integration (Python, FastMCP)
+- ✅ Orchestrator MCP - Central coordination with 148+ tools (protocol bridge)
+- ✅ Searcher MCP - Web search via Brave Search
+- ✅ Gmail MCP - Email management with OAuth2
 - ✅ Thinker - Autonomous AI agent with configurable LLM
-- ✅ Inngest Job System - Cron jobs, background tasks, workflows
+- ✅ Inngest Job System - Cron jobs, background tasks, skill scheduling
 
 **How it works:**
 
@@ -784,19 +788,20 @@ Layer 7: LLM Cost Controls
   - Accepts MCP stdio from Claude Desktop/Code
   - Spawns and manages Thinker agent instances via AgentManager
   - Polls Telegram via ChannelPoller, routes messages to agents via MessageRouter
-  - Spawns downstream MCPs via stdio (Guardian, 1Password, Memory, Filer, Browser)
-  - Connects to independent HTTP MCP services (Telegram :8002, Searcher :8007, Gmail :8008)
+  - Auto-discovers and spawns all MCPs via stdio from `package.json` manifests
+  - Loads external third-party MCPs from `external-mcps.json` with hot-reload
 - Thinker instances receive messages from Orchestrator, process via LLM, return responses
-- Inngest handles scheduled and background tasks
+- Inngest handles scheduled and background tasks (cron jobs, skill scheduling, health reports)
 
 **Key Files:**
 
-- `start-all.sh` - Launches Orchestrator (spawns MCPs) + Thinker + Inngest (auto-discovers MCPs)
+- `start-all.sh` - Launches Inngest + Ollama + Orchestrator (auto-discovers and spawns all MCPs + Thinker agents)
 - `rebuild.sh` - Rebuilds all packages (Shared first, then rest in parallel)
 - `restart.sh` - Full restart (kill → rebuild → start)
-- `test.sh` - Comprehensive test suite (health checks, curl tests, vitest)
-- `Thinker/ARCHITECTURE.md` - Thinker design and configuration
+- `test.sh` - Comprehensive test suite (health checks, curl tests, vitest, pytest)
+- `HOW-TO-ADD-NEW-MPC.md` - Full guide for creating or integrating new MCPs
 - `command-list.md` - Telegram slash command reference
+- `.documentation/` - 15 detailed system docs (architecture, tools, commands, sessions, memory, startup, etc.)
 
 ### Phase 2: Custom UI (Future)
 
@@ -855,8 +860,12 @@ Layer 7: LLM Cost Controls
 | 1Password            | Onepassword-MCP/README.md     | Read-only credential access            |
 | Browser automation   | Browser-MCP/README.md         | Playwright headless browser            |
 | Searcher             | Searcher-MCP/testing.md       | Brave Search integration               |
+| CodeExec             | CodeExec-MCP/README.md        | Sandboxed code execution               |
+| LinkedIn             | LinkedIn-MCP/README.md        | Python FastMCP, LinkedIn API           |
 | Getting started      | GETTING-STARTED.md            | Setup guide for new developers         |
+| Adding new MCPs      | HOW-TO-ADD-NEW-MPC.md         | Full MCP creation/integration guide    |
 | Testing guide        | TESTING.md                    | Multi-level test strategy              |
+| System documentation | .documentation/               | 15 detailed docs (architecture, tools, commands, etc.) |
 
 ---
 
@@ -866,16 +875,11 @@ Layer 7: LLM Cost Controls
 
 - Format: `{capability}-mcp`
 - Examples: `security-mcp`, `memory-mcp`, `telegram-mcp`
-- **Ports (new architecture):**
-  - Telegram HTTP: 8002
+- **Ports:**
   - Thinker default agent: 8006 (additional agents get their own ports)
-  - Searcher HTTP: 8007
-  - Gmail HTTP: 8008
   - Orchestrator HTTP: 8010
   - Inngest Dev Server: 8288
-  - Stdio MCPs (Guardian, 1Password, Memory, Filer, Browser): no ports
-- **Legacy ports (individual HTTP mode):**
-  - 8000-8005 range (backwards compatibility)
+  - All MCPs: stdio (no ports — spawned as child processes by Orchestrator)
 
 ### Agents
 
