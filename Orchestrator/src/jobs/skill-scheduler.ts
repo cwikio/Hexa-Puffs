@@ -1,6 +1,6 @@
 import { inngest } from './inngest-client.js';
 import { notifyTelegram, SYSTEM_TIMEZONE } from './helpers.js';
-import { PREFLIGHT_CALENDAR_WINDOW_MS, PREFLIGHT_EMAIL_ENABLED } from '../const/general.js';
+import { PREFLIGHT_CALENDAR_WINDOW_MS, PREFLIGHT_EMAIL_ENABLED, SKILL_SCHEDULER_CRON } from '../const/general.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { getHaltManager } from '../core/halt-manager.js';
 import { Cron } from 'croner';
@@ -80,7 +80,7 @@ export const skillSchedulerFunction = inngest.createFunction(
     concurrency: { limit: 1 },
     retries: 1,
   },
-  { cron: '* * * * *' }, // Every minute
+  { cron: SKILL_SCHEDULER_CRON },
   async ({ step }) => {
     if (getHaltManager().isTargetHalted('inngest')) {
       return { checked: 0, executed: 0, halted: true };

@@ -6,6 +6,11 @@ export const PREFLIGHT_CALENDAR_WINDOW_MS = 60 * 60 * 1000 // 60 minutes
 /** Whether to check for new emails before running email skills. */
 export const PREFLIGHT_EMAIL_ENABLED = true
 
+// ── Skill Scheduler Frequency ─────────────────────────────────────
+
+/** How often the skill scheduler checks for due skills (Inngest cron expression). */
+export const SKILL_SCHEDULER_CRON = process.env.SKILL_SCHEDULER_CRON || '* * * * *' // Every minute
+
 // ── Notification Constants ───────────────────────────────────────
 
 /** Default minimum minutes between Telegram notifications per skill.
