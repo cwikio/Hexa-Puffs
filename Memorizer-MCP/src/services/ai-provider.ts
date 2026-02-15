@@ -2,8 +2,15 @@ import { type AIProviderConfig } from '../config/schema.js';
 import { AIProviderError } from '../utils/errors.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 
+export interface CompletionOptions {
+  /** Request JSON-only output from the model (response_format: json_object) */
+  jsonMode?: boolean;
+  /** Override the default maxTokens for this call */
+  maxTokens?: number;
+}
+
 export interface AIProvider {
-  complete(prompt: string): Promise<string>;
+  complete(prompt: string, options?: CompletionOptions): Promise<string>;
 }
 
 export interface AIProviderFactory {
@@ -18,7 +25,7 @@ export abstract class BaseAIProvider implements AIProvider {
     this.logger = logger.child(name);
   }
 
-  abstract complete(prompt: string): Promise<string>;
+  abstract complete(prompt: string, options?: CompletionOptions): Promise<string>;
 }
 
 // Factory function to create the appropriate AI provider
@@ -47,12 +54,12 @@ class GroqProviderWrapper extends BaseAIProvider {
     this.config = config;
   }
 
-  async complete(prompt: string): Promise<string> {
+  async complete(prompt: string, options?: CompletionOptions): Promise<string> {
     if (!this.provider) {
       const { GroqProvider } = await import('./groq-provider.js');
       this.provider = new GroqProvider(this.config);
     }
-    return this.provider.complete(prompt);
+    return this.provider.complete(prompt, options);
   }
 }
 
@@ -65,11 +72,11 @@ class LMStudioProviderWrapper extends BaseAIProvider {
     this.config = config;
   }
 
-  async complete(prompt: string): Promise<string> {
+  async complete(prompt: string, options?: CompletionOptions): Promise<string> {
     if (!this.provider) {
       const { LMStudioProvider } = await import('./lmstudio-provider.js');
       this.provider = new LMStudioProvider(this.config);
     }
-    return this.provider.complete(prompt);
+    return this.provider.complete(prompt, options);
   }
 }

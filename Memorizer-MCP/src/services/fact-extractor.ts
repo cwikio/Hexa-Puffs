@@ -3,6 +3,7 @@ import { type AIProvider, createAIProvider } from './ai-provider.js';
 import { isFactSafe } from './sanitizer.js';
 import { getConfig, type ExtractionConfig } from '../config/index.js';
 import { ExtractionError } from '../utils/errors.js';
+import { parseJsonFromLLM } from '../utils/parse-json.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 import { type FactCategory, FACT_CATEGORIES } from '../db/schema.js';
 
@@ -127,56 +128,22 @@ export class FactExtractor {
    * Parse the AI response into structured facts
    */
   private parseResponse(response: string): ExtractedFact[] {
-    try {
-      // Fast path: entire response is valid JSON
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(response);
-      } catch {
-        // Try greedy regex extraction
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          this.logger.warn('No JSON found in response');
-          return [];
-        }
-        try {
-          parsed = JSON.parse(jsonMatch[0]);
-        } catch {
-          // Greedy match included trailing garbage — find first balanced JSON object
-          const start = response.indexOf('{');
-          if (start === -1) {
-            this.logger.warn('No JSON found in response');
-            return [];
-          }
-          let depth = 0;
-          let end = -1;
-          for (let i = start; i < response.length; i++) {
-            if (response[i] === '{') depth++;
-            else if (response[i] === '}') depth--;
-            if (depth === 0) { end = i; break; }
-          }
-          if (end === -1) {
-            this.logger.warn('No balanced JSON object found in response');
-            return [];
-          }
-          parsed = JSON.parse(response.substring(start, end + 1));
-        }
-      }
-
-      const result = ExtractionResponseSchema.safeParse(parsed);
-
-      if (!result.success) {
-        this.logger.warn('Response validation failed', {
-          errors: result.error.flatten(),
-        });
-        return [];
-      }
-
-      return result.data.facts;
-    } catch (error) {
-      this.logger.warn('Failed to parse extraction response', { error });
+    const parsed = parseJsonFromLLM(response);
+    if (parsed === null) {
+      this.logger.warn('No JSON found in extraction response');
       return [];
     }
+
+    const result = ExtractionResponseSchema.safeParse(parsed);
+
+    if (!result.success) {
+      this.logger.warn('Response validation failed', {
+        errors: result.error.flatten(),
+      });
+      return [];
+    }
+
+    return result.data.facts;
   }
 }
 

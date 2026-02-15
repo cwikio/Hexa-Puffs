@@ -35,6 +35,7 @@ export function loadConfig(): Config {
       lmstudioModel: getEnvString('LMSTUDIO_MODEL', 'local-model'),
       temperature: getEnvNumber('AI_TEMPERATURE', 0.3),
       maxTokens: getEnvNumber('AI_MAX_TOKENS', 500),
+      synthesisMaxTokens: getEnvNumber('AI_SYNTHESIS_MAX_TOKENS', 1500),
     },
 
     extraction: {

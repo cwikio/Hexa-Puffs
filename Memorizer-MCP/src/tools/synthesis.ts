@@ -3,6 +3,7 @@ import { getDatabase, type FactRow, FACT_CATEGORIES } from '../db/index.js';
 import { createAIProvider } from '../services/ai-provider.js';
 import { getConfig } from '../config/index.js';
 import { reembedFact, deleteFactEmbedding } from '../embeddings/fact-embeddings.js';
+import { parseJsonFromLLM } from '../utils/parse-json.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
   type StandardResponse,
@@ -98,7 +99,7 @@ Instructions:
 3. Flag facts that seem stale or time-sensitive → suggest DELETE with a reason
 4. Leave clear, unique facts unchanged
 
-Return ONLY valid JSON:
+Return ONLY valid JSON. No markdown code blocks, no JavaScript, no explanation text — just the raw JSON object:
 {
   "actions": [
     { "type": "merge", "keep_id": 5, "delete_ids": [12, 23], "updated_text": "merged text" },
@@ -154,17 +155,19 @@ export async function handleSynthesizeFacts(
 
       try {
         const prompt = buildSynthesisPrompt(cat, facts);
-        const response = await provider.complete(prompt);
+        const response = await provider.complete(prompt, {
+          jsonMode: true,
+          maxTokens: config.ai.synthesisMaxTokens,
+        });
 
-        // Parse JSON from response
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
+        // Parse JSON from response using robust 3-tier fallback
+        const parsed = parseJsonFromLLM(response);
+        if (parsed === null) {
           logger.warn('No JSON found in synthesis response', { category: cat });
           summaries[cat] = 'No valid response from LLM';
           continue;
         }
 
-        const parsed = JSON.parse(jsonMatch[0]);
         const validated = SynthesisResponseSchema.safeParse(parsed);
 
         if (!validated.success) {

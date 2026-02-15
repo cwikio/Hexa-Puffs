@@ -15,6 +15,7 @@ export const AIProviderConfigSchema = z.object({
   // Common settings
   temperature: z.number().min(0).max(2).default(0.3),
   maxTokens: z.number().positive().default(500),
+  synthesisMaxTokens: z.number().positive().default(1500),
 });
 
 export type AIProviderConfig = z.infer<typeof AIProviderConfigSchema>;
