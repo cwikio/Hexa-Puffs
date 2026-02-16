@@ -87,6 +87,7 @@ function makeTelegramMessage(id: number, date: Date, text = 'hello') {
 function createMocks(statusOverrides?: Partial<OrchestratorStatus>) {
   const mockToolRouter = {
     routeToolCall: vi.fn().mockResolvedValue({ success: true }),
+    routeToolCallPrivileged: vi.fn().mockResolvedValue({ success: true }),
   } as unknown as ToolRouter;
 
   const mockHaltManager = {
@@ -261,9 +262,6 @@ describe('SlashCommandHandler', () => {
                 chat_id: 'chat123',
               });
             }
-            if (toolName === 'telegram_delete_messages') {
-              return { success: true };
-            }
             return { success: true };
           }
         );
@@ -272,8 +270,8 @@ describe('SlashCommandHandler', () => {
 
         expect(result.handled).toBe(true);
 
-        // Find the delete call
-        const deleteCalls = (mockToolRouter.routeToolCall as ReturnType<typeof vi.fn>).mock.calls.filter(
+        // Delete calls now go through privileged routing
+        const deleteCalls = (mockToolRouter.routeToolCallPrivileged as ReturnType<typeof vi.fn>).mock.calls.filter(
           (c: unknown[]) => c[0] === 'telegram_delete_messages'
         );
         expect(deleteCalls.length).toBe(1);
@@ -323,7 +321,7 @@ describe('SlashCommandHandler', () => {
 
         expect(result.handled).toBe(true);
 
-        const deleteCalls = (mockToolRouter.routeToolCall as ReturnType<typeof vi.fn>).mock.calls.filter(
+        const deleteCalls = (mockToolRouter.routeToolCallPrivileged as ReturnType<typeof vi.fn>).mock.calls.filter(
           (c: unknown[]) => c[0] === 'telegram_delete_messages'
         );
         expect(deleteCalls.length).toBe(1);
@@ -360,7 +358,7 @@ describe('SlashCommandHandler', () => {
 
         expect(result.handled).toBe(true);
 
-        const deleteCalls = (mockToolRouter.routeToolCall as ReturnType<typeof vi.fn>).mock.calls.filter(
+        const deleteCalls = (mockToolRouter.routeToolCallPrivileged as ReturnType<typeof vi.fn>).mock.calls.filter(
           (c: unknown[]) => c[0] === 'telegram_delete_messages'
         );
         expect(deleteCalls.length).toBe(1);
@@ -404,7 +402,7 @@ describe('SlashCommandHandler', () => {
         expect(getCalls.length).toBe(3);
 
         // Should have deleted in 3 batches (100 + 100 + 50)
-        const deleteCalls = (mockToolRouter.routeToolCall as ReturnType<typeof vi.fn>).mock.calls.filter(
+        const deleteCalls = (mockToolRouter.routeToolCallPrivileged as ReturnType<typeof vi.fn>).mock.calls.filter(
           (c: unknown[]) => c[0] === 'telegram_delete_messages'
         );
         expect(deleteCalls.length).toBe(3);
@@ -444,11 +442,13 @@ describe('SlashCommandHandler', () => {
                 chat_id: 'chat123',
               });
             }
-            if (toolName === 'telegram_delete_messages') {
-              deleteCallCount++;
-              if (deleteCallCount === 1) return { success: false, error: 'Permission denied' };
-              return { success: true };
-            }
+            return { success: true };
+          }
+        );
+        (mockToolRouter.routeToolCallPrivileged as ReturnType<typeof vi.fn>).mockImplementation(
+          async () => {
+            deleteCallCount++;
+            if (deleteCallCount === 1) return { success: false, error: 'Permission denied' };
             return { success: true };
           }
         );

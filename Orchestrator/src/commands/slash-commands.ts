@@ -996,7 +996,7 @@ Keep it concise. No markdown formatting — plain text only.`;
 
     for (let i = 0; i < messageIds.length; i += BATCH_SIZE) {
       const chunk = messageIds.slice(i, i + BATCH_SIZE);
-      const result = await this.toolRouter.routeToolCall('telegram_delete_messages', {
+      const result = await this.toolRouter.routeToolCallPrivileged('telegram_delete_messages', {
         chat_id: chatId,
         message_ids: chunk,
       });

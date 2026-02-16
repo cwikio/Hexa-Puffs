@@ -43,6 +43,7 @@ export interface ToolRouterConfig {
 
 export class ToolRouter {
   private routes: Map<string, { mcp: IMCPClient; originalName: string }> = new Map();
+  private allRoutes: Map<string, { mcp: IMCPClient; originalName: string }> = new Map();
   private toolDefinitions: Map<string, MCPToolDefinition> = new Map();
   private mcpClients: Map<string, IMCPClient> = new Map();
   private mcpMetadataMap: Map<string, MCPMetadata> = new Map();
@@ -241,6 +242,7 @@ export class ToolRouter {
   async discoverTools(): Promise<void> {
     this.logger.info('Discovering tools from MCPs...');
     this.routes.clear();
+    this.allRoutes.clear();
     this.toolDefinitions.clear();
 
     const groupIndex = this.buildGroupIndex();
@@ -281,6 +283,7 @@ export class ToolRouter {
       if (sources.length === 1 && !this.config.alwaysPrefix) {
         // No conflict - use original name
         const { mcpName, tool } = sources[0];
+        const client = this.mcpClients.get(mcpName);
         
         const mcpMeta = this.mcpMetadataMap.get(mcpName);
         const allowDestructive = mcpMeta?.allowDestructiveTools === true;
@@ -288,15 +291,19 @@ export class ToolRouter {
         if (isDestructive && !allowDestructive) {
           blockedTools.push(`${mcpName}:${toolName}`);
           this.logger.info(`Blocking destructive tool: ${toolName} from ${mcpName} (allowDestructiveTools=false)`);
+          // Still register in allRoutes for privileged internal callers
+          if (client) {
+            this.allRoutes.set(toolName, { mcp: client, originalName: toolName });
+          }
           continue;
         }
 
         // Group: hardcoded index first, then metadata toolGroup fallback
         const groupLabel = groupIndex.get(toolName)
           ?? this.mcpMetadataMap.get(mcpName)?.toolGroup;
-        const client = this.mcpClients.get(mcpName);
         if (client) {
           this.routes.set(toolName, { mcp: client, originalName: toolName });
+          this.allRoutes.set(toolName, { mcp: client, originalName: toolName });
           this.toolDefinitions.set(toolName, {
             ...tool,
             description: this.tagDescription(tool.description, this.getServiceLabel(mcpName), groupLabel),
@@ -306,22 +313,27 @@ export class ToolRouter {
       } else {
         // Conflict or alwaysPrefix - prefix with MCP name
         for (const { mcpName, tool } of sources) {
+          const prefixedName = `${mcpName}${this.config.separator}${toolName}`;
+          const client = this.mcpClients.get(mcpName);
           const mcpMeta = this.mcpMetadataMap.get(mcpName);
           const allowDestructive = mcpMeta?.allowDestructiveTools === true;
           
           if (isDestructive && !allowDestructive) {
             blockedTools.push(`${mcpName}:${toolName}`);
             this.logger.info(`Blocking destructive tool: ${toolName} from ${mcpName} (allowDestructiveTools=false)`);
+            // Still register in allRoutes for privileged internal callers
+            if (client) {
+              this.allRoutes.set(prefixedName, { mcp: client, originalName: toolName });
+            }
             continue;
           }
 
           // Group: hardcoded index first, then metadata toolGroup fallback
           const groupLabel = groupIndex.get(toolName)
             ?? this.mcpMetadataMap.get(mcpName)?.toolGroup;
-          const prefixedName = `${mcpName}${this.config.separator}${toolName}`;
-          const client = this.mcpClients.get(mcpName);
           if (client) {
             this.routes.set(prefixedName, { mcp: client, originalName: toolName });
+            this.allRoutes.set(prefixedName, { mcp: client, originalName: toolName });
             this.toolDefinitions.set(prefixedName, {
               ...tool,
               name: prefixedName,
@@ -513,6 +525,33 @@ export class ToolRouter {
     const { mcp, originalName } = route;
 
     this.logger.info(`Routing ${toolName} → ${mcp.name}.${originalName}`);
+
+    return mcp.callTool({
+      name: originalName,
+      arguments: args,
+    });
+  }
+
+  /**
+   * Route a tool call with elevated privileges (bypasses destructive-tool blocking).
+   * Use ONLY for trusted internal system callers (e.g. slash commands), never for AI agent calls.
+   */
+  async routeToolCallPrivileged(
+    toolName: string,
+    args: Record<string, unknown>
+  ): Promise<ToolCallResult> {
+    const route = this.allRoutes.get(toolName);
+
+    if (!route) {
+      this.logger.warn(`Unknown tool (privileged): ${toolName}`);
+      return {
+        success: false,
+        error: `Unknown tool: ${toolName}`,
+      };
+    }
+
+    const { mcp, originalName } = route;
+    this.logger.info(`Routing (privileged) ${toolName} → ${mcp.name}.${originalName}`);
 
     return mcp.callTool({
       name: originalName,
