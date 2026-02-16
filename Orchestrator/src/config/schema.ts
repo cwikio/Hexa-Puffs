@@ -10,6 +10,7 @@ export const MCPMetadataSchema = z.object({
     input: z.boolean().optional(),
     output: z.boolean().optional(),
   }).optional(),
+  allowDestructiveTools: z.boolean().optional(),
 });
 
 export type MCPMetadata = z.infer<typeof MCPMetadataSchema>;

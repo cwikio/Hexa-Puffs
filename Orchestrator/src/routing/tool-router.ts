@@ -48,6 +48,7 @@ export class ToolRouter {
   private mcpMetadataMap: Map<string, MCPMetadata> = new Map();
   private logger: Logger;
   private config: ToolRouterConfig;
+  private blockedTools: string[] = [];
 
   private static readonly DEFAULT_TOOL_GROUPS: ToolGroup[] = [
     {
@@ -263,10 +264,33 @@ export class ToolRouter {
     }
 
     // Phase 2: Build routing table with conflict resolution + group tagging
+    const blockedTools: string[] = [];
+    
     for (const [toolName, sources] of toolsByName) {
+      // Check if tool is destructive and should be blocked
+      const isDestructive = /^(.*_)?(delete|remove|destroy)(_.*)?$/i.test(toolName);
+      
+      if (isDestructive) {
+        // Check if ANY source MCP allows destructive tools.
+        // If multiple MCPs provide the same tool, we err on the side of caution:
+        // we only block if the specific MCP providing the route blocks it.
+        // But here we are iterating over tool names which might be provided by multiple MCPs.
+        // The logic below registers specific routes. We should check per-route.
+      }
+
       if (sources.length === 1 && !this.config.alwaysPrefix) {
         // No conflict - use original name
         const { mcpName, tool } = sources[0];
+        
+        const mcpMeta = this.mcpMetadataMap.get(mcpName);
+        const allowDestructive = mcpMeta?.allowDestructiveTools === true;
+        
+        if (isDestructive && !allowDestructive) {
+          blockedTools.push(`${mcpName}:${toolName}`);
+          this.logger.info(`Blocking destructive tool: ${toolName} from ${mcpName} (allowDestructiveTools=false)`);
+          continue;
+        }
+
         // Group: hardcoded index first, then metadata toolGroup fallback
         const groupLabel = groupIndex.get(toolName)
           ?? this.mcpMetadataMap.get(mcpName)?.toolGroup;
@@ -282,6 +306,15 @@ export class ToolRouter {
       } else {
         // Conflict or alwaysPrefix - prefix with MCP name
         for (const { mcpName, tool } of sources) {
+          const mcpMeta = this.mcpMetadataMap.get(mcpName);
+          const allowDestructive = mcpMeta?.allowDestructiveTools === true;
+          
+          if (isDestructive && !allowDestructive) {
+            blockedTools.push(`${mcpName}:${toolName}`);
+            this.logger.info(`Blocking destructive tool: ${toolName} from ${mcpName} (allowDestructiveTools=false)`);
+            continue;
+          }
+
           // Group: hardcoded index first, then metadata toolGroup fallback
           const groupLabel = groupIndex.get(toolName)
             ?? this.mcpMetadataMap.get(mcpName)?.toolGroup;
@@ -299,8 +332,10 @@ export class ToolRouter {
         }
       }
     }
+    
+    this.blockedTools = blockedTools;
 
-    this.logger.info(`Tool discovery complete: ${this.routes.size} tools registered`);
+    this.logger.info(`Tool discovery complete: ${this.routes.size} tools registered, ${blockedTools.length} blocked`);
   }
 
   /**
@@ -367,6 +402,14 @@ export class ToolRouter {
    */
   getToolDefinitions(): MCPToolDefinition[] {
     return Array.from(this.toolDefinitions.values());
+  }
+
+  /**
+   * Get list of blocked destructive tools (for reporting).
+   * Format: "mcpName:toolName"
+   */
+  getBlockedTools(): string[] {
+    return [...this.blockedTools];
   }
 
   /**

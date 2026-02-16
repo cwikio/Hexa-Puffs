@@ -173,10 +173,13 @@ export class GenericChannelAdapter implements ChannelAdapter {
 
   async sendMessage(chatId: string, message: string): Promise<void> {
     try {
-      await this.toolRouter.routeToolCall(this.tools.sendMessage, {
-        chat_id: chatId,
+      const result = await this.toolRouter.routeToolCall(this.tools.sendMessage, {
+        chat_id: String(chatId),
         message,
       });
+      if (!result.success) {
+        this.log.error(`Failed to send message to ${chatId}: ${result.error || 'Unknown error'}`);
+      }
     } catch (error) {
       this.log.error(`Failed to send message to ${chatId}`, { error });
     }

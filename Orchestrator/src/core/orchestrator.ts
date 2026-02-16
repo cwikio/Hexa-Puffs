@@ -775,6 +775,13 @@ export class Orchestrator {
       lines.push('', `Failed: ${failed.join(', ')}`);
     }
 
+    const blocked = this.toolRouter.getBlockedTools();
+    if (blocked.length > 0) {
+      lines.push('', '⚠️  Safety: The following destructive tools were blocked by default:');
+      for (const tool of blocked) lines.push(`  - ${tool}`);
+      lines.push('', 'To enable them, add "allowDestructiveTools": true to the MCP metadata in external-mcps.json');
+    }
+
     const message = lines.join('\n');
 
     try {

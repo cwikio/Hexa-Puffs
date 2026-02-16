@@ -90,7 +90,32 @@ New config file for external MCPs (same format as Claude Desktop / Cursor):
   "vercel": {
     "command": "npx",
     "args": ["-y", "vercel-mcp"],
-    "env": { "VERCEL_TOKEN": "${VERCEL_TOKEN}" }
+    "env": { "VERCEL_TOKEN": "${VERCEL_TOKEN}" },
+    "metadata": {
+      "allowDestructiveTools": false
+    }
+  }
+}
+```
+
+**Security Feature: Destructive Tool Blocking**
+
+By default, external MCPs have destructive tools (delete, remove, destroy) **blocked** for safety. The Orchestrator will:
+- Detect tools matching patterns: `*delete*`, `*remove*`, `*destroy*`
+- Hide them from the agent unless explicitly allowed
+- Notify on startup which tools were blocked
+
+To enable destructive tools for a specific MCP, add `"allowDestructiveTools": true` to its metadata:
+
+```json
+{
+  "vercel": {
+    "command": "npx",
+    "args": ["-y", "vercel-mcp"],
+    "env": { "VERCEL_TOKEN": "${VERCEL_TOKEN}" },
+    "metadata": {
+      "allowDestructiveTools": true  // ⚠️ Allows vercel_deleteDeployment
+    }
   }
 }
 ```

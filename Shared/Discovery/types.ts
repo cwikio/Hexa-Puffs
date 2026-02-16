@@ -24,6 +24,8 @@ export interface MCPMetadata {
   keywords?: string[];
   /** Guardian scan overrides. Omitted = use global defaults (both true) */
   guardianScan?: { input?: boolean; output?: boolean };
+  /** Whether to allow destructive tools (delete/remove/destroy). Default: false for external MCPs */
+  allowDestructiveTools?: boolean;
 }
 
 export interface AnnabelleManifest {

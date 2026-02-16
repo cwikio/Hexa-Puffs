@@ -21,6 +21,7 @@ export const ExternalMCPConfigSchema = z.object({
       input: z.boolean().optional(),
       output: z.boolean().optional(),
     }).optional(),
+    allowDestructiveTools: z.boolean().optional(),
   }).optional(),
 });
 

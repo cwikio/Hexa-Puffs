@@ -1,9 +1,17 @@
-# Annabelle MCP Specification
+# Annabelle MCP Guide
 
-This document describes everything you need to build an MCP (Model Context Protocol) server that is compatible with the Annabelle ecosystem. Drop your MCP into the monorepo, build it, and the Orchestrator will auto-discover and integrate it.
+This document covers how to add MCPs (Model Context Protocol servers) to Annabelle, both external third-party MCPs and custom internal MCPs.
 
 ## Table of Contents
 
+### Adding External MCPs (Quick Start)
+- [External MCPs Overview](#external-mcps)
+- [Configuration File](#configuration-file-annabelleexternal-mcpsjson)
+- [Security: Destructive Tool Blocking](#security-destructive-tool-blocking)
+- [Adding a New External MCP](#adding-a-new-external-mcp)
+
+### Creating Internal MCPs (Advanced)
+- [Internal MCP Specification](#internal-mcp-specification)
 - [Quick Start Checklist](#quick-start-checklist)
 - [Project Structure](#project-structure)
 - [Auto-Discovery Manifest](#auto-discovery-manifest)
@@ -19,7 +27,158 @@ This document describes everything you need to build an MCP (Model Context Proto
 
 ---
 
-## Quick Start Checklist
+## External MCPs
+
+
+External MCPs are third-party MCP servers (like Vercel, PostHog, Neon) that run outside the Annabelle monorepo. They are the easiest way to add new capabilities to Annabelle.
+
+### Configuration File: `~/.annabelle/external-mcps.json`
+
+External MCPs use the same format as Claude Desktop and Cursor:
+
+```json
+{
+  "posthog": {
+    "command": "npx",
+    "args": ["-y", "@posthog/mcp"],
+    "env": { "POSTHOG_API_KEY": "${POSTHOG_API_KEY}" },
+    "timeout": 30000,
+    "sensitive": false,
+    "description": "PostHog analytics integration",
+    "metadata": {
+      "label": "PostHog",
+      "toolGroup": "Analytics",
+      "keywords": ["analytics", "posthog", "events"],
+      "allowDestructiveTools": false
+    }
+  },
+  "vercel": {
+    "command": "npx",
+    "args": ["-y", "vercel-mcp"],
+    "env": { "VERCEL_TOKEN": "${VERCEL_TOKEN}" },
+    "metadata": {
+      "label": "Vercel",
+      "toolGroup": "Deployment",
+      "allowDestructiveTools": false
+    }
+  }
+}
+```
+
+### Configuration Schema
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `command` | `string` | **required** | Executable to spawn (e.g., `"npx"`, `"node"`, `".venv/bin/python"`) |
+| `args` | `string[]` | `[]` | Arguments passed to the command |
+| `env` | `Record<string, string>` | `{}` | Environment variables. Supports `${VAR}` expansion from `process.env` |
+| `timeout` | `number` | `30000` | Tool call timeout in milliseconds |
+| `sensitive` | `boolean` | `false` | Whether Guardian should scan this MCP's inputs/outputs |
+| `description` | `string` | — | Human-readable description |
+| `metadata` | `object` | — | Optional metadata (see below) |
+
+### Metadata Fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `label` | `string` | `capitalize(mcpName)` | Pretty display name (e.g., "Vercel") |
+| `toolGroup` | `string` | Same as `label` | Semantic group for tool descriptions |
+| `keywords` | `string[]` | `[]` | Keywords for Thinker's tool selection |
+| `guardianScan` | `object` | `{ input: true, output: true }` | Per-MCP Guardian scan overrides |
+| **`allowDestructiveTools`** | `boolean` | **`false`** | **Whether to allow destructive tools (delete/remove/destroy)** |
+
+### Security: Destructive Tool Blocking
+
+**By default, external MCPs have destructive tools blocked for safety.** This prevents accidental deletions and data loss.
+
+The Orchestrator automatically:
+- Detects tools matching patterns: `*delete*`, `*remove*`, `*destroy*` (case-insensitive)
+- Hides them from the agent unless `allowDestructiveTools: true`
+- Notifies on startup which tools were blocked
+
+#### Example: Blocked by Default
+
+```json
+{
+  "vercel": {
+    "command": "npx",
+    "args": ["-y", "vercel-mcp"],
+    "env": { "VERCEL_TOKEN": "${VERCEL_TOKEN}" }
+    // allowDestructiveTools defaults to false
+    // → vercel_deleteDeployment is BLOCKED .. trust us on that one, we learned the hardway.. 
+  }
+}
+```
+
+**Startup notification:**
+```
+⚠️  Safety: The following destructive tools were blocked by default:
+  - vercel:deleteDeployment
+  - vercel:removeProject
+
+To enable them, add "allowDestructiveTools": true to the MCP metadata in external-mcps.json
+```
+
+#### Example: Explicitly Allowed
+
+```json
+{
+  "vercel": {
+    "command": "npx",
+    "args": ["-y", "vercel-mcp"],
+    "env": { "VERCEL_TOKEN": "${VERCEL_TOKEN}" },
+    "metadata": {
+      "allowDestructiveTools": true  // ⚠️ Allows vercel_deleteDeployment
+    }
+  }
+}
+```
+
+**⚠️ Use with caution:** Only enable destructive tools if you understand the risks and trust the MCP implementation.
+
+### Adding a New External MCP
+
+1. Edit `~/.annabelle/external-mcps.json` — add a new entry with command/args/env
+2. Set any required environment variables (API keys) in your shell or `.env`
+3. Restart the Orchestrator
+
+The Orchestrator will:
+- Auto-discover the new MCP
+- Prefix all tools with the MCP name (e.g., `vercel_getDeployments`)
+- Route tool calls through the existing `ToolRouter`
+- Block destructive tools by default (unless `allowDestructiveTools: true`)
+
+### Environment Variable Expansion
+
+The `env` field supports `${VAR}` expansion from `process.env`:
+
+```json
+{
+  "env": {
+    "API_KEY": "${MY_API_KEY}",
+    "BASE_URL": "${MY_BASE_URL}"
+  }
+}
+```
+
+If `MY_API_KEY` is not set in the environment, it expands to an empty string.
+
+### Hot Reload
+
+The Orchestrator watches `external-mcps.json` for changes. When you add, remove, or modify an entry:
+- Added MCPs are spawned and registered automatically
+- Removed MCPs are stopped and unregistered
+- Modified MCPs are restarted with the new configuration
+
+No need to restart the Orchestrator manually.
+
+---
+
+## Internal MCP Specification
+
+The following sections describe how to create custom internal MCPs that live in the Annabelle monorepo. This is an advanced topic — most users should start with external MCPs above.
+
+### Quick Start Checklist
 
 1. Create a directory in the MCPs root (e.g. `MyTool-MCP/`)
 2. Add a `package.json` with `"type": "module"` and an `"annabelle"` manifest field

@@ -234,7 +234,7 @@ export function createEssentialTools(
     send_telegram: tool({
       description: 'Send a message to a Telegram chat. The chat_id is auto-injected if omitted.',
       parameters: z.object({
-        chat_id: z.string().optional().describe('The Telegram chat ID (auto-injected if omitted)'),
+        chat_id: z.union([z.string(), z.number()]).transform(String).optional().describe('The Telegram chat ID (auto-injected if omitted)'),
         message: z.string().describe('The message text to send'),
         reply_to: z.number().nullish().describe('Optional message ID to reply to'),
       }),
