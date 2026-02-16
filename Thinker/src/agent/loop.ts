@@ -734,14 +734,23 @@ export class Agent {
         ? Math.min(this.config.temperature, 0.3)
         : this.config.temperature;
 
-      // Tool choice: always 'auto' for multi-step calls.
-      // 'required' forces tool calls on EVERY step, which crashes Groq/Llama on step 2+
-      // when the model wants to respond with text (summarize results) instead of calling another tool.
-      // Playbook instructions, system prompt, and embedding-selected tools provide sufficient guidance
-      // for the model to call tools on step 1 without forcing it.
+      // ─── Proactive Tool Forcing ─────────────────────────────────────
+      // Llama models on Groq frequently refuse to call tools with toolChoice: 'auto',
+      // responding with "I don't have access to real-time information" instead.
+      // When the tool selector includes search tools, proactively use a two-phase approach:
+      //   Phase 1: toolChoice: 'required', maxSteps: 1 → forces the model to call a tool
+      //   Phase 2: toolChoice: 'auto', remaining steps → model summarizes tool results
+      // This saves one round-trip vs the reactive refusal guard (2 calls instead of 3).
+      // 'required' with maxSteps > 1 crashes Groq on step 2+ when the model wants
+      // to respond with text, hence maxSteps: 1 for the forced phase.
+      const hasSearchTools = !!selectedTools['searcher_web_search'] || !!selectedTools['searcher_news_search'];
       const embeddingScore = selectionStats?.topScore ?? 0;
-      const effectiveToolChoice = 'auto' as const;
-      logger.info(`[tool-enforcement] toolChoice=auto (embeddingScore=${embeddingScore.toFixed(3)})`);
+
+      if (hasSearchTools) {
+        logger.info(`[tool-enforcement] Using proactive two-phase tool calling (searchTools=true, embeddingScore=${embeddingScore.toFixed(3)})`);
+      } else {
+        logger.info(`[tool-enforcement] toolChoice=auto (embeddingScore=${embeddingScore.toFixed(3)})`);
+      }
 
       // Capture completed steps via onStepFinish so we can recover tool results
       // if generateText() fails mid-loop (e.g., tools execute but the follow-up LLM call errors)
@@ -790,18 +799,90 @@ export class Agent {
         return msgs;
       };
 
+      let recoveredTools: string[] = [];
+
       try {
-        result = await generateText({
-          model: this.modelFactory.getModel(),
-          system: context.systemPrompt,
-          messages: [...context.conversationHistory, { role: 'user', content: message.text }],
-          tools: selectedTools,
-          toolChoice: effectiveToolChoice,
-          maxSteps: 8,
-          temperature: effectiveTemperature,
-          abortSignal: agentAbort,
-          onStepFinish,
-        });
+        if (hasSearchTools) {
+          // ═══ Two-phase proactive tool calling ═══
+          // Phase 1: Force a tool call (maxSteps: 1 to avoid Groq crash)
+          const phase1Result = await generateText({
+            model: this.modelFactory.getModel(),
+            system: context.systemPrompt,
+            messages: [...context.conversationHistory, { role: 'user', content: message.text }],
+            tools: selectedTools,
+            toolChoice: 'required' as const,
+            maxSteps: 1,
+            temperature: Math.min(effectiveTemperature, 0.2),
+            abortSignal: agentAbort,
+            onStepFinish,
+          });
+          this.costMonitor?.recordUsage(
+            phase1Result.usage?.promptTokens || 0,
+            phase1Result.usage?.completionTokens || 0,
+          );
+
+          const phase1UsedTools = phase1Result.steps.some((step) => step.toolCalls?.length > 0);
+
+          if (phase1UsedTools && phase1Result.response?.messages?.length > 0) {
+            // Phase 2: Continue with 'auto' so the model can summarize tool results
+            // and optionally call more tools if needed
+            const phase2Messages: CoreMessage[] = [
+              ...context.conversationHistory,
+              { role: 'user' as const, content: message.text },
+              ...phase1Result.response.messages,
+            ];
+
+            result = await generateText({
+              model: this.modelFactory.getModel(),
+              system: context.systemPrompt,
+              messages: phase2Messages,
+              tools: selectedTools,
+              toolChoice: 'auto' as const,
+              maxSteps: 7,
+              temperature: this.config.temperature,
+              abortSignal: agentAbort,
+              onStepFinish,
+            });
+            this.costMonitor?.recordUsage(
+              result.usage?.promptTokens || 0,
+              result.usage?.completionTokens || 0,
+            );
+
+            // Track forced tools from phase 1 in recoveredTools
+            const phase1ToolNames = phase1Result.steps.flatMap(
+              (step) => step.toolCalls?.map((tc) => tc.toolName) || []
+            );
+            recoveredTools.push(...phase1ToolNames);
+            logger.info(`[tool-enforcement] Two-phase complete: phase1 tools=[${phase1ToolNames.join(', ')}]`);
+          } else {
+            // Phase 1 didn't produce tool calls (unlikely with 'required') — fall back to normal
+            logger.warn('[tool-enforcement] Phase 1 did not produce tool calls, falling back to auto');
+            result = await generateText({
+              model: this.modelFactory.getModel(),
+              system: context.systemPrompt,
+              messages: [...context.conversationHistory, { role: 'user', content: message.text }],
+              tools: selectedTools,
+              toolChoice: 'auto' as const,
+              maxSteps: 8,
+              temperature: effectiveTemperature,
+              abortSignal: agentAbort,
+              onStepFinish,
+            });
+          }
+        } else {
+          // ═══ Standard single-phase (no search tools) ═══
+          result = await generateText({
+            model: this.modelFactory.getModel(),
+            system: context.systemPrompt,
+            messages: [...context.conversationHistory, { role: 'user', content: message.text }],
+            tools: selectedTools,
+            toolChoice: 'auto' as const,
+            maxSteps: 8,
+            temperature: effectiveTemperature,
+            abortSignal: agentAbort,
+            onStepFinish,
+          });
+        }
       } catch (toolError) {
         // If function calling fails (malformed JSON from model), retry with tools once, then fallback
         const toolErrorMsg = toolError instanceof Error ? toolError.message : '';
@@ -967,7 +1048,6 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       // Groq/Llama sometimes leaks tool calls as text instead of using
       // structured function calling. Detect and execute when this happens.
       let responseText: string;
-      let recoveredTools: string[] = [];
 
       const shouldAttemptRecovery =
         result.finishReason === 'stop' &&
@@ -1230,6 +1310,18 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
         }
       }
 
+      // Collect tools used (include any recovered leaked tool calls, captured step tools,
+      // and tools forced by the refusal guard)
+      const resultToolNames = result.steps.flatMap(
+        (step) => step.toolCalls?.map((tc) => tc.toolName) || []
+      );
+      const capturedToolNames = capturedSteps.flatMap(
+        (step) => step.toolCalls?.map((tc) => tc.toolName) || []
+      );
+      const toolsUsed = usedTextOnlyFallback
+        ? ['(text-only fallback)']
+        : [...new Set([...resultToolNames, ...capturedToolNames, ...recoveredTools])];
+
       // Add assistant response to conversation
       // When tools were used via the normal generateText flow, preserve the full
       // responseMessages (including tool_calls + tool_results) so subsequent turns
@@ -1262,8 +1354,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
             message.chatId,
             message.text,
             responseText,
-            result.steps
-              .flatMap((step) => step.toolCalls?.map((tc) => tc.toolName) || []),
+            toolsUsed.filter((t) => t !== '(text-only fallback)'),
             { prompt: promptTokens, completion: completionTokens },
             turnMessages
           );
@@ -1291,16 +1382,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
         }
       }
 
-      // Collect tools used (include any recovered leaked tool calls and captured step tools)
-      const resultToolNames = result.steps.flatMap(
-        (step) => step.toolCalls?.map((tc) => tc.toolName) || []
-      );
-      const capturedToolNames = capturedSteps.flatMap(
-        (step) => step.toolCalls?.map((tc) => tc.toolName) || []
-      );
-      const toolsUsed = usedTextOnlyFallback
-        ? ['(text-only fallback)']
-        : [...new Set([...resultToolNames, ...capturedToolNames, ...recoveredTools])];
+      // toolsUsed already computed above (before session persistence)
 
       // Update sticky tools sliding window — track non-core tools used this turn
       const coreSet = new Set(CORE_TOOL_NAMES);
