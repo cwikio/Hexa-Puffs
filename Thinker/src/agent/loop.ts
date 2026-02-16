@@ -1081,6 +1081,79 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
             responseText = "I wasn't able to complete this action. Please try again.";
           }
         }
+
+        // ─── Tool Refusal Guard ────────────────────────────────────────
+        // If the model claims it cannot access real-time data, tools, or the internet
+        // despite having search tools available, force a tool call.
+        // This catches Llama models that refuse to use tools and say
+        // "I don't have access to real-time information" instead.
+        const hasSearchTools = !!selectedTools['searcher_web_search'] || !!selectedTools['searcher_news_search'];
+        if (hasSearchTools) {
+          const toolRefusalPattern =
+            /(?:I (?:don't|do not|can't|cannot|am unable to|'m unable to|won't be able to|currently (?:don't|can't|cannot)) (?:have |)(?:access to |access |provide |get |fetch |retrieve )?(?:real[- ]time|current|live|up[- ]to[- ]date|today's) (?:information|data|weather|news|updates|results))|(?:(?:tools|search|internet|web|real-time (?:data|info)) (?:is|are) (?:temporarily |currently )?(?:unavailable|not available|inaccessible|down))/i;
+
+          if (toolRefusalPattern.test(responseText)) {
+            logger.warn(`[tool-refusal-guard] Model refused to use tools despite having search tools — forcing tool call`);
+            try {
+              // Step 1: Force a single tool call with toolChoice: 'required', maxSteps: 1
+              // (maxSteps: 1 avoids the Groq crash when 'required' is used on step 2+)
+              const forcedResult = await generateText({
+                model: this.modelFactory.getModel(),
+                system: context.systemPrompt,
+                messages: [...context.conversationHistory, { role: 'user', content: message.text }],
+                tools: selectedTools,
+                toolChoice: 'required' as const,
+                maxSteps: 1,
+                temperature: Math.min(this.config.temperature, 0.2),
+                abortSignal: agentAbort,
+                onStepFinish,
+              });
+              this.costMonitor?.recordUsage(
+                forcedResult.usage?.promptTokens || 0,
+                forcedResult.usage?.completionTokens || 0,
+              );
+
+              const forcedUsedTools = forcedResult.steps.some((step) => step.toolCalls?.length > 0);
+              if (forcedUsedTools) {
+                // Step 2: Continue with 'auto' so the model can summarize the tool results
+                const toolResultMessages: CoreMessage[] = [
+                  ...context.conversationHistory,
+                  { role: 'user' as const, content: message.text },
+                  ...forcedResult.response.messages,
+                ];
+
+                const followUpResult = await generateText({
+                  model: this.modelFactory.getModel(),
+                  system: context.systemPrompt,
+                  messages: toolResultMessages,
+                  tools: selectedTools,
+                  toolChoice: 'auto' as const,
+                  maxSteps: 4,
+                  temperature: this.config.temperature,
+                  abortSignal: agentAbort,
+                  onStepFinish,
+                });
+                this.costMonitor?.recordUsage(
+                  followUpResult.usage?.promptTokens || 0,
+                  followUpResult.usage?.completionTokens || 0,
+                );
+
+                // Use follow-up result but track forced tools separately
+                const forcedToolNames = forcedResult.steps.flatMap(
+                  (step) => step.toolCalls?.map((tc) => tc.toolName) || []
+                );
+                result = followUpResult;
+                recoveredTools.push(...forcedToolNames);
+                responseText = sanitizeResponseText(followUpResult.text || '');
+                logger.info(`[tool-refusal-guard] Forced tool call + follow-up successful`);
+              } else {
+                logger.warn(`[tool-refusal-guard] Forced call still did not produce tool calls`);
+              }
+            } catch (refusalRetryError) {
+              logger.warn(`[tool-refusal-guard] Forced retry failed:`, refusalRetryError);
+            }
+          }
+        }
       }
 
       // If no text response but we have tool results, extract text from steps
