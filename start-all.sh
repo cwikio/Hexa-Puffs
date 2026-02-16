@@ -323,4 +323,24 @@ echo -e "  $(printf '%-14s' "Orchestrator:") $ORCHESTRATOR_PID (MCPs + Thinker a
 echo -e "  $(printf '%-14s' "Inngest:") $INNGEST_PID"
 
 echo -e "\n${YELLOW}Tip: Use 'tail -f ~/.annabelle/logs/*.log' to monitor all services${RESET}"
-echo -e "${YELLOW}Tip: Use './restart.sh' to stop, rebuild, and restart all services${RESET}\n"
+echo -e "${YELLOW}Tip: Use './restart.sh' to stop, rebuild, and restart all services${RESET}"
+
+# ─── Connector MCP Info ──────────────────────────────────────────────────────
+CONNECTOR_DIR="$SCRIPT_DIR/Connector-MCP"
+if [ -d "$CONNECTOR_DIR" ]; then
+  echo -e "\n${BOLD}${CYAN}=== Connector MCP ===${RESET}"
+  echo -e "  To connect Claude Desktop to Annabelle, add this to your ${BOLD}'mcpServers'${RESET} config:"
+  echo -e "${BLUE}"
+  echo -e "    \"Annabelle\": {"
+  echo -e "      \"command\": \"node\","
+  echo -e "      \"args\": ["
+  echo -e "        \"$CONNECTOR_DIR/build/index.js\""
+  echo -e "      ],"
+  echo -e "      \"env\": {"
+  echo -e "        \"ORCHESTRATOR_URL\": \"http://localhost:8010\","
+  echo -e "        \"MCP_NAME\": \"Annabelle\""
+  echo -e "      }"
+  echo -e "    }"
+  echo -e "${RESET}"
+fi
+echo ""

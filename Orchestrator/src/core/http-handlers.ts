@@ -1,4 +1,6 @@
 import type { ToolRouter } from '../routing/tool-router.js';
+import type { Orchestrator } from './orchestrator.js';
+import type { IncomingAgentMessage } from '../agents/agent-types.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { SecurityError } from '../utils/errors.js';
@@ -113,6 +115,58 @@ export async function handleListTools(
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Failed to list tools' }));
   }
+}
+
+/**
+ * Handle POST /chat - Chat with Annabelle via HTTP
+ */
+export async function handleChat(
+  orchestrator: Orchestrator,
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+    const clientIp = req.socket.remoteAddress || 'unknown';
+    if (isRateLimited(clientIp)) {
+        res.writeHead(429, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Too many requests' }));
+        return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', async () => {
+        try {
+            const payload = JSON.parse(body);
+            const message = payload.message as string;
+            const sender = (payload.sender as string) || 'http-user';
+
+            if (!message) {
+                 res.writeHead(400, { 'Content-Type': 'application/json' });
+                 res.end(JSON.stringify({ error: 'Message is required' }));
+                 return;
+            }
+
+            const msg: IncomingAgentMessage = {
+                id: `http-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                chatId: sender,
+                senderId: sender,
+                text: message,
+                date: new Date().toISOString(),
+                channel: 'http-connector', // Virtual channel
+                agentId: 'main' // Will be resolved by router if needed
+            };
+
+            const reply = await orchestrator.dispatchMessage(msg);
+            
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, reply }));
+
+        } catch (error: any) {
+            logger.error('Failed to handle /chat', { error });
+             res.writeHead(500, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: false, error: error.message }));
+        }
+    });
 }
 
 /**

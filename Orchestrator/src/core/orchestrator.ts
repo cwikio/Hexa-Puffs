@@ -368,7 +368,7 @@ export class Orchestrator {
       manager.registerAdapter(new GenericChannelAdapter(entry.name, this.toolRouter, adapterConfig));
     }
 
-    manager.onMessage = (msg: IncomingAgentMessage) => this.dispatchMessage(msg);
+    manager.onMessage = async (msg: IncomingAgentMessage) => { await this.dispatchMessage(msg); };
 
     await manager.initialize();
     manager.start();
@@ -392,7 +392,12 @@ export class Orchestrator {
    * Dispatch a message to the appropriate agent and relay the response back to the channel.
    * Uses MessageRouter to resolve which agent handles the message.
    */
-  private async dispatchMessage(msg: IncomingAgentMessage): Promise<void> {
+  /**
+   * Dispatch a message to the appropriate agent and relay the response back to the channel.
+   * Uses MessageRouter to resolve which agent handles the message.
+   * Returns the response text if generated, or null if ignored/failed.
+   */
+  public async dispatchMessage(msg: IncomingAgentMessage): Promise<string | null> {
     // Slash command interception — handle before LLM (no tokens)
     if (msg.text.startsWith('/')) {
       const result = await this.slashCommands.tryHandle(msg);
@@ -400,7 +405,7 @@ export class Orchestrator {
         const response = result.response || result.error || 'Command processed.';
         await this.sendToChannel(msg.channel, msg.chatId, response);
         this.logger.info(`Slash command handled: ${msg.text.split(' ')[0]}`, { command: msg.text, response });
-        return;
+        return response;
       }
     }
 
@@ -418,8 +423,9 @@ export class Orchestrator {
       const ready = await this.agentManager.ensureRunning(targetAgentId);
       if (!ready) {
         this.logger.error(`Cannot dispatch — agent "${targetAgentId}" failed to start`);
-        await this.sendToChannel(msg.channel, msg.chatId, 'Agent is currently unavailable. Please try again in a moment.');
-        return;
+        const err = 'Agent is currently unavailable. Please try again in a moment.';
+        await this.sendToChannel(msg.channel, msg.chatId, err);
+        return err;
       }
       this.agentManager.updateActivity(targetAgentId);
     }
@@ -427,16 +433,16 @@ export class Orchestrator {
     // Pre-dispatch: check if agent is already paused by cost controls
     if (this.agentManager?.isAgentPaused(targetAgentId)) {
       this.logger.warn(`Dropping message for cost-paused agent "${targetAgentId}"`);
-      await this.sendToChannel(msg.channel, msg.chatId,
-        `Agent is currently paused due to cost controls and is not processing messages.`);
-      return;
+      const err = `Agent is currently paused due to cost controls and is not processing messages.`;
+      await this.sendToChannel(msg.channel, msg.chatId, err);
+      return err;
     }
 
     // Resolve which client to use
     const client = this.resolveClient(targetAgentId);
     if (!client) {
       this.logger.error(`Cannot dispatch message — no agent available for agentId="${targetAgentId}"`);
-      return;
+      return null;
     }
 
     this.logger.info(`Dispatching to agent: chat=${msg.chatId}, agent=${targetAgentId}`);
@@ -454,10 +460,10 @@ export class Orchestrator {
       const agentDef = this.agentDefinitions.get(targetAgentId);
       const notifyChannel = agentDef?.costControls?.notifyChannel || msg.channel;
       const notifyChatId = agentDef?.costControls?.notifyChatId || msg.chatId;
-      await this.sendToChannel(notifyChannel, notifyChatId,
-        `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nReason: ${result.error}\n\nThe agent will not process messages until resumed.`);
-
-      return;
+      const err = `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nReason: ${result.error}\n\nThe agent will not process messages until resumed.`;
+      
+      await this.sendToChannel(notifyChannel, notifyChatId, err);
+      return err;
     }
 
     if (result.success && result.response) {
@@ -489,11 +495,14 @@ export class Orchestrator {
         await this.sendToChannel(notifyChannel, notifyChatId,
           `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nThe agent will not process messages until resumed.`);
       }
+
+      return result.response;
     } else {
       this.logger.error(`Agent processing failed: ${result.error}`);
       // Send brief error notification — adapter filters by botUserId + botMessagePatterns
       const userMessage = this.getUserErrorMessage(result.error);
       await this.sendToChannel(msg.channel, msg.chatId, userMessage);
+      return userMessage;
     }
   }
 
