@@ -15,6 +15,7 @@ export const CORE_TOOL_NAMES = [
   'search_memories',
   'get_status',
   'spawn_subagent',
+  'searcher_web_search', // Always include web search for weather, news, real-time data
 ];
 
 /**
