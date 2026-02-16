@@ -65,5 +65,23 @@ Add the `Annabelle` entry to the `mcpServers` object in your config file. It sho
 
 ## Troubleshooting
 
-*   **Connection Refused**: Make sure the Orchestrator is running (`npm start` in the `Orchestrator` folder) and is listening on port 8000.
-*   **Tools not showing**: specific tools like `annabelle_chat` should appear in Claude's context. If not, check the Claude Desktop logs: `~/Library/Logs/Claude/mcp.log`.
+### 1. Connection Refused (ECONNREFUSED)
+*   **Cause**: The Orchestrator is not running, or is running on a different port.
+*   **Fix**:
+    *   If you started Annabelle via `./restart.sh`, usage `http://localhost:8010`.
+    *   If you started Annabelle manually (`npm start` in `Orchestrator`), usage `http://localhost:8000`.
+    *   Check config in `claude_desktop_config.json`.
+
+### 2. 401 Unauthorized
+*   **Cause**: The Connector MCP cannot find the authentication token, or the token file path is incorrect.
+*   **Fix**:
+    *   Ensure the file `~/.annabelle/annabelle.token` exists (created by `./restart.sh`).
+    *   If you are running the Connector manually/developing, ensure `ANNABELLE_TOKEN` env var is set.
+    *   *Note: Recent versions of Connector-MCP automatically look for `.annabelle/annabelle.token`.*
+
+### 3. Tools not showing in Claude
+*   **Cause**: Claude failed to load the MCP.
+*   **Fix**:
+    *   Check logs: `tail -f ~/Library/Logs/Claude/mcp.log`
+    *   Ensure the path to `build/index.js` in your config is **absolute** and correct.
+    *   Try restarting Claude Desktop completely (Quit -> Open).
