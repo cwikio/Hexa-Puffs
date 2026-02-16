@@ -36,13 +36,43 @@ export function createError(
  * Create error from caught exception.
  * If the error is a BaseError subclass, the code and details are preserved.
  */
-export function createErrorFromException(error: unknown): StandardResponse<never> {
+/**
+ * Create error from caught exception.
+ * If the error is a BaseError subclass, the code and details are preserved.
+ * Handles non-Error objects gracefully.
+ */
+export function createErrorFromException(error: unknown, includeStack: boolean = process.env.NODE_ENV !== 'production'): StandardResponse<never> {
+  const response: StandardResponse<never> = {
+    success: false,
+    error: 'Unknown error',
+  };
+
   if (error instanceof BaseError) {
-    return createError(
-      error.message,
-      error.code,
-      error.details !== undefined ? error.details as Record<string, unknown> : undefined,
-    );
+    response.error = error.message;
+    if (error.code) response.errorCode = error.code;
+    if (error.details) response.errorDetails = error.details as Record<string, unknown>;
+    if (includeStack && error.stack) {
+      if (!response.errorDetails) response.errorDetails = {};
+      response.errorDetails.stack = error.stack;
+    }
+  } else if (error instanceof Error) {
+    response.error = error.message;
+    response.errorCode = 'INTERNAL_ERROR';
+    if (includeStack && error.stack) {
+      response.errorDetails = { stack: error.stack };
+    }
+  } else if (typeof error === 'string') {
+    response.error = error;
+    response.errorCode = 'UNKNOWN_ERROR';
+  } else {
+    response.error = String(error) || 'Unknown error occurred';
+    response.errorCode = 'UNKNOWN_ERROR';
+    try {
+      response.errorDetails = { originalError: error };
+    } catch {
+      // Ignore if error object is not sealizable
+    }
   }
-  return createError(error instanceof Error ? error.message : 'Unknown error');
+
+  return response;
 }

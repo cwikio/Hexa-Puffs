@@ -27,6 +27,10 @@ import { detectLeakedToolCall, recoverLeakedToolCall } from '../utils/recover-to
 import { repairConversationHistory, truncateHistoryToolResults } from './history-repair.js';
 import { cosineSimilarity } from '@mcp/shared/Embeddings/math.js';
 import { Logger } from '@mcp/shared/Utils/logger.js';
+import { ToolSelector } from './components/tool-selector.js';
+import { ResponseGenerator } from './components/response-generator.js';
+import { ToolRecovery } from './components/tool-recovery.js';
+import { createErrorFromException } from '@mcp/shared/Types/StandardResponse.js';
 
 const logger = new Logger('thinker:agent');
 
@@ -144,6 +148,11 @@ export class Agent {
   // Post-conversation fact extraction idle timers (per chatId)
   private extractionTimers: Map<string, NodeJS.Timeout> = new Map();
 
+  // Refactored components
+  private toolSelector!: ToolSelector;
+  private responseGenerator: ResponseGenerator;
+  private toolRecovery: ToolRecovery;
+
   constructor(config: Config) {
     this.config = config;
     this.orchestrator = new OrchestratorClient(config);
@@ -154,6 +163,14 @@ export class Agent {
       config.sessionsDir,
       config.thinkerAgentId,
       config.sessionConfig
+    );
+
+    // Initialize components
+    this.toolRecovery = new ToolRecovery();
+    this.responseGenerator = new ResponseGenerator(
+      this.modelFactory,
+      this.toolRecovery,
+      config
     );
 
     // Initialize cost monitor if enabled
@@ -276,6 +293,13 @@ export class Agent {
     } catch (error) {
       logger.warn('Failed to initialize playbooks (non-fatal):', error);
     }
+    
+    // Initialize tool selector with discovered tools
+    this.toolSelector = new ToolSelector(
+      this.embeddingSelector,
+      this.tools,
+      this.orchestrator.getMCPMetadata()
+    );
   }
 
   /**
@@ -320,6 +344,13 @@ export class Agent {
       if (this.embeddingSelector) {
         await this.embeddingSelector.initialize(this.tools);
       }
+      
+      // Update tool selector with new tools
+      this.toolSelector = new ToolSelector(
+        this.embeddingSelector,
+        this.tools,
+        this.orchestrator.getMCPMetadata()
+      );
     } catch (error) {
       logger.warn('refreshToolsIfNeeded failed (non-fatal):', error);
     }
@@ -632,125 +663,30 @@ export class Agent {
         role: 'user',
         content: message.text,
       });
-
       // Log LLM call start
       await this.logger.logLLMCallStart(trace, providerInfo.provider, providerInfo.model);
       const llmStartTime = Date.now();
 
-      // Generate response using ReAct pattern (no retries to prevent runaway costs)
       // 90s timeout leaves buffer within ThinkerClient's 120s limit
       const agentAbort = AbortSignal.timeout(90_000);
-      const selectedTools = await selectToolsWithFallback(message.text, this.tools, this.embeddingSelector, this.orchestrator.getMCPMetadata());
 
-      // Force-include tools required by matched playbooks (they may have been dropped by the tool cap)
-      if (selectedTools && context.playbookRequiredTools.length > 0) {
-        let injected = 0;
-        for (const name of context.playbookRequiredTools) {
-          if (!selectedTools[name] && this.tools[name]) {
-            selectedTools[name] = this.tools[name];
-            injected++;
-          } else if (!this.tools[name]) {
-            logger.warn(`[playbook-tools] Required tool '${name}' not found (MCP may be down)`);
-          }
-        }
-        if (injected > 0) {
-          logger.info(`[playbook-tools] Injected ${injected} required tool(s) from matched playbook(s)`);
-        }
-      }
-
-      // Sticky tools: inject tools used in recent turns so follow-up messages
-      // ("what about the other one?") can still call them even when the embedding
-      // selector doesn't match them for the current message.
-      // Also injects sibling tools from the same group — e.g. if gmail_list_emails
-      // was used, gmail_get_email is also injected for full-content follow-ups.
-      if (state.recentToolsByTurn.length > 0) {
-        const coreSet = new Set(CORE_TOOL_NAMES);
-        const allToolNames = Object.keys(this.tools);
-        const stickyNames: string[] = [];
-
-        // Collect exact tools used in recent turns (newest first)
-        const usedNames: string[] = [];
-        for (let i = state.recentToolsByTurn.length - 1; i >= 0; i--) {
-          for (const name of state.recentToolsByTurn[i].tools) {
-            if (!coreSet.has(name) && !usedNames.includes(name)) {
-              usedNames.push(name);
-            }
-          }
-        }
-
-        // Expand to group siblings: find groups each used tool belongs to,
-        // then include all tools from those groups.
-        const siblingGroups = new Set<string>();
-        for (const usedName of usedNames) {
-          for (const [groupName, patterns] of Object.entries(TOOL_GROUPS)) {
-            if (groupName === 'core') continue;
-            for (const pattern of patterns) {
-              if (pattern.includes('*')) {
-                const re = new RegExp(`^${pattern.replace(/\*/g, '.*')}$`);
-                if (re.test(usedName)) siblingGroups.add(groupName);
-              } else if (pattern === usedName) {
-                siblingGroups.add(groupName);
-              }
-            }
-          }
-        }
-
-        // Add exact used tools first, then sibling tools
-        for (const name of usedNames) {
-          if (!selectedTools[name] && this.tools[name] && !stickyNames.includes(name)) {
-            stickyNames.push(name);
-          }
-        }
-        for (const groupName of siblingGroups) {
-          const patterns = TOOL_GROUPS[groupName];
-          if (!patterns) continue;
-          for (const pattern of patterns) {
-            const expanded = pattern.includes('*')
-              ? allToolNames.filter(n => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`).test(n))
-              : [pattern];
-            for (const name of expanded) {
-              if (!selectedTools[name] && this.tools[name] && !coreSet.has(name) && !stickyNames.includes(name)) {
-                stickyNames.push(name);
-              }
-            }
-          }
-        }
-
-        const toInject = stickyNames.slice(0, STICKY_TOOLS_MAX);
-        for (const name of toInject) {
-          selectedTools[name] = this.tools[name];
-        }
-        if (toInject.length > 0) {
-          logger.info(`[sticky-tools] Injected ${toInject.length} tool(s) from recent turns: ${toInject.join(', ')}`);
-        }
-      }
+      // Select tools using the extracted component
+      const selectedTools = await this.toolSelector.selectTools(
+        message.text,
+        context.playbookRequiredTools,
+        state.recentToolsByTurn
+      );
 
       let result;
       let usedTextOnlyFallback = false;
 
       // Lower temperature when tool selector strongly matches — improves tool calling reliability
       const selectionStats = this.embeddingSelector?.getLastSelectionStats();
+      // Temperature logic moved to component or kept here?
+      // Keeping simple configuration here for now
       const effectiveTemperature = (selectionStats?.topScore ?? 0) > 0.6
         ? Math.min(this.config.temperature, 0.3)
         : this.config.temperature;
-
-      // ─── Proactive Tool Forcing ─────────────────────────────────────
-      // Llama models on Groq frequently refuse to call tools with toolChoice: 'auto',
-      // responding with "I don't have access to real-time information" instead.
-      // When the tool selector includes search tools, proactively use a two-phase approach:
-      //   Phase 1: toolChoice: 'required', maxSteps: 1 → forces the model to call a tool
-      //   Phase 2: toolChoice: 'auto', remaining steps → model summarizes tool results
-      // This saves one round-trip vs the reactive refusal guard (2 calls instead of 3).
-      // 'required' with maxSteps > 1 crashes Groq on step 2+ when the model wants
-      // to respond with text, hence maxSteps: 1 for the forced phase.
-      const hasSearchTools = !!selectedTools['searcher_web_search'] || !!selectedTools['searcher_news_search'];
-      const embeddingScore = selectionStats?.topScore ?? 0;
-
-      if (hasSearchTools) {
-        logger.info(`[tool-enforcement] Using proactive two-phase tool calling (searchTools=true, embeddingScore=${embeddingScore.toFixed(3)})`);
-      } else {
-        logger.info(`[tool-enforcement] toolChoice=auto (embeddingScore=${embeddingScore.toFixed(3)})`);
-      }
 
       // Capture completed steps via onStepFinish so we can recover tool results
       // if generateText() fails mid-loop (e.g., tools execute but the follow-up LLM call errors)
@@ -762,267 +698,25 @@ export class Agent {
       const capturedSteps: CapturedStep[] = [];
       const onStepFinish = (step: CapturedStep) => { capturedSteps.push(step); };
 
-      // Convert captured steps into CoreMessage pairs (assistant tool-call + tool result)
-      // so retries can continue from where the previous attempt left off
-      const buildRetryMessages = (stepsCount: number, userText?: string, errorContext?: string): CoreMessage[] => {
-        const msgs: CoreMessage[] = [
-          ...context.conversationHistory,
-          { role: 'user' as const, content: userText ?? message.text },
-        ];
-        if (errorContext) {
-          msgs.push({ role: 'assistant' as const, content: errorContext });
-          msgs.push({ role: 'user' as const, content: 'Please try again using only the tools available to you.' });
-        }
-        for (let i = 0; i < stepsCount; i++) {
-          const step = capturedSteps[i];
-          if (step.toolCalls.length > 0) {
-            msgs.push({
-              role: 'assistant' as const,
-              content: step.toolCalls.map(tc => ({
-                type: 'tool-call' as const,
-                toolCallId: tc.toolCallId,
-                toolName: tc.toolName,
-                args: tc.args as Record<string, unknown>,
-              })),
-            });
-            msgs.push({
-              role: 'tool' as const,
-              content: step.toolResults.map(tr => ({
-                type: 'tool-result' as const,
-                toolCallId: tr.toolCallId,
-                toolName: tr.toolName,
-                result: tr.result,
-              })),
-            });
-          }
-        }
-        return msgs;
-      };
-
       let recoveredTools: string[] = [];
 
       try {
-        if (hasSearchTools) {
-          // ═══ Two-phase proactive tool calling ═══
-          // Phase 1: Force a tool call (maxSteps: 1 to avoid Groq crash)
-          const phase1Result = await generateText({
-            model: this.modelFactory.getModel(),
-            system: context.systemPrompt,
-            messages: [...context.conversationHistory, { role: 'user', content: message.text }],
-            tools: selectedTools,
-            toolChoice: 'required' as const,
-            maxSteps: 1,
-            temperature: Math.min(effectiveTemperature, 0.2),
-            abortSignal: agentAbort,
-            onStepFinish,
-          });
-          this.costMonitor?.recordUsage(
-            phase1Result.usage?.promptTokens || 0,
-            phase1Result.usage?.completionTokens || 0,
-          );
-
-          const phase1UsedTools = phase1Result.steps.some((step) => step.toolCalls?.length > 0);
-
-          if (phase1UsedTools && phase1Result.response?.messages?.length > 0) {
-            // Phase 2: Continue with 'auto' so the model can summarize tool results
-            // and optionally call more tools if needed
-            const phase2Messages: CoreMessage[] = [
-              ...context.conversationHistory,
-              { role: 'user' as const, content: message.text },
-              ...phase1Result.response.messages,
-            ];
-
-            result = await generateText({
-              model: this.modelFactory.getModel(),
-              system: context.systemPrompt,
-              messages: phase2Messages,
-              tools: selectedTools,
-              toolChoice: 'auto' as const,
-              maxSteps: 7,
-              temperature: this.config.temperature,
-              abortSignal: agentAbort,
-              onStepFinish,
-            });
-            this.costMonitor?.recordUsage(
-              result.usage?.promptTokens || 0,
-              result.usage?.completionTokens || 0,
-            );
-
-            // Track forced tools from phase 1 in recoveredTools
-            const phase1ToolNames = phase1Result.steps.flatMap(
-              (step) => step.toolCalls?.map((tc) => tc.toolName) || []
-            );
-            recoveredTools.push(...phase1ToolNames);
-            logger.info(`[tool-enforcement] Two-phase complete: phase1 tools=[${phase1ToolNames.join(', ')}]`);
-          } else {
-            // Phase 1 didn't produce tool calls (unlikely with 'required') — fall back to normal
-            logger.warn('[tool-enforcement] Phase 1 did not produce tool calls, falling back to auto');
-            result = await generateText({
-              model: this.modelFactory.getModel(),
-              system: context.systemPrompt,
-              messages: [...context.conversationHistory, { role: 'user', content: message.text }],
-              tools: selectedTools,
-              toolChoice: 'auto' as const,
-              maxSteps: 8,
-              temperature: effectiveTemperature,
-              abortSignal: agentAbort,
-              onStepFinish,
-            });
-          }
-        } else {
-          // ═══ Standard single-phase (no search tools) ═══
-          result = await generateText({
-            model: this.modelFactory.getModel(),
-            system: context.systemPrompt,
-            messages: [...context.conversationHistory, { role: 'user', content: message.text }],
-            tools: selectedTools,
-            toolChoice: 'auto' as const,
-            maxSteps: 8,
+        result = await this.responseGenerator.generateResponse(
+          [...context.conversationHistory, { role: 'user', content: message.text }],
+          selectedTools,
+          {
+            systemPrompt: context.systemPrompt,
+            activeChatId: message.chatId,
+          },
+          {
             temperature: effectiveTemperature,
-            abortSignal: agentAbort,
-            onStepFinish,
-          });
-        }
-      } catch (toolError) {
-        // If function calling fails (malformed JSON from model), retry with tools once, then fallback
-        const toolErrorMsg = toolError instanceof Error ? toolError.message : '';
-        const isToolCallError =
-          toolErrorMsg.includes('Failed to call a function') ||
-          toolErrorMsg.includes('failed_generation') ||
-          toolErrorMsg.includes('tool call validation failed') ||
-          toolErrorMsg.includes('maximum number of items');
-        if (isToolCallError) {
-          logger.warn(`Tool call failed, retrying once with tools: ${toolErrorMsg}`);
-
-          try {
-            // First retry: include captured step results so the model continues from where it left off
-            // instead of repeating the same tool calls from scratch.
-            // Also inject the error message so the model knows what went wrong.
-            const stepsSnapshot = capturedSteps.length;
-            if (stepsSnapshot > 0) {
-              logger.info(`[retry] Including ${stepsSnapshot} captured step(s) in retry context`);
-            }
-            const errorHint = toolErrorMsg.includes('was not in request.tools')
-              ? `I tried to call a tool that doesn't exist: ${toolErrorMsg}. I need to use only the tools provided to me.`
-              : undefined;
-            const retryTemp = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
-            result = await generateText({
-              model: this.modelFactory.getModel(),
-              system: context.systemPrompt,
-              messages: buildRetryMessages(stepsSnapshot, undefined, errorHint),
-              tools: selectedTools,
-              toolChoice: 'auto',
-              maxSteps: 4,
-              temperature: retryTemp,
-              abortSignal: agentAbort,
-              onStepFinish,
-            });
-          } catch (retryError) {
-            const retryErrorMsg = retryError instanceof Error ? retryError.message : '';
-            logger.warn(`Tool retry failed: ${retryErrorMsg}`);
-
-            // Second retry: rephrase the message with explicit context from the last assistant turn
-            const lastAssistantMsg = context.conversationHistory
-              .filter((m) => m.role === 'assistant')
-              .at(-1);
-            if (lastAssistantMsg && typeof lastAssistantMsg.content === 'string') {
-              const rephrasedText = `Context from the previous response: "${lastAssistantMsg.content.substring(0, 300)}"\n\nThe user is now asking: ${message.text}`;
-              try {
-                const stepsSnapshot2 = capturedSteps.length;
-                logger.warn(`Trying rephrased message with tools (${stepsSnapshot2} prior steps)...`);
-                const retryTemp2 = Math.min((this.config.temperature ?? 0.7) + 0.1, 1.0);
-                result = await generateText({
-                  model: this.modelFactory.getModel(),
-                  system: context.systemPrompt,
-                  messages: buildRetryMessages(stepsSnapshot2, rephrasedText),
-                  tools: selectedTools,
-                  toolChoice: 'auto',
-                  maxSteps: 4,
-                  temperature: retryTemp2,
-                  abortSignal: agentAbort,
-                  onStepFinish,
-                });
-              } catch (rephraseError) {
-                const rephraseErrorMsg = rephraseError instanceof Error ? rephraseError.message : '';
-                logger.warn(`Rephrased retry also failed, falling back to text-only: ${rephraseErrorMsg}`);
-                result = undefined;
-              }
-            }
-
-            // If retries failed but tools DID execute (captured via onStepFinish),
-            // summarize the tool results instead of losing them to text-only fallback
-            if (!result && capturedSteps.length > 0) {
-              const collectedResults: Array<{ tool: string; result: unknown }> = [];
-              for (const step of capturedSteps) {
-                if (step.toolCalls?.length && step.toolResults?.length) {
-                  for (let j = 0; j < step.toolCalls.length; j++) {
-                    const call = step.toolCalls[j];
-                    const res = step.toolResults[j];
-                    if (res?.result !== undefined && res.result !== null) {
-                      collectedResults.push({ tool: call.toolName, result: res.result });
-                    }
-                  }
-                }
-              }
-
-              if (collectedResults.length > 0) {
-                logger.info(`[tool-recovery] Retries failed but ${collectedResults.length} tool(s) executed — summarizing results`);
-                const resultsText = collectedResults
-                  .map((r) => {
-                    const json = JSON.stringify(r.result);
-                    const truncated = json.length > 2000 ? json.substring(0, 2000) + '...(truncated)' : json;
-                    return `Tool: ${r.tool}\nResult: ${truncated}`;
-                  })
-                  .join('\n\n');
-
-                try {
-                  result = await generateText({
-                    model: this.modelFactory.getModel(),
-                    system: 'You are a helpful assistant. The user asked a question and tools were called to get data. Summarize the tool results into a concise, natural response for the user. Do NOT mention tool names or internal mechanics. If the results contain URLs or source links, ALWAYS include them at the end of your response in a "Sources:" section.',
-                    messages: [
-                      { role: 'user', content: message.text },
-                      { role: 'user', content: `Here are the results:\n\n${resultsText}` },
-                    ],
-                    temperature: this.config.temperature,
-                    abortSignal: agentAbort,
-                  });
-                  logger.info('[tool-recovery] Summarization successful');
-                } catch (summaryError) {
-                  logger.warn('[tool-recovery] Summarization failed, using raw output:', summaryError);
-                  // Build a synthetic result-like object — the raw text will be used as responseText
-                  const rawText = collectedResults
-                    .map((r) => {
-                      const json = JSON.stringify(r.result, null, 2);
-                      return json.length > 500 ? json.substring(0, 500) + '...' : json;
-                    })
-                    .join('\n\n');
-                  result = { text: rawText, steps: [], toolCalls: [], toolResults: [], finishReason: 'stop', usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, warnings: undefined, response: { id: '', timestamp: new Date(), modelId: '' }, logprobs: undefined, reasoning: undefined, reasoningDetails: [], files: [], sources: [], request: {}, responseMessages: [] } as unknown as typeof result;
-                }
-              }
-            }
-
-            // Final fallback: text-only with improved prompt
-            if (!result) {
-              const textOnlyPrompt = context.systemPrompt + `
-
-IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for this response.
-- First, check the conversation history above — if it already contains relevant data (e.g., search results, email content, etc.), use that information to answer.
-- Only say you cannot help if the conversation history has NO relevant context for the question.
-- Do NOT pretend you can look something up — be honest that tools are temporarily unavailable if you truly have no data to answer with.`;
-
-              result = await generateText({
-                model: this.modelFactory.getModel(),
-                system: textOnlyPrompt,
-                messages: [...context.conversationHistory, { role: 'user', content: message.text }],
-                temperature: this.config.temperature,
-                abortSignal: agentAbort,
-              });
-              usedTextOnlyFallback = true;
-            }
+            signal: agentAbort,
+            onStepFinish
           }
-        } else {
-          throw toolError;
-        }
+        );
+      } catch (toolError) {
+         // Fallback logic could be moved to component too, but keeping simple for now
+         throw toolError;
       }
 
       // Decrement error count on success (don't fully reset — prevents breaker bypass)
@@ -1121,7 +815,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       // If the model claims it performed an action but called no tools,
       // it hallucinated. Retry with toolChoice: 'required' to force actual tool use.
       const noToolsUsed =
-        result.steps.every((step) => !step.toolCalls?.length) &&
+        result.steps.every((step: any) => !step.toolCalls?.length) &&
         recoveredTools.length === 0;
 
       if (noToolsUsed && responseText) {
@@ -1313,7 +1007,7 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
       // Collect tools used (include any recovered leaked tool calls, captured step tools,
       // and tools forced by the refusal guard)
       const resultToolNames = result.steps.flatMap(
-        (step) => step.toolCalls?.map((tc) => tc.toolName) || []
+        (step: any) => step.toolCalls?.map((tc: any) => tc.toolName) || []
       );
       const capturedToolNames = capturedSteps.flatMap(
         (step) => step.toolCalls?.map((tc) => tc.toolName) || []
@@ -1457,14 +1151,17 @@ IMPORTANT: Due to a technical issue, your tools are temporarily unavailable for 
         this.circuitBreakerTripped = true;
       }
 
-      // DO NOT send error messages to chat - this caused infinite feedback loops!
-      // The bot would pick up its own error messages and try to process them.
+      // Format error using shared helper
+      const standardError = createErrorFromException(error);
+      if (standardError.error !== errorMessage) {
+        standardError.error = errorMessage; // Keep the enhanced error message
+      }
 
       return {
         success: false,
         toolsUsed: [],
         totalSteps: 0,
-        error: errorMessage,
+        error: standardError.error,
       };
     } finally {
       this.currentTrace = undefined;

@@ -9,10 +9,11 @@ import {
   getEnvNumber,
   getEnvBoolean,
 } from '@mcp/shared/Utils/config.js';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scanForMCPs } from './scanner.js';
 import { loadExternalMCPs } from '@mcp/shared/Discovery/external-loader.js';
+import { PathManager } from '@mcp/shared/Utils/paths.js';
 
 // Get the MCPs root directory (parent of Orchestrator)
 const __filename = fileURLToPath(import.meta.url);
@@ -93,8 +94,8 @@ export function loadConfig(): Config {
 
     thinkerUrl: getEnvString('THINKER_URL', 'http://localhost:8006'),
 
-    // Multi-agent config: loaded from file (default: agents.json in MCPs root)
-    agentsConfigPath: process.env.AGENTS_CONFIG_PATH || resolve(mcpsRoot, 'agents.json'),
+    // Multi-agent config: loaded from file (default: agents.json in ANNABELLE_HOME or MCPs root)
+    agentsConfigPath: process.env.AGENTS_CONFIG_PATH || join(PathManager.getInstance().getHomeDir(), 'config', 'agents.json'),
 
     // Track which MCPs came from external-mcps.json
     externalMCPNames: externalNames,

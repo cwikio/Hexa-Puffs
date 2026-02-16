@@ -18,6 +18,9 @@ export const CostControlSchema = z.object({
   minimumBaselineTokens: z.number().int().min(100).default(1000),
 });
 
+import { PathManager } from '@mcp/shared/Utils/paths.js';
+const paths = PathManager.getInstance();
+
 /**
  * Log level options
  */
@@ -96,10 +99,10 @@ export const ConfigSchema = z.object({
   defaultSystemPromptPath: z.string().optional(),
 
   // Directory containing per-agent persona files (~/.annabelle/agents/{agentId}/instructions.md)
-  personaDir: z.string().default('~/.annabelle/agents'),
+  personaDir: z.string().default(paths.getAgentsDir()),
 
   // Directory containing file-based skills (~/.annabelle/skills/{skill-name}/SKILL.md)
-  skillsDir: z.string().default('~/.annabelle/skills'),
+  skillsDir: z.string().default(paths.getSkillsDir()),
 
   // Proactive tasks
   proactiveTasksEnabled: z.boolean().default(true),
@@ -112,10 +115,10 @@ export const ConfigSchema = z.object({
 
   // Logging
   logLevel: LogLevelSchema.default('info'),
-  traceLogPath: z.string().default('~/.annabelle/logs/traces.jsonl'),
+  traceLogPath: z.string().default(paths.resolvePath('~/.annabelle/logs/traces.jsonl')),
 
   // Session persistence
-  sessionsDir: z.string().default('~/.annabelle/sessions'),
+  sessionsDir: z.string().default(paths.getSessionsDir()),
   sessionConfig: SessionConfigSchema.default({}),
 
   // Compaction model — dedicated cheap model for session summarization
@@ -129,7 +132,7 @@ export const ConfigSchema = z.object({
   factExtractionPromptPath: z.string().optional(),
 
   // Embedding cache directory (for persisting tool embeddings across restarts)
-  embeddingCacheDir: z.string().default('~/.annabelle/data'),
+  embeddingCacheDir: z.string().default(paths.getDataDir()),
 
   // Cost controls (optional, configured via Orchestrator env vars)
   costControl: CostControlSchema.optional(),
@@ -184,18 +187,18 @@ export function loadConfig(): Config {
     thinkerAgentId: process.env.THINKER_AGENT_ID || 'thinker',
     systemPromptPath: process.env.THINKER_SYSTEM_PROMPT_PATH || undefined,
     defaultSystemPromptPath: process.env.THINKER_DEFAULT_SYSTEM_PROMPT_PATH || undefined,
-    personaDir: process.env.THINKER_PERSONA_DIR || '~/.annabelle/agents',
-    skillsDir: process.env.THINKER_SKILLS_DIR || '~/.annabelle/skills',
+    personaDir: process.env.THINKER_PERSONA_DIR || paths.getAgentsDir(),
+    skillsDir: process.env.THINKER_SKILLS_DIR || paths.getSkillsDir(),
     proactiveTasksEnabled: parseBoolean(process.env.PROACTIVE_TASKS_ENABLED, true),
     defaultNotifyChatId: process.env.DEFAULT_NOTIFY_CHAT_ID || undefined,
     userTimezone: process.env.USER_TIMEZONE || 'America/New_York',
     userName: process.env.USER_NAME || undefined,
     userEmail: process.env.USER_EMAIL || undefined,
     logLevel: process.env.LOG_LEVEL || 'info',
-    traceLogPath: process.env.TRACE_LOG_PATH || '~/.annabelle/logs/traces.jsonl',
+    traceLogPath: process.env.TRACE_LOG_PATH || paths.resolvePath('~/.annabelle/logs/traces.jsonl'),
 
     // Session persistence
-    sessionsDir: process.env.THINKER_SESSIONS_DIR || '~/.annabelle/sessions',
+    sessionsDir: process.env.THINKER_SESSIONS_DIR || paths.getSessionsDir(),
     sessionConfig: {
       enabled: parseBoolean(process.env.THINKER_SESSION_ENABLED, true),
       compactionEnabled: parseBoolean(process.env.THINKER_SESSION_COMPACTION_ENABLED, true),
@@ -222,7 +225,7 @@ export function loadConfig(): Config {
     factExtractionPromptPath: process.env.THINKER_FACT_EXTRACTION_PROMPT_PATH || undefined,
 
     // Embedding cache directory
-    embeddingCacheDir: process.env.EMBEDDING_CACHE_DIR || '~/.annabelle/data',
+    embeddingCacheDir: process.env.EMBEDDING_CACHE_DIR || paths.getDataDir(),
 
     // Cost controls — only built when explicitly enabled via env var
     ...(parseBoolean(process.env.THINKER_COST_CONTROL_ENABLED, false) ? {

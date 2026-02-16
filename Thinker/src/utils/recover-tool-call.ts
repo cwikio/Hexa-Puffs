@@ -59,6 +59,7 @@ interface RecoveryResult {
   success: boolean;
   result?: unknown;
   error?: string;
+  toolCallId?: string;
 }
 
 /**
@@ -76,12 +77,13 @@ export async function recoverLeakedToolCall(
   }
 
   try {
+    const toolCallId = `recovery-${Date.now()}`;
     const result = await tool.execute(parameters, {
-      toolCallId: `recovery-${Date.now()}`,
+      toolCallId,
       messages: [],
     });
     logger.info(`Tool "${toolName}" executed successfully`);
-    return { success: true, result };
+    return { success: true, result, toolCallId };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     logger.error(`Tool "${toolName}" execution failed: ${msg}`);

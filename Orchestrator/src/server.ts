@@ -22,6 +22,7 @@ import {
   handleGetToolCatalog,
   type StandardResponse,
 } from './tools/index.js';
+import { createErrorFromException } from '@mcp/shared/Types/StandardResponse.js';
 
 // Custom tools that are not passthrough (orchestrator-specific)
 const customToolDefinitions = [statusToolDefinition, ...jobToolDefinitions, spawnSubagentToolDefinition, healthCheckToolDefinition, getToolCatalogToolDefinition];
@@ -246,14 +247,12 @@ export function createServerWithRouter(toolRouter: ToolRouter): Server {
       }
 
       logger.error('Tool call failed', { name, error });
+      const errorResponse = createErrorFromException(error);
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              success: false,
-              error: error instanceof Error ? error.message : 'Unknown error',
-            }),
+            text: JSON.stringify(errorResponse),
           },
         ],
         isError: true,
