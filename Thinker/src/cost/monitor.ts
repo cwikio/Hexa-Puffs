@@ -210,9 +210,10 @@ export class CostMonitor {
       return null;
     }
 
-    if (baselineRate > 0 && shortRate > baselineRate * this.config.spikeMultiplier) {
+    const effectiveBaseline = Math.max(baselineRate, this.config.minimumBaselineRate);
+    if (effectiveBaseline > 0 && shortRate > effectiveBaseline * this.config.spikeMultiplier) {
       return {
-        reason: `Token spike detected: ${Math.round(shortRate).toLocaleString()} tokens/min in the last ${this.config.shortWindowMinutes} min vs ${Math.round(baselineRate).toLocaleString()} tokens/min baseline (${this.config.spikeMultiplier}x threshold)`,
+        reason: `Token spike detected: ${Math.round(shortRate).toLocaleString()} tokens/min in the last ${this.config.shortWindowMinutes} min vs ${Math.round(effectiveBaseline).toLocaleString()} tokens/min baseline (${this.config.spikeMultiplier}x threshold)`,
       };
     }
 

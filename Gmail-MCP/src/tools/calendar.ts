@@ -56,7 +56,7 @@ export async function handleListCalendars(
 export const listEventsTool = {
   name: "list_events",
   description:
-    "List calendar events within a date range. Returns event summaries with id, title, times, and attendeeCount (number only — for full attendee names/emails/RSVP, call get_event with the event id). Defaults to primary calendar. Use ISO 8601 for time_min/time_max.",
+    "List calendar events within a date range. Returns event summaries with id, title, times, organizer, and attendeeCount. For full attendee names/emails/RSVP details, call get_event with the event id. Defaults to primary calendar. Use ISO 8601 for time_min/time_max.",
   inputSchema: {
     type: "object" as const,
     properties: {

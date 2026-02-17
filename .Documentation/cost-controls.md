@@ -45,9 +45,10 @@ Cost controls are configured per-agent in `agents.json`:
       "costControls": {
         "enabled": true,
         "shortWindowMinutes": 2,
-        "spikeMultiplier": 3.0,
+        "spikeMultiplier": 6.0,
         "hardCapTokensPerHour": 250000,
         "minimumBaselineTokens": 1000,
+        "minimumBaselineRate": 10000,
         "notifyChatId": "8304042211"
       }
     }
@@ -64,6 +65,7 @@ Cost controls are configured per-agent in `agents.json`:
 | `spikeMultiplier` | number | `3.0` | 1.5–10 | Spike threshold. Short-window rate must exceed baseline rate multiplied by this value. |
 | `hardCapTokensPerHour` | integer | `500000` | min 10,000 | Absolute safety cap — total tokens in any 60-minute window. |
 | `minimumBaselineTokens` | integer | `1000` | min 100 | Minimum total tokens in the baseline window before spike detection activates. Prevents false positives during cold start. |
+| `minimumBaselineRate` | integer | `10000` | min 0 | Minimum baseline rate (tokens/min) for spike comparison. When the actual baseline rate is below this floor, the floor is used instead. The effective spike threshold is always at least `minimumBaselineRate × spikeMultiplier`. Set to 0 to disable. |
 | `notifyChannel` | string | _(optional)_ | — | Channel for cost alert notifications. Falls back to originating message channel. |
 | `notifyChatId` | string | _(optional)_ | — | Telegram chat ID for cost alert notifications. Falls back to the chat that triggered the pause. |
 
@@ -80,6 +82,7 @@ Orchestrator translates the config into env vars when spawning Thinker (`agent-m
 | `spikeMultiplier` | `THINKER_COST_SPIKE_MULTIPLIER` |
 | `hardCapTokensPerHour` | `THINKER_COST_HARD_CAP_PER_HOUR` |
 | `minimumBaselineTokens` | `THINKER_COST_MIN_BASELINE_TOKENS` |
+| `minimumBaselineRate` | `THINKER_COST_MIN_BASELINE_RATE` |
 
 ## Algorithm
 
@@ -126,7 +129,8 @@ The hard cap is a simple absolute limit. It triggers regardless of baseline data
 IF baselineTokens >= minimumBaselineTokens:
   shortRate = shortWindowTokens / shortWindowMinutes
   baselineRate = baselineTokens / activeBaselineBuckets
-  IF shortRate > baselineRate × spikeMultiplier  →  PAUSE
+  effectiveBaseline = max(baselineRate, minimumBaselineRate)
+  IF shortRate > effectiveBaseline × spikeMultiplier  →  PAUSE
 ```
 
 Key details:
@@ -134,9 +138,10 @@ Key details:
 - **Short window** = last N minutes (configured by `shortWindowMinutes`)
 - **Baseline** = everything before the short window in the 60-minute history
 - **Active buckets only** — baseline rate is averaged over buckets that have at least 1 LLM call (`callCount > 0`). This prevents empty/idle buckets from diluting the rate and causing false spikes during ramp-up or intermittent usage.
+- **Baseline rate floor** — the effective baseline used for spike comparison is `max(actualBaselineRate, minimumBaselineRate)`. This prevents false spikes when the baseline is low but nonzero (e.g., a few small calls set a 500 tok/min baseline, then a normal tool-heavy call looks like a spike). The effective spike threshold is always at least `minimumBaselineRate × spikeMultiplier`.
 - **Cold-start protection** — spike detection is skipped entirely until the baseline accumulates `minimumBaselineTokens`. During cold start, only the hard cap provides protection.
 
-**Example:** With `spikeMultiplier: 3.0` and `shortWindowMinutes: 2`, if the baseline rate is 100 tokens/min and the last 2 minutes average 350 tokens/min, that's a 3.5x spike — exceeds the 3.0x threshold — pause triggered.
+**Example:** With `spikeMultiplier: 6.0`, `minimumBaselineRate: 10000`, and `shortWindowMinutes: 2`: the minimum spike threshold is `10,000 × 6 = 60,000 tok/min`. A burst of 50,000 tok/min during a complex multi-tool task won't trigger a pause, but a genuine runaway loop at 120,000+ tok/min will.
 
 ### Why Active-Bucket Averaging?
 
@@ -267,44 +272,48 @@ Source: `Thinker/src/index.ts:192-214`
 ```json
 {
   "shortWindowMinutes": 1,
-  "spikeMultiplier": 2.0,
+  "spikeMultiplier": 3.0,
   "hardCapTokensPerHour": 100000,
-  "minimumBaselineTokens": 500
+  "minimumBaselineTokens": 500,
+  "minimumBaselineRate": 5000
 }
 ```
 
-Catches smaller spikes faster, but may produce false positives during bursty workloads.
+Catches spikes faster (min threshold: 15,000 tok/min), but may produce false positives during bursty workloads.
 
-### Balanced (default-like)
+### Balanced (Groq agents)
 
 ```json
 {
   "shortWindowMinutes": 2,
-  "spikeMultiplier": 3.0,
+  "spikeMultiplier": 6.0,
   "hardCapTokensPerHour": 250000,
-  "minimumBaselineTokens": 1000
+  "minimumBaselineTokens": 1000,
+  "minimumBaselineRate": 10000
 }
 ```
 
-Good for general use. Allows normal variation while catching genuine runaway consumption.
+Good for Groq-backed agents with tool-heavy workloads. Min spike threshold: 60,000 tok/min — tolerates normal multi-tool bursts while catching genuine runaway loops. Hard cap at 250K/hr provides the absolute ceiling.
 
 ### Relaxed (high-throughput agents)
 
 ```json
 {
   "shortWindowMinutes": 5,
-  "spikeMultiplier": 5.0,
+  "spikeMultiplier": 6.0,
   "hardCapTokensPerHour": 500000,
-  "minimumBaselineTokens": 5000
+  "minimumBaselineTokens": 5000,
+  "minimumBaselineRate": 15000
 }
 ```
 
-Wider windows and higher thresholds for agents that handle large contexts or many concurrent conversations.
+Wider windows and higher thresholds for agents that handle large contexts or many concurrent conversations. Min spike threshold: 90,000 tok/min.
 
 ### Key Relationships
 
 - **Lower `shortWindowMinutes`** = faster detection but more noise from brief bursts
 - **Higher `spikeMultiplier`** = more tolerant of variation, only catches extreme spikes
+- **Higher `minimumBaselineRate`** = prevents false spikes when baseline is low; effective min threshold = `minimumBaselineRate × spikeMultiplier`
 - **Lower `minimumBaselineTokens`** = spike detection activates sooner after cold start, but baseline may be less reliable
 - **Hard cap** is your ultimate safety net — set it to the absolute maximum you'd tolerate in any 60-minute period regardless of pattern
 
@@ -316,11 +325,13 @@ Wider windows and higher thresholds for agents that handle large contexts or man
 
 3. **Dual thresholds** — Spike detection handles anomalies relative to normal patterns. Hard cap provides an absolute safety net that works even during cold start.
 
-4. **Orchestrator-level blocking** — Once paused, messages are rejected at the Orchestrator before they reach Thinker, preventing any further token consumption.
+4. **Baseline rate floor** — The `minimumBaselineRate` prevents false spikes when the baseline period has low/sparse activity. Without it, `3× of 500 tok/min = 1,500 tok/min` — any normal LLM call would trigger a spike. With a floor of 10,000 and multiplier of 6, the minimum spike threshold is 60,000 tok/min regardless of baseline.
 
-5. **Configurable notification destination** — Alerts can go to a dedicated admin chat rather than the user who happened to trigger the spike.
+5. **Orchestrator-level blocking** — Once paused, messages are rejected at the Orchestrator before they reach Thinker, preventing any further token consumption.
 
-6. **Explicit resume required** — The agent stays paused until a human explicitly resumes it via REST API. No auto-recovery, no timeout. This is intentional for safety.
+6. **Configurable notification destination** — Alerts can go to a dedicated admin chat rather than the user who happened to trigger the spike.
+
+7. **Explicit resume required** — The agent stays paused until a human explicitly resumes it via REST API. No auto-recovery, no timeout. This is intentional for safety.
 
 ## File Reference
 
@@ -331,9 +342,9 @@ Wider windows and higher thresholds for agents that handle large contexts or man
 | Core algorithm | `Thinker/src/cost/monitor.ts` | Full file (238 lines) |
 | Token recording | `Thinker/src/agent/loop.ts` | recordUsage calls, pause checks |
 | Thinker HTTP endpoints | `Thinker/src/index.ts` | 192–214 |
-| Env var injection | `Orchestrator/src/agents/agent-manager.ts` | 445–452 |
+| Env var injection | `Orchestrator/src/agents/agent-manager.ts` | 445–453 |
 | Pause/resume tracking | `Orchestrator/src/agents/agent-manager.ts` | 719–757 |
 | Dispatch interception | `Orchestrator/src/core/orchestrator.ts` | 555–561, 574–590 |
 | REST API resume | `Orchestrator/src/index.ts` | 123–142 |
 | Configuration | `agents.json` | costControls block |
-| Tests (16 tests) | `Thinker/tests/cost-monitor.test.ts` | Full file (242 lines) |
+| Tests (20 tests) | `Thinker/tests/cost-monitor.test.ts` | Full file |

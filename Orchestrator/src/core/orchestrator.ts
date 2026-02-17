@@ -433,7 +433,7 @@ export class Orchestrator {
     // Pre-dispatch: check if agent is already paused by cost controls
     if (this.agentManager?.isAgentPaused(targetAgentId)) {
       this.logger.warn(`Dropping message for cost-paused agent "${targetAgentId}"`);
-      const err = `Agent is currently paused due to cost controls and is not processing messages.`;
+      const err = `Agent is currently paused due to cost controls and is not processing messages. Send /resume thinker or /resume all to resume.`;
       await this.sendToChannel(msg.channel, msg.chatId, err);
       return err;
     }
@@ -460,7 +460,7 @@ export class Orchestrator {
       const agentDef = this.agentDefinitions.get(targetAgentId);
       const notifyChannel = agentDef?.costControls?.notifyChannel || msg.channel;
       const notifyChatId = agentDef?.costControls?.notifyChatId || msg.chatId;
-      const err = `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nReason: ${result.error}\n\nThe agent will not process messages until resumed.`;
+      const err = `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nReason: ${result.error}\n\nThe agent will not process messages until resumed.\n\nSend /resume thinker or /resume all to resume.`;
       
       await this.sendToChannel(notifyChannel, notifyChatId, err);
       return err;
@@ -493,7 +493,7 @@ export class Orchestrator {
         const notifyChannel = agentDef?.costControls?.notifyChannel || msg.channel;
         const notifyChatId = agentDef?.costControls?.notifyChatId || msg.chatId;
         await this.sendToChannel(notifyChannel, notifyChatId,
-          `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nThe agent will not process messages until resumed.`);
+          `Agent "${targetAgentId}" has been paused due to unusual token consumption.\n\nThe agent will not process messages until resumed.\n\nSend /resume thinker or /resume all to resume.`);
       }
 
       return result.response;

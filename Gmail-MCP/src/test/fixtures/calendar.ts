@@ -146,6 +146,7 @@ export const MOCK_EVENT_SUMMARY: CalendarEventSummary = {
   status: "confirmed",
   location: "Conference Room B",
   attendeeCount: 3,
+  organizer: { email: "tomasz@example.com", displayName: "Tomasz" },
   isAllDay: false,
 };
 
@@ -163,6 +164,7 @@ const secondEventSummary: CalendarEventSummary = {
   },
   status: "confirmed",
   attendeeCount: 2,
+  organizer: { email: "tomasz@example.com", displayName: "Tomasz" },
   isAllDay: false,
 };
 

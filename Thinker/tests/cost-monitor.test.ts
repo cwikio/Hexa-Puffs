@@ -9,6 +9,7 @@ function makeConfig(overrides: Partial<CostControlConfig> = {}): CostControlConf
     spikeMultiplier: 3.0,
     hardCapTokensPerHour: 100_000,
     minimumBaselineTokens: 1000,
+    minimumBaselineRate: 0, // disabled by default in tests to preserve existing test behavior
     ...overrides,
   };
 }
@@ -127,6 +128,102 @@ describe('CostMonitor', () => {
       monitor.recordUsage(100, 100);
 
       expect(monitor.paused).toBe(false);
+    });
+  });
+
+  describe('minimumBaselineRate floor', () => {
+    it('prevents spike when short-window rate is below floor × multiplier', () => {
+      const monitor = new CostMonitor(makeConfig({
+        shortWindowMinutes: 2,
+        spikeMultiplier: 3.0,
+        minimumBaselineRate: 10_000, // floor: effective threshold = 30,000 tok/min
+        minimumBaselineTokens: 500,
+        hardCapTokensPerHour: 999_999,
+      }));
+
+      // Build a low baseline: 200 tokens/min for 10 minutes
+      for (let min = 0; min < 10; min++) {
+        monitor.recordUsage(100, 100);
+        vi.advanceTimersByTime(60_000);
+      }
+
+      // Burst: 5,000 tokens/min (25x the 200/min baseline, but well below 30,000 floor threshold)
+      monitor.recordUsage(2500, 2500);
+      vi.advanceTimersByTime(60_000);
+      monitor.recordUsage(2500, 2500);
+
+      expect(monitor.paused).toBe(false);
+    });
+
+    it('triggers spike when short-window rate exceeds floor × multiplier', () => {
+      const monitor = new CostMonitor(makeConfig({
+        shortWindowMinutes: 2,
+        spikeMultiplier: 3.0,
+        minimumBaselineRate: 10_000, // floor: effective threshold = 30,000 tok/min
+        minimumBaselineTokens: 500,
+        hardCapTokensPerHour: 999_999,
+      }));
+
+      // Build a low baseline: 200 tokens/min for 10 minutes
+      for (let min = 0; min < 10; min++) {
+        monitor.recordUsage(100, 100);
+        vi.advanceTimersByTime(60_000);
+      }
+
+      // Burst: 35,000 tokens/min — exceeds floor threshold of 30,000
+      monitor.recordUsage(17500, 17500);
+      vi.advanceTimersByTime(60_000);
+      monitor.recordUsage(17500, 17500);
+
+      expect(monitor.paused).toBe(true);
+      expect(monitor.pauseReason).toContain('Token spike detected');
+    });
+
+    it('floor is irrelevant when actual baseline exceeds it', () => {
+      const monitor = new CostMonitor(makeConfig({
+        shortWindowMinutes: 2,
+        spikeMultiplier: 3.0,
+        minimumBaselineRate: 5_000, // floor is 5K, but baseline will be 10K
+        minimumBaselineTokens: 500,
+        hardCapTokensPerHour: 999_999,
+      }));
+
+      // Build a high baseline: 10,000 tokens/min for 10 minutes
+      for (let min = 0; min < 10; min++) {
+        monitor.recordUsage(5000, 5000);
+        vi.advanceTimersByTime(60_000);
+      }
+
+      // Burst: 35,000 tokens/min (3.5x the 10K baseline → exceeds 3x, floor doesn't help)
+      monitor.recordUsage(17500, 17500);
+      vi.advanceTimersByTime(60_000);
+      monitor.recordUsage(17500, 17500);
+
+      expect(monitor.paused).toBe(true);
+      expect(monitor.pauseReason).toContain('Token spike detected');
+    });
+
+    it('floor of 0 behaves like original code (no floor)', () => {
+      const monitor = new CostMonitor(makeConfig({
+        shortWindowMinutes: 2,
+        spikeMultiplier: 3.0,
+        minimumBaselineRate: 0,
+        minimumBaselineTokens: 500,
+        hardCapTokensPerHour: 999_999,
+      }));
+
+      // Build baseline: 100 tokens/min for 10 minutes
+      for (let min = 0; min < 10; min++) {
+        monitor.recordUsage(50, 50);
+        vi.advanceTimersByTime(60_000);
+      }
+
+      // Burst: 1,000 tokens/min (10x baseline → exceeds 3x)
+      monitor.recordUsage(500, 500);
+      vi.advanceTimersByTime(60_000);
+      monitor.recordUsage(500, 500);
+
+      expect(monitor.paused).toBe(true);
     });
   });
 

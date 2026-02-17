@@ -53,6 +53,12 @@ function toEventSummary(
     status: event.status ?? "confirmed",
     location: event.location ?? undefined,
     attendeeCount: event.attendees?.length,
+    organizer: event.organizer
+      ? {
+          email: event.organizer.email!,
+          displayName: event.organizer.displayName ?? undefined,
+        }
+      : undefined,
     isAllDay,
   };
 }

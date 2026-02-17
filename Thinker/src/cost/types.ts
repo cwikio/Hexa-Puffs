@@ -27,6 +27,14 @@ export interface CostControlConfig {
    * Prevents false positives during cold start when baseline is near zero.
    */
   minimumBaselineTokens: number;
+
+  /**
+   * Minimum baseline rate (tokens/min) used for spike comparison.
+   * When the actual baseline rate is below this floor, the floor is used instead.
+   * Prevents false spikes when baseline is low but nonzero — the effective spike
+   * threshold is always at least `minimumBaselineRate × spikeMultiplier`.
+   */
+  minimumBaselineRate: number;
 }
 
 /**
