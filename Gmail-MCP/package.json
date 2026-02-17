@@ -46,6 +46,7 @@
     "label": "Gmail",
     "toolGroup": "Communication",
     "keywords": ["email", "mail", "inbox", "draft", "compose", "calendar", "meeting", "schedule", "event"],
+    "allowDestructiveTools": true,
     "guardianScan": {
       "input": false,
       "output": true

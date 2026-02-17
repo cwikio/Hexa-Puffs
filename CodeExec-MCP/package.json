@@ -35,6 +35,7 @@
     "label": "Code Execution",
     "toolGroup": "Code Execution",
     "keywords": ["code", "script", "execute", "python", "bash", "calculate"],
+    "allowDestructiveTools": true,
     "guardianScan": {
       "input": true,
       "output": false

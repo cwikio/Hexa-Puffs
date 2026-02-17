@@ -39,6 +39,7 @@
     "label": "1Password",
     "toolGroup": "Secrets",
     "keywords": ["password", "secret", "credential", "vault", "1password"],
+    "allowDestructiveTools": true,
     "guardianScan": {
       "input": true,
       "output": false

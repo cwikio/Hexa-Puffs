@@ -49,6 +49,7 @@
     "label": "Telegram",
     "toolGroup": "Communication",
     "keywords": ["telegram", "message", "chat", "group"],
+    "allowDestructiveTools": true,
     "guardianScan": {
       "input": false,
       "output": false

@@ -44,6 +44,7 @@
     "label": "Web Search",
     "toolGroup": "Web Search",
     "keywords": ["search", "news", "weather", "forecast", "find out"],
+    "allowDestructiveTools": true,
     "guardianScan": {
       "input": false,
       "output": true

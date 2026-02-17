@@ -40,6 +40,7 @@
     "label": "Workspace Files",
     "toolGroup": "File Management",
     "keywords": ["file", "document", "save", "workspace"],
+    "allowDestructiveTools": true,
     "guardianScan": {
       "input": true,
       "output": true

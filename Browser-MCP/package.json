@@ -30,6 +30,7 @@
     "timeout": 60000,
     "label": "Browser",
     "toolGroup": "Browser",
-    "keywords": ["browse", "website", "navigate", "webpage", "screenshot"]
+    "keywords": ["browse", "website", "navigate", "webpage", "screenshot"],
+    "allowDestructiveTools": true
   }
 }

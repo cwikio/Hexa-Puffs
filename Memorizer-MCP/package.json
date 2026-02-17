@@ -52,6 +52,7 @@
     "label": "Memory",
     "toolGroup": "Knowledge & Memory",
     "keywords": ["remember", "memory", "forget", "fact", "contact"],
+    "allowDestructiveTools": true,
     "guardianScan": {
       "input": false,
       "output": false
