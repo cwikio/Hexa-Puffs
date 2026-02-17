@@ -19,6 +19,7 @@ export const TOOL_GROUPS: Record<string, string[]> = {
     'gmail_delete_draft', 'gmail_list_labels', 'gmail_create_label', 'gmail_delete_label',
     'gmail_list_attachments', 'gmail_get_attachment',
     'gmail_list_filters', 'gmail_get_filter', 'gmail_create_filter', 'gmail_delete_filter',
+    'outlook_*',
   ],
   calendar: [
     'gmail_list_calendars', 'gmail_list_events', 'gmail_get_event',
