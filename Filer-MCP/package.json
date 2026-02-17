@@ -1,0 +1,49 @@
+{
+  "name": "filer-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for file operations with workspace isolation and grants system",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:filer": "vitest run tests/integration/filer.test.ts",
+    "test:lifecycle": "vitest run tests/integration/filer-lifecycle.test.ts"
+  },
+  "keywords": [
+    "mcp",
+    "file-operations",
+    "workspace",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@mcp/shared": "file:../Shared",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^17.2.4",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "hexa-puffs": {
+    "mcpName": "filer",
+    "sensitive": true,
+    "label": "Workspace Files",
+    "toolGroup": "File Management",
+    "keywords": ["file", "document", "save", "workspace"],
+    "allowDestructiveTools": true,
+    "guardianScan": {
+      "input": true,
+      "output": true
+    }
+  }
+}

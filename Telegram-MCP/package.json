@@ -1,0 +1,58 @@
+{
+  "name": "telegram-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Telegram using MTProto protocol",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/src/index.js",
+    "dev": "tsx src/index.ts",
+    "setup": "tsx scripts/setup-session.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:connection": "tsx scripts/test-connection.ts",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run --config tests/vitest.unit.config.ts",
+    "test:integration": "vitest run tests/integration/telegram.test.ts"
+  },
+  "keywords": [
+    "mcp",
+    "telegram",
+    "mtproto",
+    "ai",
+    "agent"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@mcp/shared": "file:../Shared",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "telegram": "^2.26.22",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "dotenv": "^17.2.4",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "hexa-puffs": {
+    "mcpName": "telegram",
+    "role": "channel",
+    "sensitive": true,
+    "label": "Telegram",
+    "toolGroup": "Communication",
+    "keywords": ["telegram", "message", "chat", "group"],
+    "allowDestructiveTools": true,
+    "guardianScan": {
+      "input": false,
+      "output": false
+    }
+  }
+}

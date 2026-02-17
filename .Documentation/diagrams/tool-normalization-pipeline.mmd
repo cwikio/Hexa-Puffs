@@ -1,0 +1,27 @@
+flowchart LR
+    LLM["LLM tool call\nargs"]
+
+    subgraph Pipeline["Thinker — tools.ts normalization pipeline"]
+        direction LR
+        A["coerceStringBooleans()\n'true' → true\n'false' → false"]
+        B["stripNullValues()\nremove keys\nwith null values"]
+        C["stripHallucinatedParams()\nremove teamId/slug\nfrom vercel_* tools"]
+        D["injectChatId()\ntelegram_send_message:\nfix missing/hallucinated\nchat_id (>20 chars)"]
+    end
+
+    ORCH["POST /tools/call\n→ Orchestrator\n→ ToolRouter\n→ MCP"]
+
+    subgraph SkillNorm["Orchestrator — skill-normalizer.ts (at creation time)"]
+        direction LR
+        E["Re-nest flattened\ntrigger_config fields"]
+        F["Normalize aliases\ncronExpression → schedule\nintervalMinutes → interval_minutes"]
+        G["Convert relative times\nin_minutes → at timestamp\nin_hours → at timestamp"]
+        H["Validate cron\nvia croner"]
+    end
+
+    LLM --> A --> B --> C --> D --> ORCH
+
+    LLM2["LLM creates skill\nmemory_store_skill args"] --> E --> F --> G --> H --> STORE["Store in\nMemorizer DB"]
+
+    style Pipeline fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style SkillNorm fill:#e3f2fd,stroke:#1565c0,stroke-width:2px

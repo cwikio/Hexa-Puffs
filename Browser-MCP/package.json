@@ -1,0 +1,36 @@
+{
+  "name": "browser-mcp",
+  "version": "1.0.0",
+  "description": "Browser MCP — headless Chromium via @playwright/mcp with proxy support",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@playwright/mcp": "^0.0.64",
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "tsx": "^4.0.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "hexa-puffs": {
+    "mcpName": "web",
+    "sensitive": true,
+    "timeout": 60000,
+    "label": "Browser",
+    "toolGroup": "Browser",
+    "keywords": ["browse", "website", "navigate", "webpage", "screenshot"],
+    "allowDestructiveTools": true
+  }
+}

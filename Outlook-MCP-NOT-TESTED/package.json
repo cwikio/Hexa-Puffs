@@ -1,0 +1,58 @@
+{
+  "name": "outlook-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Microsoft Outlook / Exchange email via Graph API",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/src/index.js",
+    "dev": "tsx src/index.ts",
+    "setup-oauth": "tsx scripts/setup-oauth.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run --config tests/vitest.unit.config.ts",
+    "test:e2e": "vitest run --config tests/vitest.e2e.config.ts"
+  },
+  "keywords": [
+    "mcp",
+    "outlook",
+    "email",
+    "exchange",
+    "microsoft-graph",
+    "ai",
+    "agent"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@mcp/shared": "file:../Shared",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@azure/msal-node": "^2.16.2",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "dotenv": "^17.2.4",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "hexa-puffs": {
+    "mcpName": "outlook",
+    "sensitive": true,
+    "label": "Outlook",
+    "toolGroup": "Communication",
+    "keywords": ["email", "mail", "inbox", "outlook", "exchange"],
+    "allowDestructiveTools": false,
+    "guardianScan": {
+      "input": false,
+      "output": true
+    }
+  }
+}
