@@ -126,6 +126,7 @@ describe("listEvents", () => {
               timeZone: "America/New_York",
             },
             status: "confirmed",
+            organizer: { email: "org@test.com", displayName: "Organizer" },
             attendees: [{ email: "a@test.com" }, { email: "b@test.com" }],
           },
           {
@@ -155,7 +156,9 @@ describe("listEvents", () => {
     expect(result.events).toHaveLength(2);
     expect(result.events[0].isAllDay).toBe(false);
     expect(result.events[0].attendeeCount).toBe(2);
+    expect(result.events[0].organizer).toEqual({ email: "org@test.com", displayName: "Organizer" });
     expect(result.events[1].isAllDay).toBe(true);
+    expect(result.events[1].organizer).toBeUndefined();
     expect(result.nextPageToken).toBe("next");
     expect(result.timeZone).toBe("America/New_York");
   });

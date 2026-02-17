@@ -71,6 +71,7 @@ export interface CalendarEventSummary {
   status: string;
   location?: string;
   attendeeCount?: number;
+  organizer?: { email: string; displayName?: string };
   isAllDay: boolean;
 }
 
