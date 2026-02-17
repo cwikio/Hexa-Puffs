@@ -20,6 +20,7 @@ import {
   logSection,
   testId,
 } from '../helpers/mcp-client.js';
+import { cleanupOrphanedSkills } from '../helpers/workflow-helpers.js';
 
 /**
  * Store a skill via raw HTTP so we get the full response.
@@ -76,7 +77,11 @@ describe('Workflow: Skill Input Normalization', () => {
 
     if (!orchestratorAvailable) {
       log('Orchestrator not available — skipping normalizer integration tests', 'warn');
+      return;
     }
+
+    // Clean up orphaned skills from previous test runs
+    await cleanupOrphanedSkills(client, 'test-normalizer-');
   });
 
   afterAll(async () => {

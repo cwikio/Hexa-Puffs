@@ -9,6 +9,7 @@ import {
   logSection,
   testId,
 } from '../helpers/mcp-client.js';
+import { cleanupOrphanedSkills } from '../helpers/workflow-helpers.js';
 
 /**
  * Helper: call memory_store_skill via raw HTTP to inspect the full response
@@ -52,7 +53,11 @@ describe('Workflow: required_tools Validation at Proxy', () => {
 
     if (!orchestratorAvailable) {
       log('Orchestrator not available — tests will be skipped', 'warn');
+      return;
     }
+
+    // Clean up orphaned skills from previous test runs
+    await cleanupOrphanedSkills(client, 'test-validation-');
   });
 
   afterAll(async () => {

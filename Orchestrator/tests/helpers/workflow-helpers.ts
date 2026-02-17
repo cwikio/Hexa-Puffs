@@ -226,6 +226,40 @@ export async function cleanupFiles(
 }
 
 /**
+ * Cleanup helper - delete orphaned test skills from previous runs.
+ * Lists all skills (no agent_id filter) and deletes those whose agent_id starts with the given prefix.
+ * This prevents accumulation when afterAll cleanup fails (e.g. test crash, Orchestrator down).
+ */
+export async function cleanupOrphanedSkills(
+  client: MCPTestClient,
+  agentIdPrefix: string,
+): Promise<void> {
+  try {
+    const result = await client.callTool('memory_list_skills', {})
+    if (!result.success) return
+
+    const parsed = parseJsonContent<{ success: boolean; data: { skills: Array<{ id?: number; skill_id?: number; agent_id?: string }> } }>(result)
+    const skills = parsed?.data?.skills || []
+
+    for (const skill of skills) {
+      if (skill.agent_id?.startsWith(agentIdPrefix)) {
+        const id = skill.id ?? skill.skill_id
+        if (id) {
+          try {
+            await client.callTool('memory_delete_skill', { skill_id: id })
+            log(`Cleaned up orphaned skill ${id} (agent: ${skill.agent_id})`, 'debug')
+          } catch {
+            log(`Failed to cleanup orphaned skill ${id}`, 'warn')
+          }
+        }
+      }
+    }
+  } catch {
+    log(`Failed to list skills for orphan cleanup (prefix: ${agentIdPrefix})`, 'warn')
+  }
+}
+
+/**
  * Cleanup helper - delete task JSON files from storage.
  * Tasks have no MCP delete tool, so we clean up via direct filesystem access.
  */

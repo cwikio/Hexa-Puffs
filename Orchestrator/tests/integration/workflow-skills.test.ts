@@ -27,7 +27,7 @@ import {
   logSection,
   MCP_URLS,
 } from '../helpers/mcp-client.js'
-import { parseJsonContent } from '../helpers/workflow-helpers.js'
+import { parseJsonContent, cleanupOrphanedSkills } from '../helpers/workflow-helpers.js'
 
 interface SkillData {
   skill_id: number
@@ -68,6 +68,8 @@ describe('Workflow: Skills Scheduling Pipeline', () => {
 
     if (orchestratorAvailable) {
       log(`Orchestrator available at ${MCP_URLS.orchestrator}`, 'success')
+      // Clean up orphaned skills from previous test runs
+      await cleanupOrphanedSkills(orchestratorClient, 'test-skills-')
     } else {
       log(`Orchestrator not available - tests will be skipped`, 'warn')
     }
