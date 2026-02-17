@@ -70,7 +70,7 @@ describe('Skills Tools', () => {
       createdSkillIds.push(data.skill_id);
     });
 
-    it('should reject duplicate skill names for same agent', async () => {
+    it('should return existing skill idempotently for duplicate names', async () => {
       const result1 = await client.storeSkill(
         'Duplicate Test',
         'manual',
@@ -86,8 +86,10 @@ describe('Skills Tools', () => {
         'Second skill same name',
         testAgentId
       );
-      expect(result2.success).toBe(false);
-      expect(result2.error).toBeDefined();
+      expect(result2.success).toBe(true);
+      const data = result2.data as { skill_id: number; already_existed: boolean };
+      expect(data.skill_id).toBe((result1.data as { skill_id: number }).skill_id);
+      expect(data.already_existed).toBe(true);
     });
 
     it('should reject invalid trigger_type', async () => {

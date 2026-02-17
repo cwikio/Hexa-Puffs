@@ -132,6 +132,7 @@ export interface StoreSkillData {
   skill_id: number;
   stored_at: string;
   message?: string;
+  already_existed?: boolean;
 }
 
 export interface ListSkillsData {

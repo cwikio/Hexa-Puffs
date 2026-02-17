@@ -297,7 +297,11 @@ export async function handleStoreSkill(args: unknown): Promise<StandardResponse<
       .get(agent_id, name) as { id: number } | undefined;
 
     if (existing) {
-      return createError(`Skill with name "${name}" already exists for agent "${agent_id}" (id: ${existing.id})`);
+      return createSuccess<StoreSkillData>({
+        skill_id: existing.id,
+        stored_at: new Date().toISOString(),
+        already_existed: true,
+      });
     }
 
     const result = db

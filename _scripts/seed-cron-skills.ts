@@ -294,7 +294,7 @@ async function updateSkill(skillId: number, skill: CronSkill): Promise<{ success
   });
 }
 
-async function seedSkill(skill: CronSkill): Promise<{ success: boolean; id?: number; error?: string }> {
+async function seedSkill(skill: CronSkill): Promise<{ success: boolean; id?: number; already_existed?: boolean; error?: string }> {
   const result = await callOrchestrator('memory_store_skill', {
     agent_id: 'thinker',
     name: skill.name,
@@ -309,7 +309,11 @@ async function seedSkill(skill: CronSkill): Promise<{ success: boolean; id?: num
   });
 
   if (result.success) {
-    return { success: true, id: result.data?.skill_id as number | undefined };
+    return {
+      success: true,
+      id: result.data?.skill_id as number | undefined,
+      already_existed: !!(result.data as Record<string, unknown>)?.already_existed,
+    };
   }
   return { success: false, error: result.error };
 }
@@ -355,12 +359,12 @@ async function main() {
     } else {
       // Default: idempotent seed (skip existing)
       const result = await seedSkill(skill);
-      if (result.success) {
+      if (result.success && result.already_existed) {
+        console.log(`skipped (already exists, id: ${result.id})`);
+        skipped++;
+      } else if (result.success) {
         console.log(`created (id: ${result.id})`);
         created++;
-      } else if (result.error?.includes('already exists')) {
-        console.log('skipped (already exists)');
-        skipped++;
       } else {
         console.log(`FAILED: ${result.error}`);
         failed++;
