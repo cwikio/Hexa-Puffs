@@ -30,6 +30,9 @@ export const CostControlsSchema = z.object({
   /** Minimum baseline tokens before spike detection activates (prevents cold-start false positives) */
   minimumBaselineTokens: z.number().int().min(100).default(1000),
 
+  /** Minimum baseline rate (tokens/min) for spike comparison — prevents false spikes when baseline is low but nonzero */
+  minimumBaselineRate: z.number().int().min(0).default(10_000),
+
   /** Channel to send cost alert notifications to (falls back to originating channel) */
   notifyChannel: z.string().optional(),
 

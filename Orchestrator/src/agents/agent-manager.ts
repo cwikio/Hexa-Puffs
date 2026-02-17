@@ -449,6 +449,7 @@ export class AgentManager {
       env.THINKER_COST_SPIKE_MULTIPLIER = String(definition.costControls.spikeMultiplier);
       env.THINKER_COST_HARD_CAP_PER_HOUR = String(definition.costControls.hardCapTokensPerHour);
       env.THINKER_COST_MIN_BASELINE_TOKENS = String(definition.costControls.minimumBaselineTokens);
+      env.THINKER_COST_MIN_BASELINE_RATE = String(definition.costControls.minimumBaselineRate);
     }
 
     return env;

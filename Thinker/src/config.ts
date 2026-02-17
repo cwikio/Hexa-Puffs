@@ -16,6 +16,7 @@ export const CostControlSchema = z.object({
   spikeMultiplier: z.number().min(1.5).max(10).default(3.0),
   hardCapTokensPerHour: z.number().int().min(10000).default(500_000),
   minimumBaselineTokens: z.number().int().min(100).default(1000),
+  minimumBaselineRate: z.number().int().min(0).default(10_000),
 });
 
 import { PathManager } from '@mcp/shared/Utils/paths.js';
@@ -235,6 +236,7 @@ export function loadConfig(): Config {
         spikeMultiplier: parseNumber(process.env.THINKER_COST_SPIKE_MULTIPLIER, 3.0),
         hardCapTokensPerHour: parseInteger(process.env.THINKER_COST_HARD_CAP_PER_HOUR, 500_000),
         minimumBaselineTokens: parseInteger(process.env.THINKER_COST_MIN_BASELINE_TOKENS, 1000),
+        minimumBaselineRate: parseInteger(process.env.THINKER_COST_MIN_BASELINE_RATE, 10_000),
       },
     } : {}),
   };
