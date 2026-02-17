@@ -44,7 +44,7 @@ const KEYWORD_ROUTES: Array<{ pattern: RegExp; groups: string[] }> = [
     groups: ['search'] },
   { pattern: /email|e-mail|mail|inbox|send.*to|draft|compose/i,
     groups: ['email'] },
-  { pattern: /calendar|meeting|schedule|event|appointment|busy|free time/i,
+  { pattern: /calendar|meeting|schedule|event|appointment|busy|free time|attendee|invited|participant|who is coming|rsvp/i,
     groups: ['calendar'] },
   { pattern: /file|document|save|write.*file|read.*file|workspace/i,
     groups: ['files'] },

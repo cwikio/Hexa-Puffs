@@ -169,7 +169,7 @@ export class ToolRouter {
     create_file:      { suggest: ['read_file'] },
 
     // Calendar — after checking schedule, communicate
-    list_events:      { suggest: ['create_event', 'send_message'], tip: 'Create event or notify someone' },
+    list_events:      { suggest: ['get_event', 'create_event', 'send_message'], tip: 'Get full details (attendees, description) with get_event, or create/notify' },
     find_free_time:   { suggest: ['create_event', 'send_message'] },
     create_event:     { suggest: ['send_message', 'send_email'], tip: 'Notify attendees' },
 
