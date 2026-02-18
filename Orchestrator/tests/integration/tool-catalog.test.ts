@@ -8,12 +8,18 @@ import {
 } from '../helpers/mcp-client.js';
 import { parseJsonContent } from '../helpers/workflow-helpers.js';
 
-interface CatalogData {
+interface OverviewData {
+  summary: string;
+  servers: Record<string, number>;
+}
+
+interface DetailData {
   summary: string;
   catalog: Record<string, Array<{ name: string; description: string }>>;
 }
 
-type CatalogResponse = { success: boolean; data: CatalogData };
+type OverviewResponse = { success: boolean; data: OverviewData };
+type DetailResponse = { success: boolean; data: DetailData };
 
 describe('Tool Catalog (get_tool_catalog)', () => {
   let client: MCPTestClient;
@@ -31,70 +37,67 @@ describe('Tool Catalog (get_tool_catalog)', () => {
     }
   });
 
-  it('should return a successful catalog response', async () => {
+  it('should return a successful overview response', async () => {
     if (!orchestratorAvailable) return;
 
     const result = await client.callTool('get_tool_catalog', {});
     expect(result.success).toBe(true);
 
-    const parsed = parseJsonContent<CatalogResponse>(result);
+    const parsed = parseJsonContent<OverviewResponse>(result);
     expect(parsed?.success).toBe(true);
     expect(parsed?.data?.summary).toMatch(/\d+ tools across \d+ MCP servers/);
-    expect(parsed?.data?.catalog).toBeDefined();
+    expect(parsed?.data?.servers).toBeDefined();
 
-    log(`Catalog: ${parsed!.data.summary}`, 'success');
+    log(`Overview: ${parsed!.data.summary}`, 'success');
   });
 
-  it('should include known MCP groups', async () => {
+  it('should include known MCP groups in overview', async () => {
     if (!orchestratorAvailable) return;
 
     const result = await client.callTool('get_tool_catalog', {});
-    const parsed = parseJsonContent<CatalogResponse>(result);
-    const catalog = parsed!.data.catalog;
+    const parsed = parseJsonContent<OverviewResponse>(result);
+    const servers = parsed!.data.servers;
 
     // These MCPs should be running in any standard setup
-    expect(catalog).toHaveProperty('memory');
-    expect(catalog).toHaveProperty('filer');
+    expect(servers).toHaveProperty('memory');
+    expect(servers).toHaveProperty('filer');
 
-    log(`Found MCP groups: ${Object.keys(catalog).join(', ')}`, 'success');
+    log(`Found MCP groups: ${Object.keys(servers).join(', ')}`, 'success');
   });
 
-  it('should have non-empty descriptions for all tools', async () => {
+  it('should return detailed catalog when mcp_name is specified', async () => {
     if (!orchestratorAvailable) return;
 
-    const result = await client.callTool('get_tool_catalog', {});
-    const parsed = parseJsonContent<CatalogResponse>(result);
-    const catalog = parsed!.data.catalog;
+    const result = await client.callTool('get_tool_catalog', { mcp_name: 'memory' });
+    expect(result.success).toBe(true);
 
+    const parsed = parseJsonContent<DetailResponse>(result);
+    expect(parsed?.success).toBe(true);
+    expect(parsed?.data?.catalog).toBeDefined();
+    expect(parsed?.data?.catalog?.memory).toBeDefined();
+
+    const tools = parsed!.data.catalog.memory;
     let toolCount = 0;
-    for (const tools of Object.values(catalog)) {
-      for (const tool of tools) {
-        expect(tool.name).toBeTruthy();
-        expect(tool.description).toBeTruthy();
-        expect(tool.description.length).toBeGreaterThan(3);
-        toolCount++;
-      }
+    for (const tool of tools) {
+      expect(tool.name).toBeTruthy();
+      expect(tool.description).toBeTruthy();
+      expect(tool.description.length).toBeGreaterThan(3);
+      toolCount++;
     }
 
-    log(`Verified ${toolCount} tools all have descriptions`, 'success');
+    log(`Verified ${toolCount} memory tools all have descriptions`, 'success');
   });
 
   it('should return tools with correct prefixed naming', async () => {
     if (!orchestratorAvailable) return;
 
-    const result = await client.callTool('get_tool_catalog', {});
-    const parsed = parseJsonContent<CatalogResponse>(result);
-    const catalog = parsed!.data.catalog;
+    const result = await client.callTool('get_tool_catalog', { mcp_name: 'memory' });
+    const parsed = parseJsonContent<DetailResponse>(result);
+    const catalog = parsed?.data?.catalog;
 
-    // With alwaysPrefix: true, separator: '_', tools should be prefixed
-    if (catalog.memory) {
+    if (catalog?.memory) {
       for (const tool of catalog.memory) {
         expect(tool.name).toMatch(/^memory_/);
-      }
-    }
-    if (catalog.telegram) {
-      for (const tool of catalog.telegram) {
-        expect(tool.name).toMatch(/^telegram_/);
       }
     }
 

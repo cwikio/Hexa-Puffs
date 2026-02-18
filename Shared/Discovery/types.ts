@@ -58,6 +58,8 @@ export interface HexaPuffsManifest {
   keywords?: string[];
   /** Guardian scan overrides. Omitted = use global defaults (both true) */
   guardianScan?: { input?: boolean; output?: boolean };
+  /** Whether to allow destructive tools (delete/remove/destroy). Default: false */
+  allowDestructiveTools?: boolean;
 }
 
 export interface DiscoveredMCP {
