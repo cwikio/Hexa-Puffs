@@ -4,9 +4,10 @@ import type { StandardResponse } from '@mcp/shared/Types/StandardResponse.js';
 export const getToolCatalogToolDefinition = {
   name: 'get_tool_catalog',
   description:
-    'List available tools grouped by MCP server. Returns tool names and short descriptions. ' +
-    'Pass mcp_name to get tools for a specific MCP (e.g. "github", "posthog"). ' +
-    'Omit mcp_name to get the full catalog.',
+    'List available tools grouped by MCP server. ' +
+    'Without mcp_name: returns a compact overview (MCP names + tool counts). ' +
+    'With mcp_name: returns full tool names and descriptions for that MCP. ' +
+    'Use without mcp_name first, then drill down into a specific MCP.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -76,13 +77,27 @@ export async function handleGetToolCatalog(args: unknown): Promise<StandardRespo
     const totalTools = Object.values(catalog).reduce((sum, g) => sum + g.length, 0);
     const totalMcps = Object.keys(catalog).length;
 
+    // Without mcp_name filter: return compact overview (just MCP names + counts)
+    // With filter: return full tool details for that MCP
+    if (mcpFilter) {
+      return {
+        success: true,
+        data: {
+          summary: `${totalTools} tools in ${mcpFilter}`,
+          catalog,
+        },
+      };
+    }
+
+    const overview: Record<string, number> = {};
+    for (const [name, tools] of Object.entries(catalog)) {
+      overview[name] = tools.length;
+    }
     return {
       success: true,
       data: {
-        summary: mcpFilter
-          ? `${totalTools} tools in ${mcpFilter}`
-          : `${totalTools} tools across ${totalMcps} MCP servers`,
-        catalog,
+        summary: `${totalTools} tools across ${totalMcps} MCP servers`,
+        servers: overview,
       },
     };
   } catch (error) {
