@@ -17,6 +17,7 @@ import { getConfig } from '../config/index.js';
 import { Cron } from 'croner';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 import { runDiagnosticChecks, formatDiagnosticOutput } from './diagnostic-checks.js';
+import { normalizeProjectName, projectNamesMatch } from '../jobs/project-recognition.js';
 
 const SYSTEM_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -136,6 +137,24 @@ export class SlashCommandHandler {
 
         case '/diagnose':
           return { handled: true, response: await this.handleDiagnose() };
+
+        case '/link':
+          return { handled: true, response: await this.handleLink(args) };
+
+        case '/link-all':
+          return { handled: true, response: await this.handleLinkAll(args) };
+
+        case '/unlink':
+          return { handled: true, response: await this.handleUnlink(args) };
+
+        case '/scan-projects':
+          return { handled: true, response: await this.handleScanProjects() };
+
+        case '/project-status':
+          return { handled: true, response: await this.handleProjectStatus(args) };
+
+        case '/setup-monitor':
+          return { handled: true, response: await this.handleSetupMonitor(args) };
 
         default:
           return { handled: false };
@@ -716,6 +735,426 @@ Keep it concise. No markdown formatting — plain text only.`;
     return formatDiagnosticOutput(result);
   }
 
+  // ─── /link ───────────────────────────────────────────────
+
+  /**
+   * /link <project_id> <mcp_name> [ext_id]  — Link a project to an MCP source
+   * /link new <mcp_name> [ext_name]          — Create a new project and link it
+   */
+  private async handleLink(args: string): Promise<string> {
+    const parts = args.trim().split(/\s+/);
+    if (parts.length < 2 || !parts[0]) {
+      return 'Usage:\n  /link <project_id> <mcp_name> [external_id]\n  /link new <mcp_name> [project_name]';
+    }
+
+    if (parts[0].toLowerCase() === 'new') {
+      // /link new <mcp_name> [project_name...]
+      const mcpName = parts[1];
+      const projectName = parts.slice(2).join(' ') || mcpName;
+
+      // Create the unified project
+      const createResult = await this.toolRouter.routeToolCall('memory_create_project', {
+        name: projectName,
+        status: 'active',
+        type: 'work',
+      });
+
+      if (!createResult.success) {
+        return `Failed to create project: ${createResult.error}`;
+      }
+
+      const createData = this.extractData<{ project_id: number }>(createResult);
+      if (!createData?.project_id) {
+        return 'Failed to create project: no project ID returned.';
+      }
+
+      // Link it
+      const linkResult = await this.toolRouter.routeToolCall('memory_link_project_source', {
+        project_id: createData.project_id,
+        mcp_name: mcpName,
+        source_type: 'manual',
+      });
+
+      if (!linkResult.success) {
+        return `Project "${projectName}" created (id: ${createData.project_id}), but linking failed: ${linkResult.error}`;
+      }
+
+      return `Created project "${projectName}" (id: ${createData.project_id}) and linked to MCP "${mcpName}".`;
+    }
+
+    // /link <project_id> <mcp_name> [ext_id]
+    const projectId = parseInt(parts[0], 10);
+    if (isNaN(projectId)) {
+      return `Invalid project ID: "${parts[0]}". Use a number or "new".`;
+    }
+
+    const mcpName = parts[1];
+    const externalId = parts[2] ?? undefined;
+
+    const linkResult = await this.toolRouter.routeToolCall('memory_link_project_source', {
+      project_id: projectId,
+      mcp_name: mcpName,
+      external_project_id: externalId,
+      source_type: 'manual',
+    });
+
+    if (!linkResult.success) {
+      return `Failed to link: ${linkResult.error}`;
+    }
+
+    const linkData = this.extractData<{ project_source_id: number; already_existed?: boolean }>(linkResult);
+    if (linkData?.already_existed) {
+      return `Link updated — project ${projectId} ↔ MCP "${mcpName}".`;
+    }
+    return `Linked project ${projectId} to MCP "${mcpName}".`;
+  }
+
+  // ─── /link-all ──────────────────────────────────────────
+
+  /**
+   * /link-all <name_or_id> — Create (or find) a unified project and link all MCPs with matching project names.
+   */
+  private async handleLinkAll(args: string): Promise<string> {
+    const query = args.trim();
+    if (!query) {
+      return 'Usage: /link-all <project_name_or_id>';
+    }
+
+    // Determine if it's an existing project ID or a name to search for
+    let unifiedProjectId: number | undefined;
+    let unifiedProjectName: string | undefined;
+
+    const maybeId = parseInt(query, 10);
+    if (!isNaN(maybeId) && String(maybeId) === query) {
+      unifiedProjectId = maybeId;
+    }
+
+    // Fetch unified projects to resolve name ↔ id
+    const projectsResult = await this.toolRouter.routeToolCall('memory_list_projects', { limit: 200 });
+    const projectsData = this.extractData<{ projects: Array<{ id: number; name: string }> }>(projectsResult);
+    const unifiedProjects = projectsData?.projects ?? [];
+
+    if (unifiedProjectId) {
+      const found = unifiedProjects.find((p) => p.id === unifiedProjectId);
+      if (!found) return `No project found with ID ${unifiedProjectId}.`;
+      unifiedProjectName = found.name;
+    } else {
+      // Try to match by name
+      const match = unifiedProjects.find((p) => projectNamesMatch(p.name, query));
+      if (match) {
+        unifiedProjectId = match.id;
+        unifiedProjectName = match.name;
+      }
+    }
+
+    // Discover projects from all external MCPs
+    const config = this.orchestrator.getConfig();
+    const externalMCPNames = config.externalMCPNames ?? [];
+    const searchName = unifiedProjectName ?? query;
+    const linkedMCPs: string[] = [];
+
+    for (const mcpName of externalMCPNames) {
+      // Try to find a matching project on this MCP via discovery
+      const discovery = config.mcpServersStdio?.[mcpName]?.metadata?.projectDiscovery
+        ?? config.mcpServersHttp?.[mcpName]?.metadata?.projectDiscovery;
+      if (!discovery) continue;
+
+      const toolName = `${mcpName}_${discovery.listTool}`;
+      try {
+        const result = await this.toolRouter.routeToolCall(toolName, {});
+        if (!result?.success) continue;
+
+        const textContent = (result.content as Array<{ type: string; text?: string }>)?.find(
+          (c) => c.type === 'text',
+        );
+        if (!textContent?.text) continue;
+
+        const data = JSON.parse(textContent.text);
+        const items = this.extractProjectItems(data, discovery.projectIdField, discovery.projectNameField);
+
+        for (const item of items) {
+          if (item.name && projectNamesMatch(String(item.name), searchName)) {
+            linkedMCPs.push(mcpName);
+            break;
+          }
+        }
+      } catch {
+        // Skip this MCP
+      }
+    }
+
+    if (linkedMCPs.length === 0) {
+      return `No matching projects found across external MCPs for "${searchName}".`;
+    }
+
+    // Create unified project if needed
+    if (!unifiedProjectId) {
+      const createResult = await this.toolRouter.routeToolCall('memory_create_project', {
+        name: searchName,
+        status: 'active',
+        type: 'work',
+      });
+
+      if (!createResult.success) {
+        return `Found matches on ${linkedMCPs.join(', ')}, but failed to create unified project: ${createResult.error}`;
+      }
+
+      const createData = this.extractData<{ project_id: number }>(createResult);
+      if (!createData?.project_id) {
+        return 'Failed to create project: no project ID returned.';
+      }
+      unifiedProjectId = createData.project_id;
+      unifiedProjectName = searchName;
+    }
+
+    // Link each MCP
+    const results: string[] = [];
+    for (const mcpName of linkedMCPs) {
+      const linkResult = await this.toolRouter.routeToolCall('memory_link_project_source', {
+        project_id: unifiedProjectId,
+        mcp_name: mcpName,
+        source_type: 'manual',
+      });
+
+      if (linkResult.success) {
+        results.push(`  + ${mcpName}`);
+      } else {
+        results.push(`  ! ${mcpName}: ${linkResult.error}`);
+      }
+    }
+
+    return `Linked "${unifiedProjectName}" (id: ${unifiedProjectId}) to ${linkedMCPs.length} MCP(s):\n${results.join('\n')}`;
+  }
+
+  // ─── /unlink ────────────────────────────────────────────
+
+  private async handleUnlink(args: string): Promise<string> {
+    const parts = args.trim().split(/\s+/);
+    if (parts.length < 2 || !parts[0]) {
+      return 'Usage: /unlink <project_id> <mcp_name>';
+    }
+
+    const projectId = parseInt(parts[0], 10);
+    if (isNaN(projectId)) {
+      return `Invalid project ID: "${parts[0]}".`;
+    }
+
+    const mcpName = parts[1];
+    const result = await this.toolRouter.routeToolCall('memory_unlink_project_source', {
+      project_id: projectId,
+      mcp_name: mcpName,
+    });
+
+    if (!result.success) {
+      return `Failed to unlink: ${result.error}`;
+    }
+
+    const data = this.extractData<{ unlinked_project: string; unlinked_mcp: string }>(result);
+    return `Unlinked project "${data?.unlinked_project ?? projectId}" from MCP "${data?.unlinked_mcp ?? mcpName}".`;
+  }
+
+  // ─── /scan-projects ─────────────────────────────────────
+
+  private async handleScanProjects(): Promise<string> {
+    try {
+      const { inngest } = await import('../jobs/inngest-client.js');
+      await inngest.send({
+        name: 'hexa-puffs/project-recognition',
+        data: { mode: 'full-scan', mcpNames: [] },
+      });
+      return 'Full project scan triggered. Results will be sent via Telegram.';
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'unknown error';
+      return `Failed to trigger project scan: ${msg}`;
+    }
+  }
+
+  // ─── /project-status ────────────────────────────────────
+
+  private async handleProjectStatus(args: string): Promise<string> {
+    const query = args.trim();
+
+    // Fetch all linked sources (optionally filtered)
+    let projectId: number | undefined;
+
+    if (query) {
+      // Try as numeric ID first
+      const maybeId = parseInt(query, 10);
+      if (!isNaN(maybeId) && String(maybeId) === query) {
+        projectId = maybeId;
+      } else {
+        // Search by name
+        const projectsResult = await this.toolRouter.routeToolCall('memory_list_projects', { limit: 200 });
+        const projectsData = this.extractData<{ projects: Array<{ id: number; name: string }> }>(projectsResult);
+        const match = (projectsData?.projects ?? []).find((p) => projectNamesMatch(p.name, query));
+        if (match) {
+          projectId = match.id;
+        } else {
+          return `No project found matching "${query}".`;
+        }
+      }
+    }
+
+    const sourcesArgs: Record<string, unknown> = { limit: 200 };
+    if (projectId) sourcesArgs.project_id = projectId;
+
+    const sourcesResult = await this.toolRouter.routeToolCall('memory_list_project_sources', sourcesArgs);
+    if (!sourcesResult.success) {
+      return `Failed to fetch project sources: ${sourcesResult.error}`;
+    }
+
+    const sourcesData = this.extractData<{
+      sources: Array<{
+        id: number;
+        project_id: number;
+        project_name: string;
+        mcp_name: string;
+        external_project_name: string | null;
+        last_status: string;
+        last_checked_at: string | null;
+      }>;
+      total_count: number;
+    }>(sourcesResult);
+
+    const sources = sourcesData?.sources ?? [];
+    if (sources.length === 0) {
+      return query
+        ? `No linked sources found for "${query}".`
+        : 'No linked project sources found. Use /link to connect projects to MCPs.';
+    }
+
+    // Group by project
+    const byProject = new Map<string, typeof sources>();
+    for (const source of sources) {
+      const key = `${source.project_name} (id: ${source.project_id})`;
+      const list = byProject.get(key) ?? [];
+      list.push(source);
+      byProject.set(key, list);
+    }
+
+    let output = 'Project Sources\n';
+    for (const [projectLabel, projectSources] of byProject) {
+      output += `\n${projectLabel}:\n`;
+      for (const src of projectSources) {
+        const statusIcon = src.last_status === 'ok' ? '+' : src.last_status === 'unknown' ? '?' : '!';
+        const checked = src.last_checked_at ? this.formatTimeAgo(new Date(src.last_checked_at)) : 'never';
+        const extName = src.external_project_name ? ` (${src.external_project_name})` : '';
+        output += `  [${statusIcon}] ${src.mcp_name}${extName} — ${src.last_status} (checked: ${checked})\n`;
+      }
+    }
+
+    output += `\n${sources.length} source(s) across ${byProject.size} project(s)`;
+    return output;
+  }
+
+  // ─── /setup-monitor ─────────────────────────────────────
+
+  private async handleSetupMonitor(args: string): Promise<string> {
+    const parts = args.trim().split(/\s+/);
+    if (parts.length < 2 || !parts[0]) {
+      return 'Usage: /setup-monitor <project_id> <interval_minutes>';
+    }
+
+    const projectId = parseInt(parts[0], 10);
+    if (isNaN(projectId)) {
+      return `Invalid project ID: "${parts[0]}".`;
+    }
+
+    const intervalMinutes = parseInt(parts[1], 10);
+    if (isNaN(intervalMinutes) || intervalMinutes < 1) {
+      return `Invalid interval: "${parts[1]}". Specify minutes (e.g., 60, 120, 360).`;
+    }
+
+    // Get project name and linked sources
+    const sourcesResult = await this.toolRouter.routeToolCall('memory_list_project_sources', {
+      project_id: projectId,
+      limit: 50,
+    });
+
+    if (!sourcesResult.success) {
+      return `Failed to get project sources: ${sourcesResult.error}`;
+    }
+
+    const sourcesData = this.extractData<{
+      sources: Array<{ mcp_name: string; project_name: string }>;
+    }>(sourcesResult);
+
+    const sources = sourcesData?.sources ?? [];
+    if (sources.length === 0) {
+      return `Project ${projectId} has no linked sources. Link MCPs first with /link.`;
+    }
+
+    const projectName = sources[0].project_name;
+    const mcpNames = sources.map((s) => s.mcp_name);
+
+    // Build required tools list
+    const requiredTools = [
+      'memory_list_project_sources',
+      'memory_update_project_source_status',
+      'telegram_send_message',
+    ];
+
+    // Create the skill via Memorizer
+    const skillResult = await this.toolRouter.routeToolCall('memory_store_skill', {
+      agent_id: 'thinker',
+      name: `Status Check: ${projectName}`,
+      description: `Recurring status check for "${projectName}" across ${mcpNames.join(', ')}`,
+      trigger_type: 'cron',
+      trigger_config: JSON.stringify({ interval_minutes: intervalMinutes }),
+      instructions: `Check the status of project "${projectName}" (id: ${projectId}) across all linked sources.\n`
+        + `1. Call memory_list_project_sources with project_id=${projectId}\n`
+        + `2. For each source, use the appropriate MCP tools to check health:\n`
+        + mcpNames.map((n) => `   - ${n}: check latest status via available tools`).join('\n') + '\n'
+        + `3. Update each source status via memory_update_project_source_status\n`
+        + `4. Send a Telegram summary with status for each source`,
+      required_tools: JSON.stringify(requiredTools),
+      notify_on_completion: true,
+    });
+
+    if (!skillResult.success) {
+      return `Failed to create monitoring skill: ${skillResult.error}`;
+    }
+
+    const skillData = this.extractData<{ skill_id: number }>(skillResult);
+    const humanInterval = intervalMinutes >= 60
+      ? `${Math.floor(intervalMinutes / 60)}h${intervalMinutes % 60 > 0 ? ` ${intervalMinutes % 60}m` : ''}`
+      : `${intervalMinutes}m`;
+
+    return `Monitoring skill created for "${projectName}" (skill #${skillData?.skill_id}).\n`
+      + `Checks every ${humanInterval} across: ${mcpNames.join(', ')}.\n`
+      + `View with /cron.`;
+  }
+
+  /**
+   * Extract project items from a potentially nested response (used by /link-all).
+   */
+  private extractProjectItems(
+    data: unknown,
+    idField: string,
+    nameField: string,
+  ): Array<{ id: unknown; name: unknown }> {
+    if (Array.isArray(data)) {
+      return data
+        .filter((item) => item && typeof item === 'object')
+        .map((item) => ({ id: (item as Record<string, unknown>)[idField], name: (item as Record<string, unknown>)[nameField] }));
+    }
+    if (data && typeof data === 'object') {
+      const record = data as Record<string, unknown>;
+      if (record.data && typeof record.data === 'object') {
+        return this.extractProjectItems(record.data, idField, nameField);
+      }
+      for (const key of ['projects', 'results', 'items', 'data', 'repos', 'repositories']) {
+        if (Array.isArray(record[key])) {
+          return this.extractProjectItems(record[key], idField, nameField);
+        }
+      }
+      if (record[nameField]) {
+        return [{ id: record[idField], name: record[nameField] }];
+      }
+    }
+    return [];
+  }
+
   /**
    * Extract raw text from an MCP tool result (for tools that return plain text, not StandardResponse JSON).
    */
@@ -1042,6 +1481,12 @@ Keep it concise. No markdown formatting — plain text only.`;
     output += '  /browser — Browser status (proxy, open tabs)\n';
     output += '  /kill — Kill services (all | thinker | telegram | inngest)\n';
     output += '  /resume — Resume services (all | thinker | telegram | inngest)\n';
+    output += '  /link — Link project to MCP (<id> <mcp> | new <mcp> [name])\n';
+    output += '  /link-all — Link all MCPs with matching project name\n';
+    output += '  /unlink — Unlink project from MCP (<id> <mcp>)\n';
+    output += '  /scan-projects — Scan all MCPs for cross-service project matches\n';
+    output += '  /project-status — Show linked sources for a project ([name|id])\n';
+    output += '  /setup-monitor — Set up recurring status checks (<id> <minutes>)\n';
 
     // MCP services + tool counts
     output += '\nMCP Services:\n';

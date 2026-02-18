@@ -119,6 +119,21 @@ export {
   handleQueryTimeline,
 } from './timeline.js';
 
+export {
+  linkProjectSourceToolDefinition,
+  unlinkProjectSourceToolDefinition,
+  listProjectSourcesToolDefinition,
+  updateProjectSourceStatusToolDefinition,
+  LinkProjectSourceInputSchema,
+  UnlinkProjectSourceInputSchema,
+  ListProjectSourcesInputSchema,
+  UpdateProjectSourceStatusInputSchema,
+  handleLinkProjectSource,
+  handleUnlinkProjectSource,
+  handleListProjectSources,
+  handleUpdateProjectSourceStatus,
+} from './project-sources.js';
+
 // Import all definitions for convenience
 import { storeFactToolDefinition, listFactsToolDefinition, deleteFactToolDefinition, updateFactToolDefinition } from './facts.js';
 import { storeConversationToolDefinition, searchConversationsToolDefinition } from './conversations.js';
@@ -139,6 +154,12 @@ import { backfillEmbeddingsToolDefinition } from './backfill-embeddings.js';
 import { createContactToolDefinition, listContactsToolDefinition, updateContactToolDefinition } from './contacts.js';
 import { createProjectToolDefinition, listProjectsToolDefinition, updateProjectToolDefinition } from './projects.js';
 import { queryTimelineToolDefinition } from './timeline.js';
+import {
+  linkProjectSourceToolDefinition,
+  unlinkProjectSourceToolDefinition,
+  listProjectSourcesToolDefinition,
+  updateProjectSourceStatusToolDefinition,
+} from './project-sources.js';
 
 export const allToolDefinitions = [
   // Facts
@@ -180,4 +201,9 @@ export const allToolDefinitions = [
   updateProjectToolDefinition,
   // Timeline
   queryTimelineToolDefinition,
+  // Project Sources
+  linkProjectSourceToolDefinition,
+  unlinkProjectSourceToolDefinition,
+  listProjectSourcesToolDefinition,
+  updateProjectSourceStatusToolDefinition,
 ];

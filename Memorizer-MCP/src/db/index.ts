@@ -112,4 +112,9 @@ export {
   type ProjectType,
   PROJECT_PRIORITIES,
   type ProjectPriority,
+  type ProjectSourceRow,
+  SOURCE_TYPES,
+  type SourceType,
+  SOURCE_STATUSES,
+  type SourceStatus,
 } from './schema.js';

@@ -11,6 +11,11 @@ export const MCPMetadataSchema = z.object({
     output: z.boolean().optional(),
   }).optional(),
   allowDestructiveTools: z.boolean().optional(),
+  projectDiscovery: z.object({
+    listTool: z.string(),
+    projectIdField: z.string(),
+    projectNameField: z.string(),
+  }).optional(),
 });
 
 export type MCPMetadata = z.infer<typeof MCPMetadataSchema>;

@@ -114,6 +114,25 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE INDEX IF NOT EXISTS idx_projects_agent ON projects(agent_id);
 CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(agent_id, status);
 CREATE INDEX IF NOT EXISTS idx_projects_contact ON projects(primary_contact_id);
+
+-- Project sources table: links unified projects to external MCP providers
+CREATE TABLE IF NOT EXISTS project_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    mcp_name TEXT NOT NULL,
+    external_project_id TEXT,
+    external_project_name TEXT,
+    source_type TEXT NOT NULL DEFAULT 'auto',
+    last_status TEXT DEFAULT 'unknown',
+    last_checked_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    UNIQUE(project_id, mcp_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_sources_project ON project_sources(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_sources_mcp ON project_sources(mcp_name);
 `;
 
 // Fact categories as defined in the spec
@@ -159,6 +178,24 @@ ALTER TABLE skills ADD COLUMN notify_interval_minutes INTEGER DEFAULT 0;
 
 -- Tracks when the last Telegram notification was sent for this skill
 ALTER TABLE skills ADD COLUMN last_notified_at TEXT DEFAULT NULL;
+
+-- Project sources table (migration for existing databases)
+CREATE TABLE IF NOT EXISTS project_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    mcp_name TEXT NOT NULL,
+    external_project_id TEXT,
+    external_project_name TEXT,
+    source_type TEXT NOT NULL DEFAULT 'auto',
+    last_status TEXT DEFAULT 'unknown',
+    last_checked_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    UNIQUE(project_id, mcp_name)
+);
+CREATE INDEX IF NOT EXISTS idx_project_sources_project ON project_sources(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_sources_mcp ON project_sources(mcp_name);
 `;
 
 export interface ConversationRow {
@@ -249,6 +286,26 @@ export interface ProjectRow {
   participants: string | null;
   company: string | null;
   priority: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Project source types
+export const SOURCE_TYPES = ['auto', 'manual'] as const;
+export type SourceType = typeof SOURCE_TYPES[number];
+
+export const SOURCE_STATUSES = ['ok', 'warning', 'error', 'unknown'] as const;
+export type SourceStatus = typeof SOURCE_STATUSES[number];
+
+export interface ProjectSourceRow {
+  id: number;
+  project_id: number;
+  mcp_name: string;
+  external_project_id: string | null;
+  external_project_name: string | null;
+  source_type: string;
+  last_status: string;
+  last_checked_at: string | null;
   created_at: string;
   updated_at: string;
 }
