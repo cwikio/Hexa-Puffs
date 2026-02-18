@@ -202,6 +202,21 @@ describe('extractItems', () => {
     const items = extractItems(data, 'id', 'name');
     expect(items).toEqual([{ id: 'd1', name: 'Deep Item' }]);
   });
+
+  it('should extract from "deployments" field', () => {
+    const data = {
+      pagination: { count: 2, next: 123, prev: 456 },
+      deployments: [
+        { name: 'paperwork', projectId: 'prj_abc', state: 'READY' },
+        { name: 'customer-lens', projectId: 'prj_def', state: 'READY' },
+      ],
+    };
+    const items = extractItems(data, 'name', 'name');
+    expect(items).toEqual([
+      { id: 'paperwork', name: 'paperwork' },
+      { id: 'customer-lens', name: 'customer-lens' },
+    ]);
+  });
 });
 
 describe('clusterProjects', () => {

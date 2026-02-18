@@ -137,15 +137,25 @@ async function discoverProjectsFromMCP(
     const result = await toolRouter.routeToolCall(listToolName, listToolArgs);
     const text = extractTextFromResult(result);
     if (!text) {
-      logger.info(`[project-discovery] ${mcpName}: no text in response`);
+      logger.debug(`No text in response from MCP "${mcpName}"`);
       return [];
     }
-
-    logger.info(`[project-discovery] ${mcpName}: len=${text.length} preview=${text.substring(0, 1500)}`);
 
     let data: unknown;
     try {
       data = JSON.parse(text);
+
+      // Some MCPs (e.g. Vercel) wrap the actual JSON in {"text": "..."}
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        const record = data as Record<string, unknown>;
+        if (typeof record.text === 'string' && Object.keys(record).length <= 2) {
+          try {
+            data = JSON.parse(record.text);
+          } catch {
+            // Not nested JSON, keep original
+          }
+        }
+      }
     } catch {
       // Try text table format (e.g., PostHog: [N]{fields}:\n  row,row,...)
       const tableItems = parseTextTable(text, idField, nameField);
@@ -154,7 +164,7 @@ async function discoverProjectsFromMCP(
           .filter((item) => item.name)
           .map((item) => ({ id: String(item.id ?? ''), name: String(item.name) }));
       }
-      logger.info(`[project-discovery] ${mcpName}: not JSON and not text table`);
+      logger.debug(`No parseable response from MCP "${mcpName}"`);
       return [];
     }
 
@@ -162,7 +172,6 @@ async function discoverProjectsFromMCP(
     const seen = new Set<string>();
     const projects: ExternalProject[] = [];
     const items = extractItems(data, idField, nameField);
-    logger.info(`[project-discovery] ${mcpName}: extractItems returned ${items.length} items`);
     for (const item of items) {
       if (item.name) {
         const name = String(item.name);
