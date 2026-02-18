@@ -2,7 +2,15 @@
   "vercel": {
     "command": "npx",
     "args": ["-y", "vercel-mcp", "VERCEL_API_KEY=${VERCEL_API_KEY}"],
-    "description": "Vercel project management and deployments"
+    "description": "Vercel project management and deployments",
+    "metadata": {
+      "guardianScan": { "input": false, "output": false },
+      "projectDiscovery": {
+        "listTool": "getDeployments",
+        "projectIdField": "name",
+        "projectNameField": "name"
+      }
+    }
   },
   "posthog": {
     "command": "npx",
@@ -21,11 +29,15 @@
     "type": "http",
     "url": "https://api.githubcopilot.com/mcp/",
     "description": "GitHub API (repos, issues, PRs)",
-    "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" }
-  },
-  "clerk": {
-    "command": "npx",
-    "args": ["-y", "mcp-remote", "https://mcp.clerk.com/mcp"],
-    "description": "Clerk API (authentication, user management)"
+    "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" },
+    "metadata": {
+      "guardianScan": { "input": false, "output": false },
+      "projectDiscovery": {
+        "listTool": "search_repositories",
+        "listToolArgs": { "query": "user:@me sort:updated" },
+        "projectIdField": "full_name",
+        "projectNameField": "name"
+      }
+    }
   }
 }

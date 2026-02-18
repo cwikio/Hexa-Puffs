@@ -106,20 +106,22 @@ async function discoverProjectsFromMCP(
   const discovery = stdioConfig?.metadata?.projectDiscovery ?? httpConfig?.metadata?.projectDiscovery;
 
   let listToolName: string | undefined;
+  let listToolArgs: Record<string, unknown> = {};
   let idField = 'id';
   let nameField = 'name';
 
   if (discovery) {
     // Use explicit config
     listToolName = `${mcpName}_${discovery.listTool}`;
+    listToolArgs = discovery.listToolArgs ?? {};
     idField = discovery.projectIdField;
     nameField = discovery.projectNameField;
   } else {
-    // Heuristic: find a tool matching *project* or *repo*
+    // Heuristic: find a tool that lists projects/repos/repositories
     const routes = toolRouter.getAllRoutes().filter((r) => r.mcpName === mcpName);
     const projectTool = routes.find((r) =>
-      /^(list|get)[_-]?(project|repo)s?$/i.test(r.originalName)
-      || /^(project|repo)s?[_-]?(list|get|all)$/i.test(r.originalName)
+      /^(list|get|search)[_-]?(project|repo|repositor)s?(ies)?$/i.test(r.originalName)
+      || /^(project|repo|repositor)s?(ies)?[_-]?(list|get|all|search)$/i.test(r.originalName)
     );
     if (projectTool) {
       listToolName = projectTool.exposedName;
@@ -132,9 +134,14 @@ async function discoverProjectsFromMCP(
   }
 
   try {
-    const result = await toolRouter.routeToolCall(listToolName, {});
+    const result = await toolRouter.routeToolCall(listToolName, listToolArgs);
     const text = extractTextFromResult(result);
-    if (!text) return [];
+    if (!text) {
+      logger.info(`[project-discovery] ${mcpName}: no text in response`);
+      return [];
+    }
+
+    logger.info(`[project-discovery] ${mcpName}: response preview: ${text.substring(0, 500)}`);
 
     let data: unknown;
     try {
@@ -147,15 +154,23 @@ async function discoverProjectsFromMCP(
           .filter((item) => item.name)
           .map((item) => ({ id: String(item.id ?? ''), name: String(item.name) }));
       }
+      logger.info(`[project-discovery] ${mcpName}: not JSON and not text table`);
       return [];
     }
 
     // Extract projects from response — handle various response shapes
+    const seen = new Set<string>();
     const projects: ExternalProject[] = [];
     const items = extractItems(data, idField, nameField);
+    logger.info(`[project-discovery] ${mcpName}: extractItems returned ${items.length} items`);
     for (const item of items) {
       if (item.name) {
-        projects.push({ id: String(item.id ?? ''), name: String(item.name) });
+        const name = String(item.name);
+        // Deduplicate (e.g. Vercel returns multiple deployments per project)
+        if (!seen.has(name)) {
+          seen.add(name);
+          projects.push({ id: String(item.id ?? ''), name });
+        }
       }
     }
 
@@ -224,7 +239,7 @@ export function extractItems(
       return extractItems(record.data, idField, nameField);
     }
     // Check for common array fields
-    for (const key of ['projects', 'results', 'items', 'data', 'repos', 'repositories']) {
+    for (const key of ['projects', 'results', 'items', 'data', 'repos', 'repositories', 'deployments']) {
       if (Array.isArray(record[key])) {
         return extractItems(record[key], idField, nameField);
       }
@@ -444,6 +459,7 @@ export const projectRecognitionFunction = inngest.createFunction(
         };
 
         let notifiedCount = 0;
+        const singleSourceProjects: Array<{ mcpName: string; name: string }> = [];
 
         for (const cluster of clusters) {
           // Filter out already-linked sources
@@ -453,34 +469,60 @@ export const projectRecognitionFunction = inngest.createFunction(
 
           if (unlinkedSources.length === 0) continue;
 
-          if (cluster.sources.length >= 2 || cluster.unifiedProjectId) {
-            // Multi-MCP cluster or matches existing project
+          if (cluster.unifiedProjectId) {
+            // Matches existing unified project
             const sourceLines = cluster.sources
               .map((s) => `  - "${s.externalName}" on ${s.mcpName}`)
               .join('\n');
-
-            if (cluster.unifiedProjectId) {
-              await notifyTelegram(
-                `Project "${cluster.unifiedProjectName}" (id: ${cluster.unifiedProjectId}) found across services:\n`
-                + sourceLines + '\n'
-                + `Link all: /link-all ${cluster.unifiedProjectId}`,
-              );
-            } else {
-              const displayName = cluster.sources[0].externalName;
-              await notifyTelegram(
-                `Same project appears across multiple services:\n`
-                + sourceLines + '\n'
-                + `Connect them? Reply: /link-all ${displayName}`,
-              );
-            }
+            await notifyTelegram(
+              `Project "${cluster.unifiedProjectName}" (id: ${cluster.unifiedProjectId}) found across services:\n`
+              + sourceLines + '\n'
+              + `Link all: /link-all ${cluster.unifiedProjectId}`,
+            );
             notifiedCount++;
+          } else if (cluster.sources.length >= 2) {
+            // Same project on multiple MCPs
+            const sourceLines = cluster.sources
+              .map((s) => `  - "${s.externalName}" on ${s.mcpName}`)
+              .join('\n');
+            const displayName = cluster.sources[0].externalName;
+            await notifyTelegram(
+              `Same project appears across multiple services:\n`
+              + sourceLines + '\n'
+              + `Connect them? Reply: /link-all ${displayName}`,
+            );
+            notifiedCount++;
+          } else {
+            // Single-MCP project — collect for summary
+            singleSourceProjects.push({
+              mcpName: unlinkedSources[0].mcpName,
+              name: unlinkedSources[0].externalName,
+            });
           }
+        }
+
+        // Notify about single-source projects in a summary
+        if (singleSourceProjects.length > 0) {
+          const grouped = new Map<string, string[]>();
+          for (const p of singleSourceProjects) {
+            const list = grouped.get(p.mcpName) ?? [];
+            list.push(p.name);
+            grouped.set(p.mcpName, list);
+          }
+          const lines: string[] = [];
+          for (const [mcpName, names] of grouped) {
+            lines.push(`${mcpName}: ${names.join(', ')}`);
+          }
+          await notifyTelegram(
+            `Discovered projects:\n${lines.join('\n')}\n\n`
+            + `Create & link: /link new <mcp_name> <project_name>`,
+          );
+          notifiedCount++;
         }
 
         if (notifiedCount === 0) {
           await notifyTelegram(
-            'Project scan complete — no cross-service matches found.\n'
-            + 'You can link manually: /link <project_id> <mcp_name>',
+            'Project scan complete — no new projects found.',
           );
         }
 
