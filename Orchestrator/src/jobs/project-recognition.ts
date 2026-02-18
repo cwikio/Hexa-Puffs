@@ -141,7 +141,7 @@ async function discoverProjectsFromMCP(
       return [];
     }
 
-    logger.info(`[project-discovery] ${mcpName}: response preview: ${text.substring(0, 500)}`);
+    logger.info(`[project-discovery] ${mcpName}: len=${text.length} preview=${text.substring(0, 1500)}`);
 
     let data: unknown;
     try {
