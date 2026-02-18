@@ -14,5 +14,10 @@
     "url": "https://api.githubcopilot.com/mcp/",
     "description": "GitHub API (repos, issues, PRs)",
     "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" }
+  },
+  "clerk": {
+    "command": "npx",
+    "args": ["-y", "mcp-remote", "https://mcp.clerk.com/mcp"],
+    "description": "Clerk API (authentication, user management)"
   }
 }
