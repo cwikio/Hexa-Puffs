@@ -140,6 +140,13 @@ async function discoverProjectsFromMCP(
     try {
       data = JSON.parse(text);
     } catch {
+      // Try text table format (e.g., PostHog: [N]{fields}:\n  row,row,...)
+      const tableItems = parseTextTable(text, idField, nameField);
+      if (tableItems.length > 0) {
+        return tableItems
+          .filter((item) => item.name)
+          .map((item) => ({ id: String(item.id ?? ''), name: String(item.name) }));
+      }
       return [];
     }
 
@@ -157,6 +164,43 @@ async function discoverProjectsFromMCP(
     logger.warn(`Failed to discover projects from MCP "${mcpName}"`, { error });
     return [];
   }
+}
+
+/**
+ * Parse text table format used by some MCP tools (e.g., PostHog).
+ * Format: [count]{field1,field2,...}:\n  val1,val2,...\n  val1,val2,...
+ */
+export function parseTextTable(
+  text: string,
+  idField: string,
+  nameField: string,
+): Array<{ id: unknown; name: unknown }> {
+  const headerMatch = text.match(/^\[(\d+)\]\{([^}]+)\}:/);
+  if (!headerMatch) return [];
+
+  const fields = headerMatch[2].split(',').map((f) => f.trim());
+  const idIdx = fields.indexOf(idField);
+  const nameIdx = fields.indexOf(nameField);
+
+  if (idIdx === -1 && nameIdx === -1) return [];
+
+  const results: Array<{ id: unknown; name: unknown }> = [];
+  const lines = text.split('\n').slice(1);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const values = trimmed.split(',').map((v) => v.trim());
+    const id = idIdx >= 0 ? values[idIdx] : undefined;
+    const name = nameIdx >= 0 ? values[nameIdx] : undefined;
+
+    if (name) {
+      results.push({ id, name });
+    }
+  }
+
+  return results;
 }
 
 /**

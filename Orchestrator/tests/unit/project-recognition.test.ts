@@ -7,6 +7,7 @@ import {
   normalizeProjectName,
   projectNamesMatch,
   extractItems,
+  parseTextTable,
   clusterProjects,
 } from '../../src/jobs/project-recognition.js';
 import type { DiscoveredMCPProjects } from '../../src/jobs/project-recognition.js';
@@ -300,5 +301,61 @@ describe('clusterProjects', () => {
       externalId: 'prj_abc',
       externalName: 'customer-lens',
     });
+  });
+});
+
+describe('parseTextTable', () => {
+  it('should parse PostHog-style text table', () => {
+    const text = [
+      '[3]{id,name,organization,api_token}:',
+      '  79461,Customers Lens,My Org,phc_abc123',
+      '  272876,Paperwork.vc,My Org,phc_def456',
+      '  298248,Customers Academy,My Org,phc_ghi789',
+    ].join('\n');
+
+    const items = parseTextTable(text, 'id', 'name');
+    expect(items).toEqual([
+      { id: '79461', name: 'Customers Lens' },
+      { id: '272876', name: 'Paperwork.vc' },
+      { id: '298248', name: 'Customers Academy' },
+    ]);
+  });
+
+  it('should handle single row', () => {
+    const text = '[1]{id,name}:\n  42,My Project';
+    const items = parseTextTable(text, 'id', 'name');
+    expect(items).toEqual([{ id: '42', name: 'My Project' }]);
+  });
+
+  it('should return empty for non-table text', () => {
+    expect(parseTextTable('just some text', 'id', 'name')).toEqual([]);
+    expect(parseTextTable('{"json": true}', 'id', 'name')).toEqual([]);
+  });
+
+  it('should return empty when fields not found in header', () => {
+    const text = '[1]{foo,bar}:\n  1,test';
+    const items = parseTextTable(text, 'id', 'name');
+    expect(items).toEqual([]);
+  });
+
+  it('should skip empty lines', () => {
+    const text = '[2]{id,name}:\n  1,First\n\n  2,Second\n';
+    const items = parseTextTable(text, 'id', 'name');
+    expect(items).toEqual([
+      { id: '1', name: 'First' },
+      { id: '2', name: 'Second' },
+    ]);
+  });
+
+  it('should handle fields in different positions', () => {
+    const text = '[1]{organization,id,name,token}:\n  MyOrg,99,Cool Project,tok_abc';
+    const items = parseTextTable(text, 'id', 'name');
+    expect(items).toEqual([{ id: '99', name: 'Cool Project' }]);
+  });
+
+  it('should handle custom field names', () => {
+    const text = '[1]{project_id,title,status}:\n  abc,My App,active';
+    const items = parseTextTable(text, 'project_id', 'title');
+    expect(items).toEqual([{ id: 'abc', name: 'My App' }]);
   });
 });
