@@ -6,6 +6,13 @@
   },
   "posthog": {
     "command": "npx",
-    "args": ["-y", "mcp-remote@latest", "https://mcp.posthog.com/sse"]
+    "args": ["-y", "mcp-remote@latest", "https://mcp.posthog.com/sse"],
+    "description": "PostHog API (page analytics, feature flags)"
+  },
+  "github": {
+    "type": "http",
+    "url": "https://api.githubcopilot.com/mcp/",
+    "description": "GitHub API (repos, issues, PRs)",
+    "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" }
   }
 }

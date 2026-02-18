@@ -3,6 +3,7 @@ import { guardianConfig } from '../config/guardian.js';
 import { StdioGuardianClient } from '../mcp-clients/stdio-guardian.js';
 import { GuardedMCPClient } from '../mcp-clients/guarded-client.js';
 import { StdioMCPClient } from '../mcp-clients/stdio-client.js';
+import { HttpMCPClient } from '../mcp-clients/http-client.js';
 import type { IMCPClient, ToolCallResult } from '../mcp-clients/types.js';
 import { SessionManager } from '../agents/sessions.js';
 import { ToolRouter } from '../routing/tool-router.js';
@@ -29,7 +30,7 @@ const MCPS_ROOT = resolve(__dirname, '../../../');
 export interface MCPServerStatus {
   available: boolean;
   required: boolean;
-  type: 'stdio';
+  type: 'stdio' | 'http';
 }
 
 export interface OrchestratorStatus {
@@ -46,8 +47,9 @@ export class Orchestrator {
   private logger: Logger;
   private startTime: Date;
 
-  // MCP Clients (all stdio)
+  // MCP Clients
   private stdioClients: Map<string, StdioMCPClient> = new Map();
+  private httpClients: Map<string, HttpMCPClient> = new Map();
 
   // Core components
   private sessions: SessionManager;
@@ -126,6 +128,18 @@ export class Orchestrator {
       const client = this.maybeGuard(name, raw, mcpConfig.metadata);
       this.toolRouter.registerMCP(name, client, mcpConfig.metadata);
     }
+
+    // Register HTTP MCPs (from external-mcps.json entries with type: "http")
+    const httpConfigs = this.config.mcpServersHttp;
+    if (httpConfigs) {
+      for (const [name, cfg] of Object.entries(httpConfigs)) {
+        const raw = new HttpMCPClient(name, cfg);
+        this.httpClients.set(name, raw);
+
+        const client = this.maybeGuard(name, raw, cfg.metadata);
+        this.toolRouter.registerMCP(name, client, cfg.metadata);
+      }
+    }
   }
 
   /**
@@ -198,10 +212,14 @@ export class Orchestrator {
   }
 
   private async initializeStdioMode(): Promise<void> {
-    // Initialize all stdio clients in parallel
+    // Initialize all clients in parallel (stdio + HTTP)
     const initPromises: Promise<void>[] = [];
     for (const [name, client] of this.stdioClients) {
       this.logger.info(`Spawning ${name} MCP via stdio...`);
+      initPromises.push(client.initialize());
+    }
+    for (const [name, client] of this.httpClients) {
+      this.logger.info(`Connecting to ${name} MCP via HTTP...`);
       initPromises.push(client.initialize());
     }
 
@@ -212,10 +230,15 @@ export class Orchestrator {
     const red = '\x1b[31m';
     const reset = '\x1b[0m';
 
-    this.logger.info('MCP Services Status (stdio mode):');
+    this.logger.info('MCP Services Status:');
     for (const [name, client] of this.stdioClients) {
       this.logger.info(
         `  ${name}: ${client.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (stdio)`
+      );
+    }
+    for (const [name, client] of this.httpClients) {
+      this.logger.info(
+        `  ${name}: ${client.isAvailable ? green + '✓ available' + reset : red + '✗ unavailable' + reset} (http)`
       );
     }
   }
@@ -253,22 +276,19 @@ export class Orchestrator {
   }
 
   /**
-   * Run health checks on all stdio clients and restart any that have crashed.
+   * Run health checks on all clients and restart any that have crashed.
    */
   private async runHealthChecks(): Promise<void> {
     let needsRediscovery = false;
 
     for (const [name, client] of this.stdioClients) {
       // Guardian is health-checked but not registered with tool router
-      // (it's used internally via StdioGuardianClient, not as a passthrough MCP)
       const isGuardian = name === 'guardian';
 
       const healthy = await client.healthCheck();
 
       if (!healthy && client.isAvailable) {
-        // Was available but now failing — likely crashed
         this.logger.warn(`MCP ${name} health check failed — attempting restart...`);
-
         const restarted = await client.restart();
         if (restarted) {
           this.logger.info(`MCP ${name} restarted successfully`);
@@ -277,16 +297,38 @@ export class Orchestrator {
           this.logger.error(`MCP ${name} restart failed — service unavailable`);
         }
       } else if (!healthy && !client.isAvailable) {
-        // Was already down, try to bring it up
         this.logger.info(`MCP ${name} is down — attempting restart...`);
         const restarted = await client.restart();
         if (restarted) {
           this.logger.info(`MCP ${name} recovered`);
-          // Don't re-register guardian with tool router — it's used via StdioGuardianClient
           if (!isGuardian) {
             this.toolRouter.registerMCP(name, client);
             needsRediscovery = true;
           }
+        }
+      }
+    }
+
+    // Health-check HTTP clients
+    for (const [name, client] of this.httpClients) {
+      const healthy = await client.healthCheck();
+
+      if (!healthy && client.isAvailable) {
+        this.logger.warn(`HTTP MCP ${name} health check failed — attempting reconnect...`);
+        const restarted = await client.restart();
+        if (restarted) {
+          this.logger.info(`HTTP MCP ${name} reconnected successfully`);
+          needsRediscovery = true;
+        } else {
+          this.logger.error(`HTTP MCP ${name} reconnect failed — service unavailable`);
+        }
+      } else if (!healthy && !client.isAvailable) {
+        this.logger.info(`HTTP MCP ${name} is down — attempting reconnect...`);
+        const restarted = await client.restart();
+        if (restarted) {
+          this.logger.info(`HTTP MCP ${name} recovered`);
+          this.toolRouter.registerMCP(name, client);
+          needsRediscovery = true;
         }
       }
     }
@@ -633,6 +675,13 @@ export class Orchestrator {
         type: 'stdio',
       };
     }
+    for (const [name, client] of this.httpClients) {
+      mcpServers[name] = {
+        available: client.isAvailable,
+        required: client.isRequired,
+        type: 'http',
+      };
+    }
 
     return {
       ready: this.initialized,
@@ -662,10 +711,10 @@ export class Orchestrator {
    * Returns per-MCP status with internal/external classification.
    */
   async checkMCPHealth(scope: 'all' | 'internal' | 'external' = 'all'): Promise<
-    Array<{ name: string; available: boolean; healthy: boolean; type: 'internal' | 'external' }>
+    Array<{ name: string; available: boolean; healthy: boolean; type: 'internal' | 'external'; transport: 'stdio' | 'http' }>
   > {
     const externalNames = this.externalMCPNames;
-    const results: Array<{ name: string; available: boolean; healthy: boolean; type: 'internal' | 'external' }> = [];
+    const results: Array<{ name: string; available: boolean; healthy: boolean; type: 'internal' | 'external'; transport: 'stdio' | 'http' }> = [];
 
     for (const [name, client] of this.stdioClients) {
       const isExternal = externalNames.has(name);
@@ -673,12 +722,15 @@ export class Orchestrator {
       if (scope === 'external' && !isExternal) continue;
 
       const healthy = await client.healthCheck();
-      results.push({
-        name,
-        available: client.isAvailable,
-        healthy,
-        type: isExternal ? 'external' : 'internal',
-      });
+      results.push({ name, available: client.isAvailable, healthy, type: isExternal ? 'external' : 'internal', transport: 'stdio' });
+    }
+
+    for (const [name, client] of this.httpClients) {
+      // HTTP MCPs are always external
+      if (scope === 'internal') continue;
+
+      const healthy = await client.healthCheck();
+      results.push({ name, available: client.isAvailable, healthy, type: 'external', transport: 'http' });
     }
 
     return results;
@@ -705,10 +757,10 @@ export class Orchestrator {
   private computeStartupDiff(): MCPDiff {
     const entries: MCPSnapshotEntry[] = [];
     for (const name of this.stdioClients.keys()) {
-      entries.push({
-        name,
-        type: this.externalMCPNames.has(name) ? 'external' : 'internal',
-      });
+      entries.push({ name, type: this.externalMCPNames.has(name) ? 'external' : 'internal' });
+    }
+    for (const name of this.httpClients.keys()) {
+      entries.push({ name, type: 'external' });
     }
 
     const current: MCPSnapshot = {
@@ -744,7 +796,7 @@ export class Orchestrator {
       (n) => !this.externalMCPNames.has(n),
     ).length;
     const externalCount = this.externalMCPNames.size;
-    const total = this.stdioClients.size;
+    const total = this.stdioClients.size + this.httpClients.size;
 
     // Build tool names per MCP
     const toolsByMCP = new Map<string, string[]>();
@@ -763,8 +815,12 @@ export class Orchestrator {
       lines.push('', 'External:');
       for (const name of this.externalMCPNames) {
         const tools = toolsByMCP.get(name) ?? [];
-        const desc = this.config.mcpServersStdio?.[name]?.description;
-        lines.push(desc ? `  ${name}: ${tools.length} tools — ${desc}` : `  ${name}: ${tools.length} tools`);
+        const transport = this.httpClients.has(name) ? 'http' : 'stdio';
+        const desc = this.config.mcpServersStdio?.[name]?.description
+          ?? this.config.mcpServersHttp?.[name]?.description;
+        lines.push(desc
+          ? `  ${name} (${transport}): ${tools.length} tools — ${desc}`
+          : `  ${name} (${transport}): ${tools.length} tools`);
         for (const tool of tools) {
           lines.push(`    • ${tool}`);
         }
@@ -777,11 +833,19 @@ export class Orchestrator {
       for (const name of diff.removed) lines.push(`  - ${name}`);
     }
 
-    const failed = [...this.stdioClients.entries()]
-      .filter(([, client]) => !client.isAvailable)
-      .map(([name]) => name);
-    if (failed.length > 0) {
-      lines.push('', `Failed: ${failed.join(', ')}`);
+    const failedEntries: Array<{ name: string; error?: string }> = [
+      ...[...this.stdioClients.entries()]
+        .filter(([, c]) => !c.isAvailable)
+        .map(([n, c]) => ({ name: n, error: c.initError })),
+      ...[...this.httpClients.entries()]
+        .filter(([, c]) => !c.isAvailable)
+        .map(([n, c]) => ({ name: n, error: c.initError })),
+    ];
+    if (failedEntries.length > 0) {
+      lines.push('', 'Failed:');
+      for (const { name, error } of failedEntries) {
+        lines.push(error ? `  ${name}: ${error}` : `  ${name}`);
+      }
     }
 
     const blocked = this.toolRouter.getBlockedTools();
@@ -811,19 +875,33 @@ export class Orchestrator {
   private startExternalMCPWatcher(): void {
     const configPath = resolve(MCPS_ROOT, 'external-mcps.json');
 
-    // Build initial externals map from config
+    // Build initial externals map from config (both stdio and HTTP)
     const initialExternals: Record<string, ExternalMCPEntry> = {};
     for (const name of this.externalMCPNames) {
-      const cfg = this.config.mcpServersStdio?.[name];
-      if (cfg) {
+      const stdioCfg = this.config.mcpServersStdio?.[name];
+      if (stdioCfg) {
         initialExternals[name] = {
-          command: cfg.command,
-          args: cfg.args,
-          env: cfg.env,
-          timeout: cfg.timeout,
+          type: 'stdio',
+          command: stdioCfg.command,
+          args: stdioCfg.args,
+          env: stdioCfg.env,
+          timeout: stdioCfg.timeout,
           required: false,
-          sensitive: cfg.sensitive,
-          description: cfg.description,
+          sensitive: stdioCfg.sensitive,
+          description: stdioCfg.description,
+        };
+        continue;
+      }
+      const httpCfg = this.config.mcpServersHttp?.[name];
+      if (httpCfg) {
+        initialExternals[name] = {
+          type: 'http',
+          url: httpCfg.url,
+          headers: httpCfg.headers,
+          timeout: httpCfg.timeout,
+          required: false,
+          sensitive: httpCfg.sensitive,
+          description: httpCfg.description,
         };
       }
     }
@@ -834,6 +912,11 @@ export class Orchestrator {
         await this.handleExternalMCPChange(added, removed);
       },
       initialExternals,
+      (fileError, entryErrors) => {
+        this.sendValidationErrorNotification(fileError, entryErrors).catch((err) =>
+          this.logger.warn('Validation error notification failed', { error: err }),
+        );
+      },
     );
 
     this.externalWatcher.start();
@@ -854,40 +937,82 @@ export class Orchestrator {
     added: Map<string, ExternalMCPEntry>,
     removed: string[],
   ): Promise<void> {
-    // Remove old MCPs
+    // Remove old MCPs (check both maps)
     for (const name of removed) {
-      const client = this.stdioClients.get(name);
-      if (client) {
-        this.logger.info(`Hot-reload: removing external MCP "${name}"`);
-        await client.close();
+      const stdioClient = this.stdioClients.get(name);
+      if (stdioClient) {
+        this.logger.info(`Hot-reload: removing external MCP "${name}" (stdio)`);
+        await stdioClient.close();
         this.stdioClients.delete(name);
-        this.toolRouter.unregisterMCP(name);
       }
+      const httpClient = this.httpClients.get(name);
+      if (httpClient) {
+        this.logger.info(`Hot-reload: removing external MCP "${name}" (http)`);
+        await httpClient.close();
+        this.httpClients.delete(name);
+      }
+      this.toolRouter.unregisterMCP(name);
       this.externalMCPNames.delete(name);
     }
 
-    // Add new MCPs
+    // Add new MCPs — track failures for notification
+    const failed: Array<{ name: string; error: string }> = [];
+
     for (const [name, entry] of added) {
       // Guard against name conflicts with internal MCPs
-      if (this.stdioClients.has(name) && !this.externalMCPNames.has(name)) {
+      const conflictsInternal = (this.stdioClients.has(name) || this.httpClients.has(name))
+        && !this.externalMCPNames.has(name);
+      if (conflictsInternal) {
         this.logger.warn(`Hot-reload: external MCP "${name}" conflicts with internal MCP — skipping`);
         continue;
       }
 
-      this.logger.info(`Hot-reload: adding external MCP "${name}"`);
-      const raw = new StdioMCPClient(name, entry);
-      try {
-        await raw.initialize();
-      } catch (err) {
-        this.logger.error(`Hot-reload: failed to initialize external MCP "${name}"`, { error: err });
-        continue;
+      this.logger.info(`Hot-reload: adding external MCP "${name}" (${entry.type})`);
+
+      let mcpClient: IMCPClient;
+      if (entry.type === 'http') {
+        const raw = new HttpMCPClient(name, {
+          url: entry.url,
+          headers: entry.headers,
+          timeout: entry.timeout,
+          sensitive: entry.sensitive,
+        });
+        try {
+          await raw.initialize();
+        } catch (err) {
+          this.logger.error(`Hot-reload: failed to initialize HTTP MCP "${name}"`, { error: err });
+          failed.push({ name, error: err instanceof Error ? err.message : String(err) });
+          continue;
+        }
+        // Non-required MCPs don't throw on failure — check if actually connected
+        if (!raw.isAvailable) {
+          this.logger.warn(`Hot-reload: HTTP MCP "${name}" failed to connect: ${raw.initError}`);
+          failed.push({ name, error: raw.initError ?? 'Connection failed' });
+          continue;
+        }
+        this.httpClients.set(name, raw);
+        mcpClient = raw;
+      } else {
+        const raw = new StdioMCPClient(name, entry);
+        try {
+          await raw.initialize();
+        } catch (err) {
+          this.logger.error(`Hot-reload: failed to initialize stdio MCP "${name}"`, { error: err });
+          failed.push({ name, error: err instanceof Error ? err.message : String(err) });
+          continue;
+        }
+        if (!raw.isAvailable) {
+          this.logger.warn(`Hot-reload: stdio MCP "${name}" failed to connect: ${raw.initError}`);
+          failed.push({ name, error: raw.initError ?? 'Connection failed' });
+          continue;
+        }
+        this.stdioClients.set(name, raw);
+        mcpClient = raw;
       }
 
-      this.stdioClients.set(name, raw);
       this.externalMCPNames.add(name);
-
-      const client = this.maybeGuard(name, raw, entry.metadata);
-      this.toolRouter.registerMCP(name, client, entry.metadata);
+      const guarded = this.maybeGuard(name, mcpClient, entry.metadata);
+      this.toolRouter.registerMCP(name, guarded, entry.metadata);
     }
 
     // Rebuild routes if anything changed
@@ -899,13 +1024,16 @@ export class Orchestrator {
       for (const n of this.stdioClients.keys()) {
         entries.push({ name: n, type: this.externalMCPNames.has(n) ? 'external' : 'internal' });
       }
+      for (const n of this.httpClients.keys()) {
+        entries.push({ name: n, type: 'external' });
+      }
       saveSnapshot(Orchestrator.SNAPSHOT_PATH, {
         timestamp: new Date().toISOString(),
         mcps: entries,
       });
 
       // Notify via Telegram (best-effort)
-      this.sendHotReloadNotification(added, removed).catch((err) =>
+      this.sendHotReloadNotification(added, removed, failed).catch((err) =>
         this.logger.warn('Hot-reload notification failed', { error: err }),
       );
     }
@@ -917,6 +1045,7 @@ export class Orchestrator {
   private async sendHotReloadNotification(
     added: Map<string, ExternalMCPEntry>,
     removed: string[],
+    failed: Array<{ name: string; error: string }>,
   ): Promise<void> {
     const agentDef = this.getAgentDefinition('hexa-puffs');
     const chatId = agentDef?.costControls?.notifyChatId || process.env.NOTIFY_CHAT_ID;
@@ -924,11 +1053,13 @@ export class Orchestrator {
 
     const lines: string[] = ['External MCPs changed:'];
 
+    const failedNames = new Set(failed.map((f) => f.name));
     for (const [name, entry] of added) {
+      if (failedNames.has(name)) continue; // shown separately below
       const tools = this.toolRouter.getAllRoutes().filter((r) => r.mcpName === name);
       lines.push(entry.description
-        ? `  + ${name}: ${tools.length} tools — ${entry.description}`
-        : `  + ${name}: ${tools.length} tools`);
+        ? `  + ${name} (${entry.type}): ${tools.length} tools — ${entry.description}`
+        : `  + ${name} (${entry.type}): ${tools.length} tools`);
       for (const tool of tools) {
         lines.push(`    • ${tool.originalName}`);
       }
@@ -936,6 +1067,38 @@ export class Orchestrator {
     for (const name of removed) {
       lines.push(`  - ${name}`);
     }
+    if (failed.length > 0) {
+      lines.push('', 'Failed to connect:');
+      for (const { name, error } of failed) {
+        lines.push(`  ${name}: ${error}`);
+      }
+    }
+
+    await this.toolRouter.routeToolCall('telegram_send_message', {
+      chat_id: chatId,
+      message: lines.join('\n'),
+    });
+  }
+
+  /**
+   * Send Telegram notification about external MCP validation errors.
+   */
+  private async sendValidationErrorNotification(
+    fileError: string | undefined,
+    entryErrors: Array<{ name: string; message: string }>,
+  ): Promise<void> {
+    const agentDef = this.getAgentDefinition('hexa-puffs');
+    const chatId = agentDef?.costControls?.notifyChatId || process.env.NOTIFY_CHAT_ID;
+    if (!chatId) return;
+
+    const lines: string[] = ['External MCPs validation error:'];
+    if (fileError) {
+      lines.push(`  File: ${fileError}`);
+    }
+    for (const err of entryErrors) {
+      lines.push(`  "${err.name}": ${err.message}`);
+    }
+    lines.push('', 'Valid entries were still loaded. Fix the errors above and save the file.');
 
     await this.toolRouter.routeToolCall('telegram_send_message', {
       chat_id: chatId,

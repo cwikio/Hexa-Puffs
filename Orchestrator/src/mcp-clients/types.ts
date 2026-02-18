@@ -40,6 +40,7 @@ export interface IMCPClient {
   readonly isAvailable: boolean;
   readonly isRequired: boolean;
   readonly isSensitive: boolean;
+  readonly initError?: string;
 
   initialize(): Promise<void>;
   listTools(): Promise<MCPToolDefinition[]>;

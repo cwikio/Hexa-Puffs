@@ -1,7 +1,7 @@
 import { loadEnvSafely } from '@mcp/shared/Utils/env.js';
 loadEnvSafely(import.meta.url, 2);
 
-import { ConfigSchema, type Config, type StdioMCPServerConfig } from './schema.js';
+import { ConfigSchema, type Config, type StdioMCPServerConfig, type HttpMCPServerConfig } from './schema.js';
 import { ConfigurationError } from '../utils/errors.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import {
@@ -47,15 +47,43 @@ export function loadConfig(): Config {
   }
 
   // Merge external MCPs from external-mcps.json in project root
-  const externalMCPs = loadExternalMCPs(resolve(mcpsRoot, 'external-mcps.json'));
+  const externalResult = loadExternalMCPs(resolve(mcpsRoot, 'external-mcps.json'));
+  if (externalResult.fileError) {
+    logger.error('External MCPs file error', { error: externalResult.fileError });
+  }
+  for (const err of externalResult.errors) {
+    logger.error(`External MCP "${err.name}" skipped: ${err.message}`);
+  }
   const externalNames: string[] = [];
-  for (const [name, entry] of Object.entries(externalMCPs)) {
+  const mcpServersHttp: Record<string, HttpMCPServerConfig> = {};
+  for (const [name, entry] of Object.entries(externalResult.entries)) {
     if (mcpServersStdio[name]) {
       logger.warn('External MCP name conflicts with internal MCP — skipping', { name });
       continue;
     }
-    mcpServersStdio[name] = entry;
     externalNames.push(name);
+    if (entry.type === 'http') {
+      mcpServersHttp[name] = {
+        url: entry.url,
+        headers: entry.headers,
+        timeout: entry.timeout,
+        required: entry.required,
+        sensitive: entry.sensitive,
+        description: entry.description,
+        metadata: entry.metadata,
+      };
+    } else {
+      mcpServersStdio[name] = {
+        command: entry.command,
+        args: entry.args,
+        env: entry.env,
+        timeout: entry.timeout,
+        required: entry.required,
+        sensitive: entry.sensitive,
+        description: entry.description,
+        metadata: entry.metadata,
+      };
+    }
   }
 
   const rawConfig = {
@@ -63,8 +91,11 @@ export function loadConfig(): Config {
     port: getEnvNumber('PORT', 8000),
     mcpConnectionMode,
 
-    // Auto-discovered MCP configs (all stdio)
+    // Auto-discovered + external stdio MCP configs
     mcpServersStdio: Object.keys(mcpServersStdio).length > 0 ? mcpServersStdio : undefined,
+
+    // External HTTP MCP configs
+    mcpServersHttp: Object.keys(mcpServersHttp).length > 0 ? mcpServersHttp : undefined,
 
     security: {
       scanAllInputs: getEnvBoolean('SCAN_ALL_INPUTS', true),
@@ -75,7 +106,7 @@ export function loadConfig(): Config {
           .filter((mcp) => mcp.sensitive)
           .map((mcp) => `${mcp.name}_`),
         ...externalNames
-          .filter((name) => externalMCPs[name]?.sensitive)
+          .filter((name) => externalResult.entries[name]?.sensitive)
           .map((name) => `${name}_`),
         'filer_create_file',
         'filer_update_file',
@@ -137,6 +168,7 @@ export function getConfig(): Config {
 export {
   type Config,
   type StdioMCPServerConfig,
+  type HttpMCPServerConfig,
   type SecurityConfig,
   type ChannelPollingConfig,
   type MCPMetadata,

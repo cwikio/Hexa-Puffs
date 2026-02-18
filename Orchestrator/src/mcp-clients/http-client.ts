@@ -1,5 +1,5 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { Logger, logger } from '@mcp/shared/Utils/logger.js';
 import type {
   IMCPClient,
@@ -8,30 +8,28 @@ import type {
   ToolCallResult,
 } from './types.js';
 
-export interface StdioMCPConfig {
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
+export interface HttpMCPConfig {
+  url: string;
+  headers?: Record<string, string>;
   timeout?: number;
   required?: boolean;
   sensitive?: boolean;
 }
 
 /**
- * MCP client that connects to downstream MCPs via stdio transport.
- * This is the same pattern Claude Desktop uses.
+ * MCP client that connects to remote MCPs via Streamable HTTP transport.
+ * Used for external HTTP MCPs like GitHub MCP Server.
  */
-export class StdioMCPClient implements IMCPClient {
+export class HttpMCPClient implements IMCPClient {
   private client: Client | null = null;
-  private transport: StdioClientTransport | null = null;
+  private transport: StreamableHTTPClientTransport | null = null;
   private available: boolean = false;
   private _initError: string | undefined;
   protected logger: Logger;
 
   constructor(
     public readonly name: string,
-    private config: StdioMCPConfig
+    private config: HttpMCPConfig,
   ) {
     this.logger = logger.child(`mcp:${name}`);
   }
@@ -53,67 +51,35 @@ export class StdioMCPClient implements IMCPClient {
   }
 
   /**
-   * Initialize the stdio connection to the MCP server.
-   * Spawns the MCP process and establishes communication.
+   * Initialize the HTTP connection to the remote MCP server.
    */
   async initialize(): Promise<void> {
     try {
-      this.logger.info(`Spawning MCP server: ${this.config.command} ${(this.config.args || []).join(' ')}`);
+      this.logger.info(`Connecting to HTTP MCP server: ${this.config.url}`);
 
-      // Create stdio transport that spawns the MCP process
-      // Filter out undefined values and TRANSPORT env var (force child to use stdio)
-      const envVars: Record<string, string> = {};
-      for (const [key, value] of Object.entries(process.env)) {
-        // Skip undefined values and TRANSPORT (child MCPs should always use stdio)
-        if (value !== undefined && key !== 'TRANSPORT') {
-          envVars[key] = value;
-        }
+      const requestInit: RequestInit = {};
+      if (this.config.headers && Object.keys(this.config.headers).length > 0) {
+        requestInit.headers = { ...this.config.headers };
       }
 
-      this.transport = new StdioClientTransport({
-        command: this.config.command,
-        args: this.config.args,
-        env: {
-          ...envVars,
-          ...this.config.env,
-          // Force stdio transport for spawned MCPs
-          TRANSPORT: 'stdio',
-        },
-        cwd: this.config.cwd,
-        stderr: 'pipe',
-      });
-
-      // Pipe child stderr through orchestrator logger with MCP name context
-      const stderrStream = this.transport.stderr;
-      if (stderrStream) {
-        stderrStream.on('data', (chunk: Buffer) => {
-          const lines = chunk.toString().split('\n').filter(Boolean);
-          for (const line of lines) {
-            this.logger.info(line);
-          }
-        });
-      }
-
-      // Create MCP client
-      this.client = new Client(
-        {
-          name: 'orchestrator',
-          version: '1.0.0',
-        },
-        {
-          capabilities: {},
-        }
+      this.transport = new StreamableHTTPClientTransport(
+        new URL(this.config.url),
+        { requestInit },
       );
 
-      // Connect client to transport
+      this.client = new Client(
+        { name: 'orchestrator', version: '1.0.0' },
+        { capabilities: {} },
+      );
+
       await this.client.connect(this.transport);
 
       this.available = true;
-      this.logger.info(`MCP server ${this.name} connected via stdio`);
+      this.logger.info(`MCP server ${this.name} connected via HTTP`);
     } catch (error) {
       this.available = false;
       this._initError = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Failed to initialize MCP server ${this.name}`, { error });
+      this.logger.error(`Failed to initialize HTTP MCP server ${this.name}`, { error });
 
       if (this.isRequired) {
         throw new Error(`Required MCP server ${this.name} failed to initialize: ${error}`);
@@ -175,22 +141,21 @@ export class StdioMCPClient implements IMCPClient {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error('Tool call failed', { tool: toolCall.name, error });
 
-      // If the error suggests the process died, mark as unavailable
-      if (message.includes('EPIPE') || message.includes('closed') || message.includes('not connected')) {
+      // Mark unavailable on connection errors
+      if (message.includes('fetch') || message.includes('ECONNREFUSED') || message.includes('network')) {
         this.available = false;
-        this.logger.warn(`MCP ${this.name} appears to have crashed — marked unavailable`);
+        this.logger.warn(`MCP ${this.name} appears unreachable — marked unavailable`);
       }
 
       return {
         success: false,
-        error: `[${this.name}] ${message}. The service may be temporarily unavailable — it will auto-restart shortly.`,
+        error: `[${this.name}] ${message}. The service may be temporarily unavailable.`,
       };
     }
   }
 
   /**
-   * Check if the MCP server process is healthy by listing tools.
-   * Returns true if the server responds, false otherwise.
+   * Check if the MCP server is healthy by listing tools.
    */
   async healthCheck(): Promise<boolean> {
     if (!this.client || !this.available) {
@@ -207,27 +172,27 @@ export class StdioMCPClient implements IMCPClient {
   }
 
   /**
-   * Restart the MCP server by closing and reinitializing.
+   * Restart by closing and reinitializing the HTTP connection.
    */
   async restart(): Promise<boolean> {
-    this.logger.info(`Restarting MCP server ${this.name}...`);
+    this.logger.info(`Restarting HTTP MCP connection ${this.name}...`);
     await this.close();
 
     try {
       await this.initialize();
       if (this.available) {
-        this.logger.info(`MCP server ${this.name} restarted successfully`);
+        this.logger.info(`MCP server ${this.name} reconnected successfully`);
         return true;
       }
       return false;
     } catch (error) {
-      this.logger.error(`Failed to restart MCP server ${this.name}`, { error });
+      this.logger.error(`Failed to restart HTTP MCP ${this.name}`, { error });
       return false;
     }
   }
 
   /**
-   * Close the connection to the MCP server.
+   * Close the connection to the remote MCP server.
    */
   async close(): Promise<void> {
     if (this.client) {
@@ -249,6 +214,6 @@ export class StdioMCPClient implements IMCPClient {
     }
 
     this.available = false;
-    this.logger.info(`MCP server ${this.name} disconnected`);
+    this.logger.info(`MCP server ${this.name} disconnected (HTTP)`);
   }
 }
