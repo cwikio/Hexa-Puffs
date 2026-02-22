@@ -2,7 +2,7 @@ import type { CoreTool } from 'ai';
 import type { EmbeddingToolSelector } from './embedding-tool-selector.js';
 import { selectToolsForMessage } from './tool-selector.js';
 import { Logger } from '@mcp/shared/Utils/logger.js';
-import type { MCPMetadata } from '../orchestrator/types.js';
+import type { MCPMetadata } from '@mcp/shared/Discovery/types.js';
 
 const logger = new Logger('thinker:tool-selection');
 

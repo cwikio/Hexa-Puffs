@@ -1,6 +1,4 @@
-// Single source of truth for MCPMetadata — re-exported from Shared.
 import type { MCPMetadata } from '@mcp/shared/Discovery/types.js';
-export type { MCPMetadata };
 
 /**
  * Tool definition from Orchestrator

@@ -1,6 +1,6 @@
 import type { ToolRouter } from '../routing/tool-router.js';
 import type { Orchestrator } from './orchestrator.js';
-import type { IncomingAgentMessage } from '../agents/agent-types.js';
+import type { IncomingAgentMessage } from '@mcp/shared/Types/agent-contract.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { logger } from '@mcp/shared/Utils/logger.js';
 import { SecurityError } from '../utils/errors.js';

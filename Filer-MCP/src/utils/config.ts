@@ -125,3 +125,8 @@ export function getConfig(): Config {
   }
   return configInstance;
 }
+
+/** Reset the singleton for test isolation. */
+export function resetConfig(): void {
+  configInstance = null;
+}

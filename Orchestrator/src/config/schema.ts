@@ -19,9 +19,8 @@ export const MCPMetadataSchema = z.object({
   }).optional(),
 });
 
-// Single source of truth — Shared owns the MCPMetadata type.
-// The Zod schema above is kept for runtime validation; the type is re-exported from Shared.
-export type { MCPMetadata } from '@mcp/shared/Discovery/types.js';
+// The MCPMetadata type lives in @mcp/shared/Discovery/types.js (single source of truth).
+// The Zod schema above is kept for runtime validation only.
 
 // Stdio-based MCP server config (spawns process)
 export const StdioMCPServerConfigSchema = z.object({

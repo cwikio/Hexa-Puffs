@@ -14,22 +14,25 @@ import { sanitizeResponseText } from '../utils/sanitize.js';
 import { CostMonitor } from '../cost/index.js';
 import type { CostStatus } from '../cost/types.js';
 import { SessionStore } from '../session/index.js';
-import type { IncomingMessage, ProcessingResult, AgentContext, AgentState } from './types.js';
+import type { IncomingMessage, ProcessingResult, AgentState } from './types.js';
 import { PlaybookCache } from './playbook-cache.js';
-import { classifyMessage } from './playbook-classifier.js';
 import { seedPlaybooks } from './playbook-seed.js';
 import { selectToolsWithFallback, CORE_TOOL_NAMES } from './tool-selection.js';
-import { TOOL_GROUPS } from './tool-selector.js';
 import { EmbeddingToolSelector } from './embedding-tool-selector.js';
 import { createEmbeddingProviderFromEnv } from './embedding-config.js';
 import { extractFactsFromConversation, loadExtractionPromptTemplate } from './fact-extractor.js';
 import { detectLeakedToolCall, recoverLeakedToolCall } from '../utils/recover-tool-call.js';
-import { repairConversationHistory, truncateHistoryToolResults } from './history-repair.js';
-import { cosineSimilarity } from '@mcp/shared/Embeddings/math.js';
 import { Logger } from '@mcp/shared/Utils/logger.js';
 import { ToolSelector } from './components/tool-selector.js';
 import { ResponseGenerator } from './components/response-generator.js';
 import { ToolRecovery } from './components/tool-recovery.js';
+import { ContextBuilder } from './components/context-builder.js';
+import {
+  HallucinationGuard,
+  detectActionHallucination,
+  detectToolRefusal,
+} from './components/hallucination-guard.js';
+import { CircuitBreaker } from './circuit-breaker.js';
 import { createErrorFromException } from '@mcp/shared/Types/StandardResponse.js';
 
 const logger = new Logger('thinker:agent');
@@ -131,10 +134,8 @@ export class Agent {
   private lastApiCallTime = 0;
   private minApiCallIntervalMs = 1000; // 1 second minimum between calls
 
-  // Circuit breaker
-  private consecutiveErrors = 0;
-  private maxConsecutiveErrors = 5;
-  private circuitBreakerTripped = false;
+  // Circuit breaker (three-state: closed/open/half-open with auto-recovery)
+  private circuitBreaker = new CircuitBreaker();
 
   // Cost controls
   private costMonitor: CostMonitor | null = null;
@@ -152,6 +153,8 @@ export class Agent {
   private toolSelector!: ToolSelector;
   private responseGenerator: ResponseGenerator;
   private toolRecovery: ToolRecovery;
+  private contextBuilder!: ContextBuilder;
+  private hallucinationGuard!: HallucinationGuard;
 
   constructor(config: Config) {
     this.config = config;
@@ -300,6 +303,20 @@ export class Agent {
       this.tools,
       this.orchestrator.getMCPMetadata()
     );
+
+    // Initialize context builder
+    this.contextBuilder = new ContextBuilder({
+      orchestrator: this.orchestrator,
+      config: this.config,
+      embeddingSelector: this.embeddingSelector,
+      playbookCache: this.playbookCache,
+      customSystemPrompt: this.customSystemPrompt,
+      personaPrompt: this.personaPrompt,
+      defaultSystemPrompt: this.defaultSystemPrompt,
+    });
+
+    // Initialize hallucination guard
+    this.hallucinationGuard = new HallucinationGuard(this.modelFactory, this.costMonitor);
   }
 
   /**
@@ -398,216 +415,6 @@ export class Agent {
   }
 
   /**
-   * Select relevant history messages using embedding similarity.
-   * Always includes the last 3 exchanges (6 messages) for recency.
-   * Older messages are scored by cosine similarity to the current message
-   * and included if above threshold. Cap total at 20 messages.
-   */
-  private async selectRelevantHistory(
-    userMessage: string,
-    allMessages: CoreMessage[],
-  ): Promise<CoreMessage[]> {
-    const RECENT_EXCHANGES = 3; // always include last N exchanges
-    const RECENT_MESSAGES = RECENT_EXCHANGES * 2;
-    const MAX_TOTAL = 20;
-    const threshold = Number(process.env.HISTORY_RELEVANCE_THRESHOLD) || 0.45;
-
-    // If we don't have enough messages to bother filtering, return all
-    if (allMessages.length <= RECENT_MESSAGES) {
-      return allMessages;
-    }
-
-    // Check if embedding provider is available
-    if (!this.embeddingSelector?.isInitialized()) {
-      // Fallback: just return the last 20
-      return allMessages.slice(-MAX_TOTAL);
-    }
-
-    const provider = this.embeddingSelector.getProvider();
-
-    // Split into older candidates and guaranteed recent
-    const olderMessages = allMessages.slice(0, -RECENT_MESSAGES);
-    const recentMessages = allMessages.slice(-RECENT_MESSAGES);
-
-    // Extract user-turn texts from older messages with their indices
-    const olderUserTurns: Array<{ text: string; pairStart: number }> = [];
-    for (let i = 0; i < olderMessages.length; i++) {
-      const msg = olderMessages[i];
-      if (msg.role === 'user' && typeof msg.content === 'string') {
-        olderUserTurns.push({ text: msg.content, pairStart: i });
-      }
-    }
-
-    if (olderUserTurns.length === 0) {
-      return recentMessages.slice(-MAX_TOTAL);
-    }
-
-    try {
-      // Embed current message and all older user turns in one batch
-      const textsToEmbed = [userMessage, ...olderUserTurns.map(t => t.text)];
-      const embeddings = await provider.embedBatch(textsToEmbed);
-      const currentEmbedding = embeddings[0];
-
-      // Score each older user turn
-      const scored: Array<{ pairStart: number; score: number }> = [];
-      for (let i = 0; i < olderUserTurns.length; i++) {
-        const score = cosineSimilarity(currentEmbedding, embeddings[i + 1]);
-        if (score >= threshold) {
-          scored.push({ pairStart: olderUserTurns[i].pairStart, score });
-        }
-      }
-
-      // Sort by score descending, then pick top ones within budget
-      scored.sort((a, b) => b.score - a.score);
-
-      // Budget: how many older messages can we include
-      const budget = MAX_TOTAL - recentMessages.length;
-      const selectedOlderMessages: CoreMessage[] = [];
-
-      for (const { pairStart } of scored) {
-        if (selectedOlderMessages.length >= budget) break;
-
-        // Include the user message and the next message (assistant response) as a pair
-        selectedOlderMessages.push(olderMessages[pairStart]);
-        if (pairStart + 1 < olderMessages.length) {
-          selectedOlderMessages.push(olderMessages[pairStart + 1]);
-        }
-      }
-
-      // Sort selected older messages by original index to maintain chronological order
-      // (they're already in order from the original array since pairStart is monotonic within scored)
-      // Actually, scored is sorted by score — re-sort by pairStart
-      selectedOlderMessages.sort((a, b) => {
-        const idxA = olderMessages.indexOf(a);
-        const idxB = olderMessages.indexOf(b);
-        return idxA - idxB;
-      });
-
-      const result = [...selectedOlderMessages, ...recentMessages];
-
-      logger.info(
-        `[history-select] Selected ${result.length}/${allMessages.length} messages ` +
-        `(${scored.length} relevant older exchanges, threshold=${threshold})`
-      );
-
-      return result;
-    } catch (error) {
-      logger.warn('[history-select] Embedding failed, falling back to slice:', error);
-      return allMessages.slice(-MAX_TOTAL);
-    }
-  }
-
-  /**
-   * Build context for agent processing
-   */
-  private async buildContext(
-    chatId: string,
-    userMessage: string,
-    trace: TraceContext
-  ): Promise<AgentContext> {
-    const state = await this.getConversationState(chatId);
-
-    // Get profile and memories from Orchestrator
-    const profile = await this.orchestrator.getProfile(this.config.thinkerAgentId, trace);
-    const memories = await this.orchestrator.retrieveMemories(
-      this.config.thinkerAgentId,
-      userMessage,
-      5,
-      trace
-    );
-
-    await this.logger.logContextLoaded(trace, memories.facts.length, !!profile);
-
-    // Build system prompt: persona → datetime → chat_id → compaction → playbooks → skills → memories
-    // Tool calling rules are in the persona file (instructions.md) — single source of truth.
-    const basePrompt = this.customSystemPrompt || this.personaPrompt || this.defaultSystemPrompt;
-    let systemPrompt = basePrompt;
-
-    if (profile?.profile_data?.persona?.system_prompt) {
-      systemPrompt = profile.profile_data.persona.system_prompt;
-    }
-
-    // Add current date/time context
-    const now = new Date();
-    const tz = this.config.userTimezone;
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    systemPrompt += `\n\n## Current Date & Time\n${formatter.format(now)} (${tz})`;
-
-    // Inject chat context so the LLM uses the correct chat_id in tool calls
-    systemPrompt += `\n\n## Current Chat\nchat_id: ${chatId}`;
-
-    // Inject compaction summary from previous conversation context
-    if (state.compactionSummary) {
-      systemPrompt += `\n\n## Previous Conversation Context\n${state.compactionSummary}`;
-    }
-
-    // Inject matching domain playbooks (closer to end for recency attention)
-    await this.playbookCache.refreshIfNeeded(trace);
-    const matchedPlaybooks = classifyMessage(userMessage, this.playbookCache.getPlaybooks());
-    const playbookRequiredTools: string[] = [];
-    if (matchedPlaybooks.length > 0) {
-      const section = matchedPlaybooks
-        .map((pb) => `### Playbook: ${pb.name}\n${pb.instructions}`)
-        .join('\n\n');
-      systemPrompt += `\n\n## Workflow Guidance\nFollow these steps when relevant:\n\n${section}`;
-      for (const pb of matchedPlaybooks) {
-        playbookRequiredTools.push(...pb.requiredTools);
-      }
-    }
-
-    // Inject available skills for progressive disclosure (keyword-less file-based skills)
-    const descriptionOnlySkills = this.playbookCache.getDescriptionOnlySkills();
-    if (descriptionOnlySkills.length > 0) {
-      const skillsXml = descriptionOnlySkills
-        .map(
-          (s) =>
-            `  <skill>\n    <name>${s.name}</name>\n    <description>${s.description ?? ''}</description>\n  </skill>`,
-        )
-        .join('\n');
-      systemPrompt += `\n\n<available_skills>\n${skillsXml}\n</available_skills>`;
-    }
-
-    // Add memories at the very end (strong recency attention)
-    if (memories.facts.length > 0) {
-      const factsText = memories.facts
-        .map((f) => `- ${f.fact} (${f.category})`)
-        .join('\n');
-      systemPrompt += `\n\nRelevant memories about the user:\n${factsText}`;
-    }
-
-    const promptChars = systemPrompt.length;
-    logger.info(`[prompt-size] System prompt: ~${Math.ceil(promptChars / 4)} tokens (${promptChars} chars)`);
-
-    return {
-      systemPrompt,
-      conversationHistory: truncateHistoryToolResults(
-        repairConversationHistory(
-          await this.selectRelevantHistory(userMessage, state.messages.slice(-30))
-        ),
-        2,
-      ),
-      facts: memories.facts.map((f) => ({ fact: f.fact, category: f.category })),
-      profile: profile?.profile_data?.persona
-        ? {
-            name: profile.profile_data.persona.name,
-            style: profile.profile_data.persona.style,
-            tone: profile.profile_data.persona.tone,
-          }
-        : null,
-      playbookRequiredTools,
-    };
-  }
-
-  /**
    * Process a single message
    */
   async processMessage(message: IncomingMessage): Promise<ProcessingResult> {
@@ -621,9 +428,9 @@ export class Agent {
     const providerInfo = this.modelFactory.getProviderInfo();
 
     try {
-      // Circuit breaker check
-      if (this.circuitBreakerTripped) {
-        logger.warn('Circuit breaker is tripped - skipping message processing');
+      // Circuit breaker check (three-state: closed/open/half-open)
+      if (!this.circuitBreaker.canProcess()) {
+        logger.warn('Circuit breaker is open - skipping message processing');
         return {
           success: false,
           toolsUsed: [],
@@ -655,8 +462,8 @@ export class Agent {
       // Check for tool changes (uses TTL-cached Orchestrator call — fast no-op most of the time)
       await this.refreshToolsIfNeeded();
 
-      // Build context
-      const context = await this.buildContext(message.chatId, message.text, trace);
+      // Build context (uses extracted ContextBuilder)
+      const context = await this.contextBuilder.buildContext(message.chatId, message.text, trace, state);
 
       // Add user message to conversation
       state.messages.push({
@@ -696,7 +503,8 @@ export class Agent {
         text: string;
       }
       const capturedSteps: CapturedStep[] = [];
-      const onStepFinish = (step: CapturedStep) => { capturedSteps.push(step); };
+      // Typed as unknown to satisfy both generateText's onStepFinish and GuardParams
+      const onStepFinish = (step: unknown) => { capturedSteps.push(step as CapturedStep); };
 
       let recoveredTools: string[] = [];
 
@@ -719,8 +527,8 @@ export class Agent {
          throw toolError;
       }
 
-      // Decrement error count on success (don't fully reset — prevents breaker bypass)
-      if (this.consecutiveErrors > 0) this.consecutiveErrors--;
+      // Record success in circuit breaker (resets counter, closes if half-open)
+      this.circuitBreaker.recordSuccess();
 
       // Log LLM call complete
       const llmDuration = Date.now() - llmStartTime;
@@ -811,121 +619,36 @@ export class Agent {
         responseText = sanitizeResponseText(result.text || '');
       }
 
-      // ─── Hallucination Guard ────────────────────────────────────────
-      // If the model claims it performed an action but called no tools,
-      // it hallucinated. Retry with toolChoice: 'required' to force actual tool use.
+      // ─── Hallucination Guard (delegated to extracted component) ─────
       const noToolsUsed =
-        result.steps.every((step: any) => !step.toolCalls?.length) &&
+        result.steps.every((step: { toolCalls?: unknown[] }) => !step.toolCalls?.length) &&
         recoveredTools.length === 0;
 
       if (noToolsUsed && responseText) {
-        const actionClaimedPattern =
-          /I('ve| have) (created|sent|scheduled|deleted|updated|added|removed|set up|stored|saved|found|searched|looked up|checked|gone ahead)|has been (created|sent|scheduled|deleted|updated|added|removed|stored|saved)|Event details:|Email sent|event .* (created|scheduled)|calendar .* (updated|created)|Here's the email I sent|I've gone ahead and|I searched for|I looked up|I checked your|The results show|I found the following/i;
+        const guardParams = {
+          context,
+          userMessage: message.text,
+          selectedTools,
+          temperature: this.config.temperature,
+          abortSignal: agentAbort,
+          onStepFinish,
+        };
 
-        if (actionClaimedPattern.test(responseText)) {
-          logger.warn(`[hallucination-guard] Model claimed action without tool calls, retrying with toolChoice: required`);
-          try {
-            const retryResult = await generateText({
-              model: this.modelFactory.getModel(),
-              system: context.systemPrompt,
-              messages: [...context.conversationHistory, { role: 'user', content: message.text }],
-              tools: selectedTools,
-              toolChoice: 'required' as const,
-              maxSteps: 8,
-              temperature: Math.min(this.config.temperature, 0.3),
-              abortSignal: agentAbort,
-              onStepFinish,
-            });
-            const retryPromptTokens = retryResult.usage?.promptTokens || 0;
-            const retryCompletionTokens = retryResult.usage?.completionTokens || 0;
-            this.costMonitor?.recordUsage(retryPromptTokens, retryCompletionTokens);
-
-            // Only accept the retry if it actually called tools
-            const retryUsedTools = retryResult.steps.some((step) => step.toolCalls?.length > 0);
-            if (retryUsedTools) {
-              result = retryResult;
-              responseText = sanitizeResponseText(result.text || '');
-              logger.info(`[hallucination-guard] Retry successful — tools were called`);
-            } else {
-              logger.warn(`[hallucination-guard] Retry still did not call tools, using original response with disclaimer`);
-              responseText = "I wasn't able to complete this action. Please try again.";
-            }
-          } catch (retryError) {
-            logger.warn(`[hallucination-guard] Retry failed:`, retryError);
-            responseText = "I wasn't able to complete this action. Please try again.";
+        if (detectActionHallucination(responseText)) {
+          const guard = await this.hallucinationGuard.retryActionHallucination(guardParams);
+          if (guard.applied) {
+            if (guard.result) result = guard.result;
+            if (guard.responseText !== undefined) responseText = guard.responseText;
           }
         }
 
-        // ─── Tool Refusal Guard ────────────────────────────────────────
-        // If the model claims it cannot access real-time data, tools, or the internet
-        // despite having search tools available, force a tool call.
-        // This catches Llama models that refuse to use tools and say
-        // "I don't have access to real-time information" instead.
         const hasSearchTools = !!selectedTools['searcher_web_search'] || !!selectedTools['searcher_news_search'];
-        if (hasSearchTools) {
-          const toolRefusalPattern =
-            /(?:I (?:don't|do not|can't|cannot|am unable to|'m unable to|won't be able to|currently (?:don't|can't|cannot)) (?:have |)(?:access to |access |provide |get |fetch |retrieve )?(?:real[- ]time|current|live|up[- ]to[- ]date|today's) (?:information|data|weather|news|updates|results))|(?:(?:tools|search|internet|web|real-time (?:data|info)) (?:is|are) (?:temporarily |currently )?(?:unavailable|not available|inaccessible|down))/i;
-
-          if (toolRefusalPattern.test(responseText)) {
-            logger.warn(`[tool-refusal-guard] Model refused to use tools despite having search tools — forcing tool call`);
-            try {
-              // Step 1: Force a single tool call with toolChoice: 'required', maxSteps: 1
-              // (maxSteps: 1 avoids the Groq crash when 'required' is used on step 2+)
-              const forcedResult = await generateText({
-                model: this.modelFactory.getModel(),
-                system: context.systemPrompt,
-                messages: [...context.conversationHistory, { role: 'user', content: message.text }],
-                tools: selectedTools,
-                toolChoice: 'required' as const,
-                maxSteps: 1,
-                temperature: Math.min(this.config.temperature, 0.2),
-                abortSignal: agentAbort,
-                onStepFinish,
-              });
-              this.costMonitor?.recordUsage(
-                forcedResult.usage?.promptTokens || 0,
-                forcedResult.usage?.completionTokens || 0,
-              );
-
-              const forcedUsedTools = forcedResult.steps.some((step) => step.toolCalls?.length > 0);
-              if (forcedUsedTools) {
-                // Step 2: Continue with 'auto' so the model can summarize the tool results
-                const toolResultMessages: CoreMessage[] = [
-                  ...context.conversationHistory,
-                  { role: 'user' as const, content: message.text },
-                  ...forcedResult.response.messages,
-                ];
-
-                const followUpResult = await generateText({
-                  model: this.modelFactory.getModel(),
-                  system: context.systemPrompt,
-                  messages: toolResultMessages,
-                  tools: selectedTools,
-                  toolChoice: 'auto' as const,
-                  maxSteps: 4,
-                  temperature: this.config.temperature,
-                  abortSignal: agentAbort,
-                  onStepFinish,
-                });
-                this.costMonitor?.recordUsage(
-                  followUpResult.usage?.promptTokens || 0,
-                  followUpResult.usage?.completionTokens || 0,
-                );
-
-                // Use follow-up result but track forced tools separately
-                const forcedToolNames = forcedResult.steps.flatMap(
-                  (step) => step.toolCalls?.map((tc) => tc.toolName) || []
-                );
-                result = followUpResult;
-                recoveredTools.push(...forcedToolNames);
-                responseText = sanitizeResponseText(followUpResult.text || '');
-                logger.info(`[tool-refusal-guard] Forced tool call + follow-up successful`);
-              } else {
-                logger.warn(`[tool-refusal-guard] Forced call still did not produce tool calls`);
-              }
-            } catch (refusalRetryError) {
-              logger.warn(`[tool-refusal-guard] Forced retry failed:`, refusalRetryError);
-            }
+        if (detectToolRefusal(responseText, hasSearchTools)) {
+          const guard = await this.hallucinationGuard.retryToolRefusal(guardParams);
+          if (guard.applied) {
+            if (guard.result) result = guard.result;
+            if (guard.responseText !== undefined) responseText = guard.responseText;
+            if (guard.recoveredTools) recoveredTools.push(...guard.recoveredTools);
           }
         }
       }
@@ -1144,12 +867,8 @@ export class Agent {
 
       await this.logger.logError(trace, errorMessage);
 
-      // Circuit breaker: track consecutive errors
-      this.consecutiveErrors++;
-      if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
-        logger.error(`CIRCUIT BREAKER TRIPPED: ${this.consecutiveErrors} consecutive errors`);
-        this.circuitBreakerTripped = true;
-      }
+      // Circuit breaker: track consecutive errors (auto-trips when threshold reached)
+      this.circuitBreaker.recordFailure();
 
       // Format error using shared helper
       const standardError = createErrorFromException(error);
