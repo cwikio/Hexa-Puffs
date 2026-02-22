@@ -45,7 +45,7 @@ See [getting-started.md](getting-started.md) for the full setup guide including 
 
 ## Adding a New MCP
 
-See [how-to-add-new-mpc.md](how-to-add-new-mpc.md) for the complete guide. The short version:
+See [how-to-add-new-mcp.md](how-to-add-new-mcp.md) for the complete guide. The short version:
 
 1. Create a directory with a `package.json` containing a `"hexa-puffs"` field
 2. Add `mcpName` to the manifest for auto-discovery

@@ -65,7 +65,7 @@ Halt state persists to disk (`~/.hexa-puffs/data/halt.json`) — if the Orchestr
 | --- | --- |
 | `/diagnose` | Runs 22 automated health checks across 7 categories: services, embedding & search, logs, cron & jobs, tools, data, security. Returns findings sorted by severity (critical → warning → info). |
 
-The 22 checks cover: MCP health, agent health, Inngest health, cost status, halt state, Ollama connectivity, cache sizes, log file sizes, error rate baseline, trace freshness, stale cron jobs, failed skills, failed tasks, queue depth, tool count drift, Guardian availability, data directory size, session count, documentation freshness, threat rate, scan quality. See `.documentation/commands.md` for full details.
+The 22 checks cover: MCP health, agent health, Inngest health, cost status, halt state, Ollama connectivity, cache sizes, log file sizes, error rate baseline, trace freshness, stale cron jobs, failed skills, failed tasks, queue depth, tool count drift, Guardian availability, data directory size, session count, documentation freshness, threat rate, scan quality. See `docs/commands.md` for full details.
 
 ---
 

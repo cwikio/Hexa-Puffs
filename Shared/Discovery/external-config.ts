@@ -19,6 +19,12 @@ const ExternalMCPMetadataSchema = z.object({
     output: z.boolean().optional(),
   }).optional(),
   allowDestructiveTools: z.boolean().optional(),
+  projectDiscovery: z.object({
+    listTool: z.string(),
+    listToolArgs: z.record(z.unknown()).optional(),
+    projectIdField: z.string(),
+    projectNameField: z.string(),
+  }).optional(),
 });
 
 /** Fields shared by both stdio and HTTP external MCP configs. */

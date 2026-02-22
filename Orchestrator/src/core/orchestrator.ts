@@ -194,6 +194,11 @@ export class Orchestrator {
 
     // Start watching external-mcps.json for hot-reload
     this.startExternalMCPWatcher();
+
+    // Trigger project recognition scan if new external MCPs detected
+    this.maybeRunStartupProjectScan().catch((err: unknown) =>
+      this.logger.warn('Startup project scan trigger failed', { error: err }),
+    );
   }
 
   /**
@@ -706,6 +711,10 @@ export class Orchestrator {
     return this.toolRouter;
   }
 
+  getConfig(): Config {
+    return this.config;
+  }
+
   /**
    * Run health checks on all stdio MCP clients.
    * Returns per-MCP status with internal/external classification.
@@ -1033,9 +1042,18 @@ export class Orchestrator {
       });
 
       // Notify via Telegram (best-effort)
-      this.sendHotReloadNotification(added, removed, failed).catch((err) =>
+      this.sendHotReloadNotification(added, removed, failed).catch((err: unknown) =>
         this.logger.warn('Hot-reload notification failed', { error: err }),
       );
+
+      // Trigger project recognition for newly added MCPs
+      const failedSet = new Set(failed.map((f) => f.name));
+      const successfullyAdded = [...added.keys()].filter((n) => !failedSet.has(n));
+      if (successfullyAdded.length > 0) {
+        this.triggerProjectRecognition('single', successfullyAdded).catch((err: unknown) =>
+          this.logger.warn('Project recognition trigger failed', { error: err }),
+        );
+      }
     }
   }
 
@@ -1104,6 +1122,31 @@ export class Orchestrator {
       chat_id: chatId,
       message: lines.join('\n'),
     });
+  }
+
+  // ─── Project Recognition ──────────────────────────────────────────
+
+  private async triggerProjectRecognition(
+    mode: 'single' | 'full-scan',
+    mcpNames?: string[],
+  ): Promise<void> {
+    const { inngest } = await import('../jobs/inngest-client.js');
+    await inngest.send({
+      name: 'hexa-puffs/project-recognition',
+      data: { mode, mcpNames: mcpNames ?? [] },
+    });
+    this.logger.info(`Project recognition triggered (${mode})`, { mcpNames });
+  }
+
+  private async maybeRunStartupProjectScan(): Promise<void> {
+    const externalNames = this.config.externalMCPNames ?? [];
+    if (externalNames.length === 0) return;
+
+    const { shouldRunStartupScan } = await import('../jobs/project-recognition.js');
+    if (await shouldRunStartupScan(externalNames)) {
+      this.logger.info('New external MCPs detected — triggering project scan');
+      await this.triggerProjectRecognition('full-scan');
+    }
   }
 
 }

@@ -7,6 +7,7 @@ import { skillSchedulerFunction } from './skill-scheduler.js';
 import { conversationBackfillFunction } from './backfill.js';
 import { memorySynthesisFunction } from './memory-synthesis.js';
 import { healthReportFunction } from './health-report.js';
+import { projectRecognitionFunction } from './project-recognition.js';
 import { logger } from '@mcp/shared/Utils/logger.js';
 
 const jobFunctions = [
@@ -15,6 +16,7 @@ const jobFunctions = [
   conversationBackfillFunction,
   memorySynthesisFunction,
   healthReportFunction,
+  projectRecognitionFunction,
 ];
 
 export function startInngestServer(port: number = 3000): void {

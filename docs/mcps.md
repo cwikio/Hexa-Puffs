@@ -100,9 +100,12 @@
 *Maintenance:* `backfill_embeddings`, `export_memory`, `import_memory`
 
 **Configuration:**
-- `EMBEDDING_PROVIDER` — `ollama`, `lmstudio`, `groq`, or `none` (default: `none`)
-- `OLLAMA_BASE_URL` — Ollama server (if provider is ollama)
-- `LMSTUDIO_HOST` — LM Studio server (if provider is lmstudio)
+
+- `AI_PROVIDER` — `groq` or `lmstudio` (for fact extraction LLM; default: `groq`)
+- `GROQ_API_KEY` — Groq API key (if AI_PROVIDER is groq)
+- `EMBEDDING_PROVIDER` — `ollama`, `lmstudio`, `groq`, or `none` (for vector search embeddings; default: `none`)
+- `OLLAMA_BASE_URL` — Ollama server (if embedding provider is ollama)
+- `LMSTUDIO_HOST` — LM Studio server (if embedding provider is lmstudio)
 
 **Dependencies:** SQLite (better-sqlite3), sqlite-vec extension, embedding provider (optional)
 
