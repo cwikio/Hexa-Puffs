@@ -7,7 +7,7 @@ The central orchestration layer for Hexa Puffs AI Assistant. The Orchestrator ac
 - Polls Telegram channels and dispatches messages to agents via channel bindings
 - Enforces per-agent tool policies (allow/deny glob patterns)
 - Spawns and manages downstream MCPs via stdio
-- Connects to independent HTTP MCP services (Searcher, Gmail)
+- Connects to HTTP MCP services when configured with `transport: "http"`
 - Auto-discovers new MCPs from sibling directories via `hexa-puffs` manifest in `package.json`
 
 ## Architecture
@@ -25,7 +25,7 @@ The central orchestration layer for Hexa Puffs AI Assistant. The Orchestrator ac
 │  HTTP REST API: /health, /tools/list, /tools/call,                │
 │                 /agents/:id/resume                                 │
 │  MCP stdio: Standard MCP protocol for Claude Desktop              │
-│  65+ Tools (passthrough from downstream MCPs)                     │
+│  148+ Tools (passthrough from downstream MCPs)                    │
 │                                                                    │
 │  ┌───────────────────────────────────────────────────────────┐    │
 │  │               MULTI-AGENT LAYER                            │    │
@@ -45,25 +45,24 @@ The central orchestration layer for Hexa Puffs AI Assistant. The Orchestrator ac
 │                   │ agent-1 │         │ agent-2 │                  │
 │                   └─────────┘         └─────────┘                 │
 │                                                                    │
-└───────────────┬──────────────────────────────┬────────────────────┘
-                │ stdio (spawns children)       │ HTTP
-                ↓                               ↓
-┌──────────────────────────────────┐  ┌────────────────────────┐
-│  STDIO MCP SERVERS (spawned)     │  │  HTTP MCP SERVICES     │
-│  ┌────────┐ ┌────────┐          │  │  ┌──────────┐          │
-│  │Guardian│ │Telegram│          │  │  │ Searcher │          │
-│  │(stdio) │ │(stdio) │          │  │  │ (:8007)  │          │
-│  └────────┘ └────────┘          │  │  └──────────┘          │
-│  ┌────────┐ ┌────────┐          │  │  ┌──────────┐          │
-│  │1Pass   │ │ Filer  │          │  │  │  Gmail   │          │
-│  │(stdio) │ │(stdio) │          │  │  │ (:8008)  │          │
-│  └────────┘ └────────┘          │  │  └──────────┘          │
-│  ┌────────┐                      │  │                        │
-│  │Memory  │ ┌────────┐           │  │                        │
-│  │(stdio) │ │CodeExec│           │  │                        │
-│  └────────┘ │(stdio) │           │  │                        │
-│             └────────┘           │  │                        │
-└──────────────────────────────────┘  └────────────────────────┘
+└───────────────┬─────────────────────────────────────────────────┘
+                │ stdio (spawns children)
+                ↓
+┌─────────────────────────────────────────────────────────────┐
+│  STDIO MCP SERVERS (all spawned by Orchestrator)            │
+│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐              │
+│  │Guardian│ │Telegram│ │Searcher│ │ Gmail  │              │
+│  │(stdio) │ │(stdio) │ │(stdio) │ │(stdio) │              │
+│  └────────┘ └────────┘ └────────┘ └────────┘              │
+│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐              │
+│  │1Pass   │ │ Filer  │ │Memory  │ │CodeExec│              │
+│  │(stdio) │ │(stdio) │ │(stdio) │ │(stdio) │              │
+│  └────────┘ └────────┘ └────────┘ └────────┘              │
+│  ┌────────┐                                                 │
+│  │Browser │                                                 │
+│  │(stdio) │                                                 │
+│  └────────┘                                                 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Adding a New MCP
@@ -169,9 +168,7 @@ cp .env.example .env
 
 The recommended way to start everything is using the launch script, which starts:
 
-- Orchestrator (port 8010) - spawns stdio MCPs, connects to HTTP MCPs, spawns Thinker agents
-- Searcher (port 8007) - web search (must be started separately)
-- Gmail (port 8008) - email management (must be started separately)
+- Orchestrator (port 8010) - spawns all MCPs via stdio, spawns Thinker agents
 - Inngest Dev Server (port 8288) - job management dashboard
 
 ```bash
@@ -183,10 +180,9 @@ This script:
 
 1. Starts Inngest Dev Server
 2. Starts Orchestrator with `TRANSPORT=http PORT=8010 MCP_CONNECTION_MODE=stdio`
-3. Orchestrator automatically spawns: Telegram, Memory, Filer, Guardian, 1Password MCPs
-4. Orchestrator connects to HTTP services: Searcher (:8007), Gmail (:8008)
-5. Orchestrator spawns Thinker agent(s) via AgentManager (or connects to single Thinker at `THINKER_URL`)
-6. If `CHANNEL_POLLING_ENABLED=true`, Orchestrator polls Telegram and dispatches messages to agents
+3. Orchestrator auto-discovers and spawns all MCPs via stdio (Guardian, Telegram, Memory, Filer, 1Password, Searcher, Gmail, Browser, CodeExec)
+4. Orchestrator spawns Thinker agent(s) via AgentManager (or connects to single Thinker at `THINKER_URL`)
+5. If `CHANNEL_POLLING_ENABLED=true`, Orchestrator polls Telegram and dispatches messages to agents
 
 ### 4. Run Orchestrator manually (alternative)
 
@@ -978,7 +974,7 @@ Both `env` values (stdio) and `headers`/`url` values (HTTP) support `${ENV_VAR}`
 | `sensitive` | boolean | No | Wrap with Guardian for security scanning |
 | `metadata` | object | No | Tool policy overrides (`allowDestructiveTools`, etc.) |
 
-See `.documentation/external-mcp.md` for the full integration guide.
+See `docs/external-mcp.md` for the full integration guide.
 
 ## Future Enhancements
 

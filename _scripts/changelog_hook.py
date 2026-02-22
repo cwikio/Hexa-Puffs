@@ -48,7 +48,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 # Root-level files/dirs that aren't packages
 NON_PACKAGE_PATHS = {
-    "_scripts", ".claude", ".documentation", ".git", ".github",
+    "_scripts", ".claude", "docs", ".git", ".github",
     "node_modules", ".vscode",
 }
 

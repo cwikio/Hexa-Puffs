@@ -123,7 +123,7 @@ echo ""
 echo -e "${BOLD}${CYAN}=== Syncing Documentation ===${RESET}"
 
 DOCS_DIR="$HOME/.hexa-puffs/documentation"
-DOC_SRC="$SCRIPT_DIR/.documentation"
+DOC_SRC="$SCRIPT_DIR/docs"
 mkdir -p "$DOCS_DIR"
 
 if [ -d "$DOC_SRC" ]; then

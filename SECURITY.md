@@ -21,7 +21,7 @@ You should receive a response within 72 hours.
 
 Hexa Puffs employs defense-in-depth across multiple layers: Guardian (prompt injection scanning), tool policies (per-agent access control), destructive tool blocking, and cost controls (anomaly-based spike detection).
 
-For the full security architecture, see [Security Architecture](.documentation/security.md).
+For the full security architecture, see [Security Architecture](docs/security.md).
 
 ## Best Practices for Operators
 
