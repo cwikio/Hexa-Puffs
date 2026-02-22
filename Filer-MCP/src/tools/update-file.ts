@@ -9,6 +9,7 @@ import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { resolvePath, ensureTempDir, generateBackupPath } from "../utils/paths.js";
 import { checkPermission } from "../db/grants.js";
 import { writeAuditEntry, createAuditEntry } from "../logging/audit.js";
+import { GrantError, WorkspaceError } from "../utils/errors.js";
 
 export const updateFileSchema = z.object({
   path: z
@@ -46,13 +47,13 @@ export async function handleUpdateFile(
           error: permission.reason,
         })
       );
-      throw new Error(permission.reason);
+      throw new GrantError(permission.reason ?? "Access denied");
     }
   }
 
   // Check if file exists
   if (!existsSync(resolved.fullPath)) {
-    throw new Error(
+    throw new WorkspaceError(
       `File not found: ${resolved.fullPath}. Use create_file to create a new file.`
     );
   }

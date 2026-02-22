@@ -1,13 +1,6 @@
-/**
- * MCP metadata from manifest — used for dynamic tool selection and grouping.
- * Matches the MCPMetadata interface from Shared/Discovery/types.ts.
- */
-export interface MCPMetadata {
-  label?: string;
-  toolGroup?: string;
-  keywords?: string[];
-  guardianScan?: { input?: boolean; output?: boolean };
-}
+// Single source of truth for MCPMetadata — re-exported from Shared.
+import type { MCPMetadata } from '@mcp/shared/Discovery/types.js';
+export type { MCPMetadata };
 
 /**
  * Tool definition from Orchestrator

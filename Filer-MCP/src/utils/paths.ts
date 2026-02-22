@@ -6,6 +6,7 @@ import { resolve, normalize, isAbsolute, basename, join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
 import { getConfig, expandHome } from "./config.js";
+import { PathSecurityError } from "./errors.js";
 
 // Forbidden paths that can NEVER be accessed (even with grants)
 const FORBIDDEN_PATHS = [
@@ -82,7 +83,7 @@ export interface PathResolution {
 export function resolvePath(path: string): PathResolution {
   // Check for path traversal
   if (hasPathTraversal(path)) {
-    throw new Error("Path traversal (..) not allowed");
+    throw new PathSecurityError("Path traversal (..) not allowed");
   }
 
   let workspaceRoot = getWorkspaceRoot();
@@ -98,14 +99,14 @@ export function resolvePath(path: string): PathResolution {
     // Verify it stays within workspace (double-check after resolve)
     // Use startsWith check with both fullPath and fullPath + "/" for edge cases
     if (!fullPath.startsWith(workspaceRoot) && fullPath !== workspaceRoot) {
-      throw new Error("Path escapes workspace boundary");
+      throw new PathSecurityError("Path escapes workspace boundary");
     }
 
     // Resolve symlinks and re-check workspace boundary
     if (existsSync(fullPath)) {
       const realPath = realpathSync(fullPath);
       if (!realPath.startsWith(workspaceRoot) && realPath !== workspaceRoot) {
-        throw new Error("Path escapes workspace boundary via symlink");
+        throw new PathSecurityError("Path escapes workspace boundary via symlink");
       }
     }
 
@@ -122,14 +123,14 @@ export function resolvePath(path: string): PathResolution {
 
   // Check forbidden paths
   if (isForbiddenPath(normalizedPath)) {
-    throw new Error("Access to this path is forbidden for security reasons");
+    throw new PathSecurityError("Access to this path is forbidden for security reasons");
   }
 
   // Resolve symlinks and re-check forbidden paths
   if (existsSync(normalizedPath)) {
     const realPath = realpathSync(normalizedPath);
     if (isForbiddenPath(realPath)) {
-      throw new Error("Access to this path is forbidden for security reasons");
+      throw new PathSecurityError("Access to this path is forbidden for security reasons");
     }
   }
 
@@ -156,7 +157,7 @@ export function isWorkspacePath(path: string): boolean {
  */
 export function validateForCreation(path: string): void {
   if (isForbiddenExtension(path)) {
-    throw new Error(
+    throw new PathSecurityError(
       `Cannot create files with this extension for security reasons`
     );
   }

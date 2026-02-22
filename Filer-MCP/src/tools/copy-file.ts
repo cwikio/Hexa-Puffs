@@ -10,6 +10,7 @@ import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { resolvePath, isWorkspacePath } from "../utils/paths.js";
 import { checkPermission } from "../db/grants.js";
 import { writeAuditEntry, createAuditEntry } from "../logging/audit.js";
+import { GrantError, WorkspaceError } from "../utils/errors.js";
 
 export const copyFileSchema = z.object({
   source: z
@@ -35,7 +36,7 @@ export async function handleCopyFile(
 ): Promise<CopyFileData> {
   // Destination must be workspace path
   if (input.destination.startsWith("/") || input.destination.startsWith("~")) {
-    throw new Error(
+    throw new WorkspaceError(
       "Destination must be a relative workspace path. Cannot copy to external locations."
     );
   }
@@ -44,7 +45,7 @@ export async function handleCopyFile(
   const destResolved = resolvePath(input.destination);
 
   if (destResolved.domain !== "workspace") {
-    throw new Error("Destination must be within workspace");
+    throw new WorkspaceError("Destination must be within workspace");
   }
 
   // For external source paths, check grant
@@ -56,26 +57,26 @@ export async function handleCopyFile(
           error: permission.reason,
         })
       );
-      throw new Error(permission.reason);
+      throw new GrantError(permission.reason ?? "Access denied");
     }
   }
 
   // Check if source exists
   if (!existsSync(sourceResolved.fullPath)) {
-    throw new Error(`Source file not found: ${sourceResolved.fullPath}`);
+    throw new WorkspaceError(`Source file not found: ${sourceResolved.fullPath}`);
   }
 
   // Check source is a file
   const stats = await stat(sourceResolved.fullPath);
   if (stats.isDirectory()) {
-    throw new Error(
+    throw new WorkspaceError(
       `Cannot copy directories. Source is a directory: ${sourceResolved.fullPath}`
     );
   }
 
   // Check destination doesn't exist
   if (existsSync(destResolved.fullPath)) {
-    throw new Error(
+    throw new WorkspaceError(
       `Destination already exists: ${destResolved.fullPath}. Delete it first or choose a different name.`
     );
   }

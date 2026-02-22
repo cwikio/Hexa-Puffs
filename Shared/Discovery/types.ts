@@ -30,6 +30,8 @@ export interface MCPMetadata {
   projectDiscovery?: {
     /** Tool name to call to list projects (e.g., "list_projects") */
     listTool: string;
+    /** Optional arguments to pass when calling the listTool */
+    listToolArgs?: Record<string, unknown>;
     /** Field in the response containing the project ID (e.g., "id") */
     projectIdField: string;
     /** Field in the response containing the project name (e.g., "name") */

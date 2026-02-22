@@ -1,4 +1,5 @@
 import { getConfig, type Config, type AgentDefinition, type ChannelBinding, type MCPMetadata, getDefaultAgent, loadAgentsFromFile } from '../config/index.js';
+import { MEMORY_STORE_CONVERSATION } from '@mcp/shared/Types/tool-names.js';
 import { guardianConfig } from '../config/guardian.js';
 import { StdioGuardianClient } from '../mcp-clients/stdio-guardian.js';
 import { GuardedMCPClient } from '../mcp-clients/guarded-client.js';
@@ -517,12 +518,21 @@ export class Orchestrator {
       // Send response back to the originating channel
       await this.sendToChannel(msg.channel, msg.chatId, result.response);
 
-      // Store conversation in memory
-      await this.toolRouter.routeToolCall('memory_store_conversation', {
-        agent_id: msg.agentId,
-        user_message: msg.text,
-        agent_response: result.response,
-      });
+      // Store conversation in memory (retry up to 2 times on failure — data is lost permanently otherwise)
+      const storeArgs = { agent_id: msg.agentId, user_message: msg.text, agent_response: result.response };
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await this.toolRouter.routeToolCall(MEMORY_STORE_CONVERSATION, storeArgs);
+          break;
+        } catch (err) {
+          if (attempt < 2) {
+            this.logger.warn(`Failed to store conversation (attempt ${attempt + 1}/3), retrying...`, { error: err });
+            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          } else {
+            this.logger.error('Failed to store conversation after 3 attempts — conversation data lost', { error: err, chatId: msg.chatId });
+          }
+        }
+      }
 
       this.logger.info(
         `Response delivered: chat=${msg.chatId}, steps=${result.totalSteps}, tools=${result.toolsUsed.join(', ') || 'none'}`
