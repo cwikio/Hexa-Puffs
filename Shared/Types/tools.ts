@@ -4,6 +4,7 @@
 
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
+import { BaseError } from './errors.js';
 
 /**
  * Standard MCP tool definition format
@@ -36,13 +37,16 @@ export interface ToolEntry<TInput = unknown, TOutput = unknown> {
 }
 
 /**
- * Validation error thrown when tool input fails schema validation.
+ * Schema validation error thrown when tool input fails Zod schema validation.
+ * Extends BaseError so instanceof BaseError checks work consistently.
  * Dispatch code can catch this to return a 400 response.
  */
-export class ValidationError extends Error {
+export class SchemaValidationError extends BaseError {
   constructor(public readonly zodError: z.ZodError) {
-    super(`Invalid parameters: ${zodError.message}`);
-    this.name = 'ValidationError';
+    super(`Invalid parameters: ${zodError.message}`, 'SCHEMA_VALIDATION_ERROR', {
+      issues: zodError.issues,
+    });
+    this.name = 'SchemaValidationError';
   }
 }
 
@@ -69,7 +73,7 @@ export function toolEntry<T>(
     call(input: unknown): Promise<unknown> {
       const result = schema.safeParse(input);
       if (!result.success) {
-        throw new ValidationError(result.error);
+        throw new SchemaValidationError(result.error);
       }
       return handler(result.data);
     }
