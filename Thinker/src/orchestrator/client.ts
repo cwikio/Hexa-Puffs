@@ -13,8 +13,8 @@ import type {
   ConversationEntry,
   MCPToolCallResponse,
   MCPToolsListResponse,
-  MCPMetadata,
 } from './types.js';
+import type { MCPMetadata } from '@mcp/shared/Discovery/types.js';
 
 /**
  * HTTP client for Orchestrator MCP

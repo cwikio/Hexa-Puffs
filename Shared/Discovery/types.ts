@@ -26,6 +26,17 @@ export interface MCPMetadata {
   guardianScan?: { input?: boolean; output?: boolean };
   /** Whether to allow destructive tools (delete/remove/destroy). Default: false for external MCPs */
   allowDestructiveTools?: boolean;
+  /** Config for automatic project discovery when this MCP is connected */
+  projectDiscovery?: {
+    /** Tool name to call to list projects (e.g., "list_projects") */
+    listTool: string;
+    /** Optional arguments to pass when calling the listTool */
+    listToolArgs?: Record<string, unknown>;
+    /** Field in the response containing the project ID (e.g., "id") */
+    projectIdField: string;
+    /** Field in the response containing the project name (e.g., "name") */
+    projectNameField: string;
+  };
 }
 
 export interface HexaPuffsManifest {
@@ -49,6 +60,8 @@ export interface HexaPuffsManifest {
   keywords?: string[];
   /** Guardian scan overrides. Omitted = use global defaults (both true) */
   guardianScan?: { input?: boolean; output?: boolean };
+  /** Whether to allow destructive tools (delete/remove/destroy). Default: false */
+  allowDestructiveTools?: boolean;
 }
 
 export interface DiscoveredMCP {

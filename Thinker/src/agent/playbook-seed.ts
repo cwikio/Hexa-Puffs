@@ -555,6 +555,34 @@ User asks about their skills/scheduled tasks, wants to see what's failing, or wa
     max_steps: 8,
     notify_on_completion: false,
   },
+  {
+    name: 'project-source-linking',
+    description: 'Link external MCP projects to unified projects',
+    trigger_type: 'event',
+    trigger_config: {
+      keywords: ['connect project', 'link project', 'link mcp', 'connect mcp', 'project source', 'link vercel', 'link posthog', 'link github', 'link neon', 'connect vercel', 'connect posthog', 'connect github', 'connect neon', 'same project', 'unify project', 'project status', 'project sources', 'linked projects'],
+      priority: 10,
+    },
+    instructions: `## WHEN TO USE
+User wants to link a project from an external MCP (Vercel, PostHog, GitHub, Neon, etc.) to a unified project, or asks about project connections across services.
+
+## STEPS
+1. memory_list_projects — find the target unified project by name match
+2. If the project doesn't exist: confirm with the user, then call memory_create_project to create it
+3. memory_link_project_source with project_id, mcp_name, and any external project details the user provided
+4. Confirm the link was created
+5. memory_list_project_sources with the project_id to show all linked sources
+6. Ask if the user wants to set up recurring status monitoring (creates a cron skill)
+
+## NOTES
+- Use fuzzy name matching: "customer-lens", "Customer Lens", and "customer-lens-prod" are the same project
+- If user says "connect Vercel to my project X", mcp_name is "vercel"
+- The /link and /link-all slash commands handle the same thing faster — mention them as alternatives
+- For status monitoring, mention /setup-monitor <project_id> <interval_minutes>`,
+    required_tools: ['memory_list_projects', 'memory_create_project', 'memory_link_project_source', 'memory_list_project_sources', 'memory_unlink_project_source'],
+    max_steps: 8,
+    notify_on_completion: false,
+  },
 ]
 
 /**

@@ -2,10 +2,42 @@
   "vercel": {
     "command": "npx",
     "args": ["-y", "vercel-mcp", "VERCEL_API_KEY=${VERCEL_API_KEY}"],
-    "description": "Vercel project management and deployments"
+    "description": "Vercel project management and deployments",
+    "metadata": {
+      "guardianScan": { "input": false, "output": false },
+      "projectDiscovery": {
+        "listTool": "getDeployments",
+        "projectIdField": "name",
+        "projectNameField": "name"
+      }
+    }
   },
   "posthog": {
     "command": "npx",
-    "args": ["-y", "mcp-remote@latest", "https://mcp.posthog.com/sse"]
+    "args": ["-y", "mcp-remote@latest", "https://mcp.posthog.com/sse"],
+    "description": "PostHog API (page analytics, feature flags)",
+    "metadata": {
+      "guardianScan": { "input": false, "output": false },
+      "projectDiscovery": {
+        "listTool": "projects-get",
+        "projectIdField": "id",
+        "projectNameField": "name"
+      }
+    }
+  },
+  "github": {
+    "type": "http",
+    "url": "https://api.githubcopilot.com/mcp/",
+    "description": "GitHub API (repos, issues, PRs)",
+    "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" },
+    "metadata": {
+      "guardianScan": { "input": false, "output": false },
+      "projectDiscovery": {
+        "listTool": "search_repositories",
+        "listToolArgs": { "query": "user:@me sort:updated" },
+        "projectIdField": "full_name",
+        "projectNameField": "name"
+      }
+    }
   }
 }

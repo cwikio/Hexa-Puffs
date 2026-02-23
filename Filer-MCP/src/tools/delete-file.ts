@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { resolvePath } from "../utils/paths.js";
 import { writeAuditEntry, createAuditEntry } from "../logging/audit.js";
+import { WorkspaceError } from "../utils/errors.js";
 
 export const deleteFileSchema = z.object({
   path: z.string().describe("Relative path within workspace"),
@@ -26,7 +27,7 @@ export async function handleDeleteFile(
 ): Promise<DeleteFileData> {
   // Validate it's a relative path (workspace only for delete)
   if (input.path.startsWith("/") || input.path.startsWith("~")) {
-    throw new Error(
+    throw new WorkspaceError(
       "delete_file only works with workspace paths. Cannot delete files outside workspace."
     );
   }
@@ -34,18 +35,18 @@ export async function handleDeleteFile(
   const resolved = resolvePath(input.path);
 
   if (resolved.domain !== "workspace") {
-    throw new Error("delete_file only works with workspace paths");
+    throw new WorkspaceError("delete_file only works with workspace paths");
   }
 
   // Check if file exists
   if (!existsSync(resolved.fullPath)) {
-    throw new Error(`File not found: ${resolved.fullPath}`);
+    throw new WorkspaceError(`File not found: ${resolved.fullPath}`);
   }
 
   // Check it's a file, not a directory
   const stats = await stat(resolved.fullPath);
   if (stats.isDirectory()) {
-    throw new Error(
+    throw new WorkspaceError(
       `Cannot delete directories with delete_file. Path is a directory: ${resolved.fullPath}`
     );
   }

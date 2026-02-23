@@ -25,7 +25,7 @@ vi.mock('node:fs/promises', () => ({
 import { SlashCommandHandler } from '../../src/commands/slash-commands.js';
 import type { ToolRouter } from '../../src/routing/tool-router.js';
 import type { Orchestrator, OrchestratorStatus } from '../../src/core/orchestrator.js';
-import type { IncomingAgentMessage } from '../../src/agents/agent-types.js';
+import type { IncomingAgentMessage } from '@mcp/shared/Types/agent-contract.js';
 
 // --- Helpers ---
 

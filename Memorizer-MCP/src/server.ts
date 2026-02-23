@@ -91,6 +91,18 @@ import {
   queryTimelineToolDefinition,
   QueryTimelineInputSchema,
   handleQueryTimeline,
+  linkProjectSourceToolDefinition,
+  unlinkProjectSourceToolDefinition,
+  listProjectSourcesToolDefinition,
+  updateProjectSourceStatusToolDefinition,
+  LinkProjectSourceInputSchema,
+  UnlinkProjectSourceInputSchema,
+  ListProjectSourcesInputSchema,
+  UpdateProjectSourceStatusInputSchema,
+  handleLinkProjectSource,
+  handleUnlinkProjectSource,
+  handleListProjectSources,
+  handleUpdateProjectSourceStatus,
 } from './tools/index.js';
 
 export function createServer(): McpServer {
@@ -316,6 +328,39 @@ export function createServer(): McpServer {
     inputSchema: UpdateProjectInputSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     handler: async (params) => handleUpdateProject(params),
+  });
+
+  // Project Sources
+  registerTool(server, {
+    name: 'link_project_source',
+    description: linkProjectSourceToolDefinition.description,
+    inputSchema: LinkProjectSourceInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleLinkProjectSource(params),
+  });
+
+  registerTool(server, {
+    name: 'unlink_project_source',
+    description: unlinkProjectSourceToolDefinition.description,
+    inputSchema: UnlinkProjectSourceInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    handler: async (params) => handleUnlinkProjectSource(params),
+  });
+
+  registerTool(server, {
+    name: 'list_project_sources',
+    description: listProjectSourcesToolDefinition.description,
+    inputSchema: ListProjectSourcesInputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleListProjectSources(params),
+  });
+
+  registerTool(server, {
+    name: 'update_project_source_status',
+    description: updateProjectSourceStatusToolDefinition.description,
+    inputSchema: UpdateProjectSourceStatusInputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    handler: async (params) => handleUpdateProjectSourceStatus(params),
   });
 
   // Timeline

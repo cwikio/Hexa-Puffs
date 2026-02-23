@@ -91,6 +91,7 @@ export function scanForMCPs(mcpsRoot: string): DiscoveredMCP[] {
         toolGroup: manifest.toolGroup,
         keywords: manifest.keywords,
         guardianScan: manifest.guardianScan,
+        allowDestructiveTools: manifest.allowDestructiveTools,
       },
     };
 

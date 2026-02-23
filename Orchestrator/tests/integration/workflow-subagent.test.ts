@@ -93,22 +93,13 @@ describe('Workflow: Subagent Spawning E2E', () => {
 
     for (const pattern of patterns) {
       try {
-        const output = execSync(
-          `sqlite3 "${dbPath}" "SELECT changes() FROM (DELETE FROM skills WHERE agent_id LIKE '${pattern}');"`,
+        execSync(
+          `sqlite3 "${dbPath}" "DELETE FROM skills WHERE agent_id LIKE '${pattern}';"`,
           { encoding: 'utf-8', timeout: 5000 },
-        ).trim();
-        log(`Cleaned up skills matching '${pattern}' (${output || '0'} deleted)`, 'debug');
-      } catch {
-        // sqlite3 may not support subquery syntax — try plain DELETE
-        try {
-          execSync(
-            `sqlite3 "${dbPath}" "DELETE FROM skills WHERE agent_id LIKE '${pattern}';"`,
-            { encoding: 'utf-8', timeout: 5000 },
-          );
-          log(`Cleaned up skills matching '${pattern}'`, 'debug');
-        } catch (e) {
-          log(`Failed to cleanup skills for '${pattern}': ${e}`, 'warn');
-        }
+        );
+        log(`Cleaned up skills matching '${pattern}'`, 'debug');
+      } catch (e) {
+        log(`Failed to cleanup skills for '${pattern}': ${e}`, 'warn');
       }
     }
   });

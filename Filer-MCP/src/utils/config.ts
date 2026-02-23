@@ -2,121 +2,118 @@
  * Configuration loading for Filer MCP
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { z } from "zod";
+import { parse as parseYaml } from "yaml";
 import { Logger } from "@mcp/shared/Utils/logger.js";
+import { expandPath, getEnvString, getEnvNumber } from "@mcp/shared/Utils/config.js";
 
 const logger = new Logger('filer:config');
 
-export interface GrantConfig {
-  path: string;
-  permission: "read" | "read-write";
-}
+/**
+ * Re-export expandPath as expandHome for backward compatibility.
+ * All existing consumers import { expandHome } from this module.
+ */
+export const expandHome = expandPath;
 
-export interface Config {
-  workspace: {
-    path: string;
-    structure: string[];
-  };
-  grants: GrantConfig[];
-  database: {
-    path: string;
-  };
-  audit: {
-    path: string;
-  };
-  cleanup: {
-    tempDays: number;
-  };
-}
+const GrantConfigSchema = z.object({
+  path: z.string(),
+  permission: z.enum(["read", "read-write"]).default("read"),
+});
+
+const FileConfigSchema = z.object({
+  grants: z.array(GrantConfigSchema).optional(),
+});
+
+const ConfigSchema = z.object({
+  workspace: z.object({
+    path: z.string(),
+    structure: z.array(z.string()),
+  }),
+  grants: z.array(GrantConfigSchema).default([]),
+  database: z.object({
+    path: z.string(),
+  }),
+  audit: z.object({
+    path: z.string(),
+  }),
+  cleanup: z.object({
+    tempDays: z.number().int().min(1).default(7),
+  }),
+});
+
+export type GrantConfig = z.infer<typeof GrantConfigSchema>;
+export type Config = z.infer<typeof ConfigSchema>;
 
 /**
- * Expand ~ to home directory
+ * Load grants from fileops-mcp.yaml using proper YAML parsing
  */
-export function expandHome(path: string): string {
-  if (path.startsWith("~")) {
-    return join(homedir(), path.slice(1));
+function loadFileGrants(): GrantConfig[] {
+  const configPath = join(process.cwd(), "fileops-mcp.yaml");
+  if (!existsSync(configPath)) return [];
+
+  try {
+    const content = readFileSync(configPath, "utf-8");
+    const parsed = parseYaml(content);
+    const result = FileConfigSchema.safeParse(parsed);
+    if (!result.success) {
+      logger.warn("Invalid config file schema", result.error.flatten());
+      return [];
+    }
+    return (result.data.grants ?? []).map((g) => ({
+      ...g,
+      path: expandPath(g.path),
+    }));
+  } catch (error) {
+    logger.warn("Could not parse config file", error);
+    return [];
   }
-  return path;
 }
+
+// Default workspace structure
+const DEFAULT_STRUCTURE = [
+  "Documents/reports/",
+  "Documents/notes/",
+  "Documents/drafts/",
+  "Code/python/",
+  "Code/bash/",
+  "Code/other/",
+  "Research/summaries/",
+  "Research/sources/",
+  "Spreadsheets/",
+  "temp/",
+  ".fileops/",
+];
 
 /**
  * Load configuration from environment and config file
  */
 export function loadConfig(): Config {
-  const defaultWorkspacePath = expandHome(
-    process.env.WORKSPACE_PATH || "~/Downloads/AI-Workspace/"
-  );
-  const defaultDbPath = expandHome(
-    process.env.GRANTS_DB_PATH || "~/.hexa-puffs/data/grants.db"
-  );
-  const defaultAuditPath = expandHome(
-    process.env.AUDIT_LOG_PATH || "~/.hexa-puffs/logs/fileops-audit.log"
-  );
-  const tempCleanupDays = parseInt(process.env.TEMP_CLEANUP_DAYS || "7", 10);
-
-  // Default workspace structure
-  const defaultStructure = [
-    "Documents/reports/",
-    "Documents/notes/",
-    "Documents/drafts/",
-    "Code/python/",
-    "Code/bash/",
-    "Code/other/",
-    "Research/summaries/",
-    "Research/sources/",
-    "Spreadsheets/",
-    "temp/",
-    ".fileops/",
-  ];
-
-  // Try to load config file
-  const configPath = join(process.cwd(), "fileops-mcp.yaml");
-  let fileConfig: Partial<Config> = {};
-
-  if (existsSync(configPath)) {
-    try {
-      // Simple YAML parsing for grants section
-      const content = readFileSync(configPath, "utf-8");
-      const grantsMatch = content.match(/grants:\s*\n((?:\s+-[^\n]+\n?)+)/);
-      if (grantsMatch) {
-        const grantsSection = grantsMatch[1];
-        const grants: GrantConfig[] = [];
-        const grantBlocks = grantsSection.split(/\n\s+-\s+/).filter(Boolean);
-        for (const block of grantBlocks) {
-          const pathMatch = block.match(/path:\s*([^\n]+)/);
-          const permMatch = block.match(/permission:\s*([^\n]+)/);
-          if (pathMatch) {
-            grants.push({
-              path: expandHome(pathMatch[1].trim()),
-              permission: (permMatch?.[1]?.trim() as "read" | "read-write") || "read",
-            });
-          }
-        }
-        fileConfig.grants = grants;
-      }
-    } catch (error) {
-      logger.warn("Could not parse config file", error);
-    }
-  }
-
-  return {
+  const rawConfig = {
     workspace: {
-      path: defaultWorkspacePath,
-      structure: defaultStructure,
+      path: expandPath(getEnvString('WORKSPACE_PATH', '~/Downloads/AI-Workspace/')!),
+      structure: DEFAULT_STRUCTURE,
     },
-    grants: fileConfig.grants || [],
+    grants: loadFileGrants(),
     database: {
-      path: defaultDbPath,
+      path: expandPath(getEnvString('GRANTS_DB_PATH', '~/.hexa-puffs/data/grants.db')!),
     },
     audit: {
-      path: defaultAuditPath,
+      path: expandPath(getEnvString('AUDIT_LOG_PATH', '~/.hexa-puffs/logs/fileops-audit.log')!),
     },
     cleanup: {
-      tempDays: tempCleanupDays,
+      tempDays: getEnvNumber('TEMP_CLEANUP_DAYS', 7),
     },
   };
+
+  const result = ConfigSchema.safeParse(rawConfig);
+  if (!result.success) {
+    const errors = result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('\n');
+    throw new Error(`Filer-MCP configuration validation failed:\n${errors}`);
+  }
+
+  return result.data;
 }
 
 // Singleton config instance
@@ -127,4 +124,9 @@ export function getConfig(): Config {
     configInstance = loadConfig();
   }
   return configInstance;
+}
+
+/** Reset the singleton for test isolation. */
+export function resetConfig(): void {
+  configInstance = null;
 }

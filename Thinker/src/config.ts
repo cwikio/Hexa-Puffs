@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CostControlConfig } from './cost/types.js';
+import { getEnvBoolean, getEnvNumber, getEnvFloat, getEnvString } from '@mcp/shared/Utils/config.js';
 
 /**
  * LLM Provider types supported by Thinker
@@ -142,101 +142,75 @@ export const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 
 /**
- * Parse boolean from environment variable
- */
-function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
-  if (value === undefined) return defaultValue;
-  return value.toLowerCase() === 'true' || value === '1';
-}
-
-/**
- * Parse integer from environment variable
- */
-function parseInteger(value: string | undefined, defaultValue: number): number {
-  if (value === undefined) return defaultValue;
-  const parsed = parseInt(value, 10);
-  return isNaN(parsed) ? defaultValue : parsed;
-}
-
-/**
- * Parse float from environment variable
- */
-function parseNumber(value: string | undefined, defaultValue: number): number {
-  if (value === undefined) return defaultValue;
-  const parsed = Number(value);
-  return isNaN(parsed) ? defaultValue : parsed;
-}
-
-/**
  * Load configuration from environment variables
  */
 export function loadConfig(): Config {
   const rawConfig = {
-    thinkerEnabled: parseBoolean(process.env.THINKER_ENABLED, true),
-    llmProvider: process.env.THINKER_LLM_PROVIDER || 'groq',
-    groqApiKey: process.env.GROQ_API_KEY,
-    groqModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-    lmstudioBaseUrl: process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234/v1',
-    lmstudioModel: process.env.LMSTUDIO_MODEL || undefined,
-    ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
-    ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2',
-    temperature: parseNumber(process.env.THINKER_TEMPERATURE, 0.4),
-    orchestratorUrl: process.env.ORCHESTRATOR_URL || 'http://localhost:8000',
-    orchestratorTimeout: parseInteger(process.env.ORCHESTRATOR_TIMEOUT, 30000),
-    thinkerPort: parseInteger(process.env.THINKER_PORT, 8006),
-    sendResponseDirectly: parseBoolean(process.env.THINKER_SEND_RESPONSE_DIRECTLY, false),
-    thinkerAgentId: process.env.THINKER_AGENT_ID || 'thinker',
-    systemPromptPath: process.env.THINKER_SYSTEM_PROMPT_PATH || undefined,
-    defaultSystemPromptPath: process.env.THINKER_DEFAULT_SYSTEM_PROMPT_PATH || undefined,
-    personaDir: process.env.THINKER_PERSONA_DIR || paths.getAgentsDir(),
-    skillsDir: process.env.THINKER_SKILLS_DIR || paths.getSkillsDir(),
-    proactiveTasksEnabled: parseBoolean(process.env.PROACTIVE_TASKS_ENABLED, true),
-    defaultNotifyChatId: process.env.DEFAULT_NOTIFY_CHAT_ID || undefined,
-    userTimezone: process.env.USER_TIMEZONE || 'America/New_York',
-    userName: process.env.USER_NAME || undefined,
-    userEmail: process.env.USER_EMAIL || undefined,
-    logLevel: process.env.LOG_LEVEL || 'info',
-    traceLogPath: process.env.TRACE_LOG_PATH || paths.resolvePath('~/.hexa-puffs/logs/traces.jsonl'),
+    thinkerEnabled: getEnvBoolean('THINKER_ENABLED', true),
+    llmProvider: getEnvString('THINKER_LLM_PROVIDER', 'groq'),
+    groqApiKey: getEnvString('GROQ_API_KEY'),
+    groqModel: getEnvString('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+    lmstudioBaseUrl: getEnvString('LMSTUDIO_BASE_URL', 'http://localhost:1234/v1'),
+    lmstudioModel: getEnvString('LMSTUDIO_MODEL'),
+    ollamaBaseUrl: getEnvString('OLLAMA_BASE_URL', 'http://localhost:11434'),
+    ollamaModel: getEnvString('OLLAMA_MODEL', 'llama3.2'),
+    temperature: getEnvFloat('THINKER_TEMPERATURE', 0.4),
+    orchestratorUrl: getEnvString('ORCHESTRATOR_URL', 'http://localhost:8000'),
+    orchestratorTimeout: getEnvNumber('ORCHESTRATOR_TIMEOUT', 30000),
+    thinkerPort: getEnvNumber('THINKER_PORT', 8006),
+    sendResponseDirectly: getEnvBoolean('THINKER_SEND_RESPONSE_DIRECTLY', false),
+    thinkerAgentId: getEnvString('THINKER_AGENT_ID', 'thinker'),
+    systemPromptPath: getEnvString('THINKER_SYSTEM_PROMPT_PATH'),
+    defaultSystemPromptPath: getEnvString('THINKER_DEFAULT_SYSTEM_PROMPT_PATH'),
+    personaDir: getEnvString('THINKER_PERSONA_DIR', paths.getAgentsDir()),
+    skillsDir: getEnvString('THINKER_SKILLS_DIR', paths.getSkillsDir()),
+    proactiveTasksEnabled: getEnvBoolean('PROACTIVE_TASKS_ENABLED', true),
+    defaultNotifyChatId: getEnvString('DEFAULT_NOTIFY_CHAT_ID'),
+    userTimezone: getEnvString('USER_TIMEZONE', 'America/New_York'),
+    userName: getEnvString('USER_NAME'),
+    userEmail: getEnvString('USER_EMAIL'),
+    logLevel: getEnvString('LOG_LEVEL', 'info'),
+    traceLogPath: getEnvString('TRACE_LOG_PATH', paths.resolvePath('~/.hexa-puffs/logs/traces.jsonl')),
 
     // Session persistence
-    sessionsDir: process.env.THINKER_SESSIONS_DIR || paths.getSessionsDir(),
+    sessionsDir: getEnvString('THINKER_SESSIONS_DIR', paths.getSessionsDir()),
     sessionConfig: {
-      enabled: parseBoolean(process.env.THINKER_SESSION_ENABLED, true),
-      compactionEnabled: parseBoolean(process.env.THINKER_SESSION_COMPACTION_ENABLED, true),
-      compactionThresholdChars: parseInteger(process.env.THINKER_SESSION_COMPACTION_THRESHOLD_CHARS, 20_000),
-      compactionKeepRecentTurns: parseInteger(process.env.THINKER_SESSION_COMPACTION_KEEP_RECENT, 5),
-      compactionCooldownMs: parseInteger(process.env.THINKER_SESSION_COMPACTION_COOLDOWN_MS, 2 * 60 * 1000),
-      compactionMinTurns: parseInteger(process.env.THINKER_SESSION_COMPACTION_MIN_TURNS, 8),
-      maxAgeDays: parseInteger(process.env.THINKER_SESSION_MAX_AGE_DAYS, 7),
+      enabled: getEnvBoolean('THINKER_SESSION_ENABLED', true),
+      compactionEnabled: getEnvBoolean('THINKER_SESSION_COMPACTION_ENABLED', true),
+      compactionThresholdChars: getEnvNumber('THINKER_SESSION_COMPACTION_THRESHOLD_CHARS', 20_000),
+      compactionKeepRecentTurns: getEnvNumber('THINKER_SESSION_COMPACTION_KEEP_RECENT', 5),
+      compactionCooldownMs: getEnvNumber('THINKER_SESSION_COMPACTION_COOLDOWN_MS', 2 * 60 * 1000),
+      compactionMinTurns: getEnvNumber('THINKER_SESSION_COMPACTION_MIN_TURNS', 8),
+      maxAgeDays: getEnvNumber('THINKER_SESSION_MAX_AGE_DAYS', 7),
     },
 
     // Compaction model — dedicated cheap model for session summarization
-    compactionProvider: process.env.THINKER_COMPACTION_PROVIDER || 'groq',
-    compactionModel: process.env.THINKER_COMPACTION_MODEL || 'llama-3.1-8b-instant',
+    compactionProvider: getEnvString('THINKER_COMPACTION_PROVIDER', 'groq'),
+    compactionModel: getEnvString('THINKER_COMPACTION_MODEL', 'llama-3.1-8b-instant'),
 
     // Post-conversation fact extraction
     factExtraction: {
-      enabled: parseBoolean(process.env.THINKER_FACT_EXTRACTION_ENABLED, true),
-      idleMs: parseInteger(process.env.THINKER_FACT_EXTRACTION_IDLE_MS, 5 * 60 * 1000),
-      maxTurns: parseInteger(process.env.THINKER_FACT_EXTRACTION_MAX_TURNS, 10),
-      confidenceThreshold: parseNumber(process.env.THINKER_FACT_EXTRACTION_CONFIDENCE, 0.7),
+      enabled: getEnvBoolean('THINKER_FACT_EXTRACTION_ENABLED', true),
+      idleMs: getEnvNumber('THINKER_FACT_EXTRACTION_IDLE_MS', 5 * 60 * 1000),
+      maxTurns: getEnvNumber('THINKER_FACT_EXTRACTION_MAX_TURNS', 10),
+      confidenceThreshold: getEnvFloat('THINKER_FACT_EXTRACTION_CONFIDENCE', 0.7),
     },
 
     // Fact extraction prompt template
-    factExtractionPromptPath: process.env.THINKER_FACT_EXTRACTION_PROMPT_PATH || undefined,
+    factExtractionPromptPath: getEnvString('THINKER_FACT_EXTRACTION_PROMPT_PATH'),
 
     // Embedding cache directory
-    embeddingCacheDir: process.env.EMBEDDING_CACHE_DIR || paths.getDataDir(),
+    embeddingCacheDir: getEnvString('EMBEDDING_CACHE_DIR', paths.getDataDir()),
 
     // Cost controls — only built when explicitly enabled via env var
-    ...(parseBoolean(process.env.THINKER_COST_CONTROL_ENABLED, false) ? {
+    ...(getEnvBoolean('THINKER_COST_CONTROL_ENABLED', false) ? {
       costControl: {
         enabled: true,
-        shortWindowMinutes: parseInteger(process.env.THINKER_COST_SHORT_WINDOW_MINUTES, 2),
-        spikeMultiplier: parseNumber(process.env.THINKER_COST_SPIKE_MULTIPLIER, 3.0),
-        hardCapTokensPerHour: parseInteger(process.env.THINKER_COST_HARD_CAP_PER_HOUR, 500_000),
-        minimumBaselineTokens: parseInteger(process.env.THINKER_COST_MIN_BASELINE_TOKENS, 1000),
-        minimumBaselineRate: parseInteger(process.env.THINKER_COST_MIN_BASELINE_RATE, 10_000),
+        shortWindowMinutes: getEnvNumber('THINKER_COST_SHORT_WINDOW_MINUTES', 2),
+        spikeMultiplier: getEnvFloat('THINKER_COST_SPIKE_MULTIPLIER', 3.0),
+        hardCapTokensPerHour: getEnvNumber('THINKER_COST_HARD_CAP_PER_HOUR', 500_000),
+        minimumBaselineTokens: getEnvNumber('THINKER_COST_MIN_BASELINE_TOKENS', 1000),
+        minimumBaselineRate: getEnvNumber('THINKER_COST_MIN_BASELINE_RATE', 10_000),
       },
     } : {}),
   };

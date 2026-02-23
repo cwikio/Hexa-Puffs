@@ -14,6 +14,11 @@ vi.mock('../../src/core/orchestrator.js', () => ({
 
 import { handleGetToolCatalog } from '../../src/tools/tool-catalog.js';
 
+interface OverviewData {
+  summary: string;
+  servers: Record<string, number>;
+}
+
 interface CatalogData {
   summary: string;
   catalog: Record<string, Array<{ name: string; description: string }>>;
@@ -25,7 +30,7 @@ describe('handleGetToolCatalog', () => {
     mockGetToolDefinitions.mockReset();
   });
 
-  it('should group tools by MCP name', async () => {
+  it('should return compact overview without mcp_name filter', async () => {
     mockGetAllRoutes.mockReturnValue([
       { exposedName: 'telegram_send_message', mcpName: 'telegram', originalName: 'send_message' },
       { exposedName: 'telegram_get_messages', mcpName: 'telegram', originalName: 'get_messages' },
@@ -37,13 +42,13 @@ describe('handleGetToolCatalog', () => {
       { name: 'gmail_send_email', description: 'Send an email via Gmail', inputSchema: { type: 'object', properties: {} } },
     ]);
 
-    const result = await handleGetToolCatalog();
-    const data = result.data as CatalogData;
+    const result = await handleGetToolCatalog({});
+    const data = result.data as OverviewData;
 
     expect(result.success).toBe(true);
     expect(data.summary).toBe('3 tools across 2 MCP servers');
-    expect(data.catalog.telegram).toHaveLength(2);
-    expect(data.catalog.gmail).toHaveLength(1);
+    expect(data.servers.telegram).toBe(2);
+    expect(data.servers.gmail).toBe(1);
   });
 
   it('should take only the first sentence of descriptions', async () => {
@@ -54,7 +59,7 @@ describe('handleGetToolCatalog', () => {
       { name: 'telegram_send_message', description: 'Send a message via Telegram. Supports rich text and markdown formatting.', inputSchema: { type: 'object', properties: {} } },
     ]);
 
-    const result = await handleGetToolCatalog();
+    const result = await handleGetToolCatalog({ mcp_name: 'telegram' });
     const data = result.data as CatalogData;
 
     expect(data.catalog.telegram[0].description).toBe('Send a message via Telegram.');
@@ -72,7 +77,7 @@ describe('handleGetToolCatalog', () => {
       { name: 'memory_delete_fact', description: 'Delete a fact', inputSchema: { type: 'object', properties: {} } },
     ]);
 
-    const result = await handleGetToolCatalog();
+    const result = await handleGetToolCatalog({ mcp_name: 'memory' });
     const data = result.data as CatalogData;
     const names = data.catalog.memory.map((t) => t.name);
 
@@ -85,7 +90,7 @@ describe('handleGetToolCatalog', () => {
     ]);
     mockGetToolDefinitions.mockReturnValue([]);
 
-    const result = await handleGetToolCatalog();
+    const result = await handleGetToolCatalog({ mcp_name: 'orphan' });
     const data = result.data as CatalogData;
 
     expect(data.catalog.orphan[0].description).toBe('(no description)');
@@ -95,12 +100,12 @@ describe('handleGetToolCatalog', () => {
     mockGetAllRoutes.mockReturnValue([]);
     mockGetToolDefinitions.mockReturnValue([]);
 
-    const result = await handleGetToolCatalog();
-    const data = result.data as CatalogData;
+    const result = await handleGetToolCatalog({});
+    const data = result.data as OverviewData;
 
     expect(result.success).toBe(true);
     expect(data.summary).toBe('0 tools across 0 MCP servers');
-    expect(data.catalog).toEqual({});
+    expect(data.servers).toEqual({});
   });
 
   it('should return error on orchestrator failure', async () => {
@@ -108,7 +113,7 @@ describe('handleGetToolCatalog', () => {
       throw new Error('Connection lost');
     });
 
-    const result = await handleGetToolCatalog();
+    const result = await handleGetToolCatalog({});
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Connection lost');
@@ -122,9 +127,44 @@ describe('handleGetToolCatalog', () => {
       { name: 'test_tool', description: 'A tool that does stuff', inputSchema: { type: 'object', properties: {} } },
     ]);
 
-    const result = await handleGetToolCatalog();
+    const result = await handleGetToolCatalog({ mcp_name: 'test' });
     const data = result.data as CatalogData;
 
     expect(data.catalog.test[0].description).toBe('A tool that does stuff.');
+  });
+
+  it('should filter by mcp_name when provided', async () => {
+    mockGetAllRoutes.mockReturnValue([
+      { exposedName: 'telegram_send_message', mcpName: 'telegram', originalName: 'send_message' },
+      { exposedName: 'gmail_send_email', mcpName: 'gmail', originalName: 'send_email' },
+      { exposedName: 'github_create_issue', mcpName: 'github', originalName: 'create_issue' },
+    ]);
+    mockGetToolDefinitions.mockReturnValue([
+      { name: 'telegram_send_message', description: 'Send a message', inputSchema: { type: 'object', properties: {} } },
+      { name: 'gmail_send_email', description: 'Send an email', inputSchema: { type: 'object', properties: {} } },
+      { name: 'github_create_issue', description: 'Create an issue', inputSchema: { type: 'object', properties: {} } },
+    ]);
+
+    const result = await handleGetToolCatalog({ mcp_name: 'github' });
+    const data = result.data as CatalogData;
+
+    expect(result.success).toBe(true);
+    expect(data.summary).toBe('1 tools in github');
+    expect(Object.keys(data.catalog)).toEqual(['github']);
+    expect(data.catalog.github).toHaveLength(1);
+    expect(data.catalog.github[0].name).toBe('github_create_issue');
+  });
+
+  it('should return error for unknown mcp_name', async () => {
+    mockGetAllRoutes.mockReturnValue([
+      { exposedName: 'telegram_send_message', mcpName: 'telegram', originalName: 'send_message' },
+    ]);
+    mockGetToolDefinitions.mockReturnValue([]);
+
+    const result = await handleGetToolCatalog({ mcp_name: 'nonexistent' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('No MCP server named "nonexistent"');
+    expect(result.error).toContain('telegram');
   });
 });

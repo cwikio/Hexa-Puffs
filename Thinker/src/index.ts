@@ -7,6 +7,7 @@ import { loadConfig, validateProviderConfig, Config } from './config.js';
 import { Agent } from './agent/index.js';
 import { getProviderDisplayName } from './llm/providers.js';
 import { Logger } from '@mcp/shared/Utils/logger.js';
+import { IncomingAgentMessageSchema } from '@mcp/shared/Types/agent-contract.js';
 
 const logger = new Logger('thinker');
 
@@ -106,14 +107,16 @@ function createServer(config: Config, startTime: number) {
       return;
     }
 
-    const { id, chatId, senderId, text, date, agentId } = req.body;
+    const parsed = IncomingAgentMessageSchema.safeParse(req.body);
 
-    if (!chatId || !text) {
-      res.status(400).json({ success: false, error: 'chatId and text are required' });
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: parsed.error.flatten().fieldErrors });
       return;
     }
 
-    logger.info(`Received message dispatch: chat=${chatId}, agent=${agentId || 'default'}`);
+    const { id, chatId, senderId, text, date, agentId } = parsed.data;
+
+    logger.info(`Received message dispatch: chat=${chatId}, agent=${agentId}`);
 
     try {
       const result = await agentRef.processMessage({

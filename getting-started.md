@@ -23,8 +23,8 @@ Hexa Puffs integrates with several external services. You don't need all of them
 ## Step 1: Clone and Install
 
 ```bash
-git clone <repo-url>
-cd MCPs
+git clone https://github.com/cwikio/Hexa-Puffs.git
+cd Hexa-Puffs
 ```
 
 The Shared package must be built first (other packages depend on it):
@@ -189,6 +189,6 @@ cd Shared && npm run build && cd ..
 ## What's Next
 
 - Read the [Architecture Overview](README.md) for how the system works
-- See [How to Add a New MCP](how-to-add-new-mpc.md) for creating or integrating new MCPs
+- See [How to Add a New MCP](how-to-add-new-mcp.md) for creating or integrating new MCPs
 - See [testing.md](testing.md) for running the test suite
-- See [.documentation/](.documentation/) for detailed system documentation (15 files covering architecture, tools, commands, sessions, memory, startup, and more)
+- See [docs/](docs/) for detailed system documentation (15 files covering architecture, tools, commands, sessions, memory, startup, and more)

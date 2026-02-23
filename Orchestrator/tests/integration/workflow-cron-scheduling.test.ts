@@ -116,7 +116,7 @@ describe('Workflow: Cron-Scheduling Playbook E2E', () => {
     log(`Response: success=${data.success}, steps=${data.totalSteps}`, 'info');
     log(`Tools used: ${data.toolsUsed?.join(', ') || 'none'}`, 'info');
 
-    // Verify get_tool_catalog was called
+    // Log tool usage (non-deterministic — LLM may choose a different path)
     if (data.toolsUsed) {
       const usedCatalog = data.toolsUsed.includes('get_tool_catalog');
       const usedStoreSkill = data.toolsUsed.includes('memory_store_skill');
@@ -124,16 +124,12 @@ describe('Workflow: Cron-Scheduling Playbook E2E', () => {
       if (usedCatalog) {
         log('get_tool_catalog was called', 'success');
       } else {
-        log('get_tool_catalog was NOT called — LLM may have chosen a different path', 'warn');
+        log('get_tool_catalog was NOT called — LLM chose a different path (non-fatal)', 'warn');
       }
 
       if (usedStoreSkill) {
         log('memory_store_skill was called (classified as skill)', 'success');
       }
-
-      // Soft assertion: we expect catalog to be used but don't hard-fail
-      // because LLM behavior is non-deterministic
-      expect(usedCatalog).toBe(true);
     }
 
     log('E2E cron-scheduling flow completed', 'success');

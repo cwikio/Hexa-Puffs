@@ -136,14 +136,18 @@ For MCPs you don't build yourself (PostHog, Vercel, GitHub, etc.), declare them 
 
 Tokens live in your shell environment, not in the config file — `${POSTHOG_API_KEY}` resolves to `process.env.POSTHOG_API_KEY` at load time. The config file only contains placeholders, so it's safe to commit.
 
-External MCPs are **hot-reloadable** — edit `external-mcps.json` and changes apply without a restart. See [External MCP docs](.documentation/external-mcp.md) for the full guide.
+External MCPs are **hot-reloadable** — edit `external-mcps.json` and changes apply without a restart. See [External MCP docs](docs/external-mcp.md) for the full guide.
 
 ## Documentation Reference
 
-- **[Architecture](.documentation/architecture.md)**: System structure, tool routing, agents, and skills.
-- **[Commands](.documentation/commands.md)**: Slash commands (`/status`, `/diagnose`, `/help`).
-- **[Tools](.documentation/tools.md)**: Full catalog of 148+ available tools.
-- **[Troubleshooting](.documentation/startup.md)**: What to do if something doesn't start.
+- **[Architecture](docs/architecture.md)**: System structure, tool routing, agents, and skills.
+- **[Full Documentation Index](docs/README.md)**: Table of contents for all 13+ architecture docs, ADRs, and guides.
+- **[Commands](docs/commands.md)**: Slash commands (`/status`, `/diagnose`, `/help`).
+- **[Tools](docs/tools.md)**: Full catalog of 148+ available tools.
+- **[Agent Configuration](docs/agents-config.md)**: `agents.json` schema reference (agents, bindings, cost controls).
+- **[Conventions](CONVENTIONS.md)**: Coding patterns, naming, imports, and project conventions.
+- **[Claude Desktop Integration](how-to-connect-to-claude.md)**: Connect Hexa Puffs to Claude Desktop via Connector-MCP.
+- **[Troubleshooting](docs/startup.md)**: What to do if something doesn't start.
 
 ---
 

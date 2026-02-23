@@ -7,7 +7,7 @@ The central orchestration layer for Hexa Puffs AI Assistant. The Orchestrator ac
 - Polls Telegram channels and dispatches messages to agents via channel bindings
 - Enforces per-agent tool policies (allow/deny glob patterns)
 - Spawns and manages downstream MCPs via stdio
-- Connects to independent HTTP MCP services (Searcher, Gmail)
+- Connects to HTTP MCP services when configured with `transport: "http"`
 - Auto-discovers new MCPs from sibling directories via `hexa-puffs` manifest in `package.json`
 
 ## Architecture
@@ -25,7 +25,7 @@ The central orchestration layer for Hexa Puffs AI Assistant. The Orchestrator ac
 │  HTTP REST API: /health, /tools/list, /tools/call,                │
 │                 /agents/:id/resume                                 │
 │  MCP stdio: Standard MCP protocol for Claude Desktop              │
-│  65+ Tools (passthrough from downstream MCPs)                     │
+│  148+ Tools (passthrough from downstream MCPs)                    │
 │                                                                    │
 │  ┌───────────────────────────────────────────────────────────┐    │
 │  │               MULTI-AGENT LAYER                            │    │
@@ -45,25 +45,24 @@ The central orchestration layer for Hexa Puffs AI Assistant. The Orchestrator ac
 │                   │ agent-1 │         │ agent-2 │                  │
 │                   └─────────┘         └─────────┘                 │
 │                                                                    │
-└───────────────┬──────────────────────────────┬────────────────────┘
-                │ stdio (spawns children)       │ HTTP
-                ↓                               ↓
-┌──────────────────────────────────┐  ┌────────────────────────┐
-│  STDIO MCP SERVERS (spawned)     │  │  HTTP MCP SERVICES     │
-│  ┌────────┐ ┌────────┐          │  │  ┌──────────┐          │
-│  │Guardian│ │Telegram│          │  │  │ Searcher │          │
-│  │(stdio) │ │(stdio) │          │  │  │ (:8007)  │          │
-│  └────────┘ └────────┘          │  │  └──────────┘          │
-│  ┌────────┐ ┌────────┐          │  │  ┌──────────┐          │
-│  │1Pass   │ │ Filer  │          │  │  │  Gmail   │          │
-│  │(stdio) │ │(stdio) │          │  │  │ (:8008)  │          │
-│  └────────┘ └────────┘          │  │  └──────────┘          │
-│  ┌────────┐                      │  │                        │
-│  │Memory  │ ┌────────┐           │  │                        │
-│  │(stdio) │ │CodeExec│           │  │                        │
-│  └────────┘ │(stdio) │           │  │                        │
-│             └────────┘           │  │                        │
-└──────────────────────────────────┘  └────────────────────────┘
+└───────────────┬─────────────────────────────────────────────────┘
+                │ stdio (spawns children)
+                ↓
+┌─────────────────────────────────────────────────────────────┐
+│  STDIO MCP SERVERS (all spawned by Orchestrator)            │
+│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐              │
+│  │Guardian│ │Telegram│ │Searcher│ │ Gmail  │              │
+│  │(stdio) │ │(stdio) │ │(stdio) │ │(stdio) │              │
+│  └────────┘ └────────┘ └────────┘ └────────┘              │
+│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐              │
+│  │1Pass   │ │ Filer  │ │Memory  │ │CodeExec│              │
+│  │(stdio) │ │(stdio) │ │(stdio) │ │(stdio) │              │
+│  └────────┘ └────────┘ └────────┘ └────────┘              │
+│  ┌────────┐                                                 │
+│  │Browser │                                                 │
+│  │(stdio) │                                                 │
+│  └────────┘                                                 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Adding a New MCP
@@ -169,9 +168,7 @@ cp .env.example .env
 
 The recommended way to start everything is using the launch script, which starts:
 
-- Orchestrator (port 8010) - spawns stdio MCPs, connects to HTTP MCPs, spawns Thinker agents
-- Searcher (port 8007) - web search (must be started separately)
-- Gmail (port 8008) - email management (must be started separately)
+- Orchestrator (port 8010) - spawns all MCPs via stdio, spawns Thinker agents
 - Inngest Dev Server (port 8288) - job management dashboard
 
 ```bash
@@ -183,10 +180,9 @@ This script:
 
 1. Starts Inngest Dev Server
 2. Starts Orchestrator with `TRANSPORT=http PORT=8010 MCP_CONNECTION_MODE=stdio`
-3. Orchestrator automatically spawns: Telegram, Memory, Filer, Guardian, 1Password MCPs
-4. Orchestrator connects to HTTP services: Searcher (:8007), Gmail (:8008)
-5. Orchestrator spawns Thinker agent(s) via AgentManager (or connects to single Thinker at `THINKER_URL`)
-6. If `CHANNEL_POLLING_ENABLED=true`, Orchestrator polls Telegram and dispatches messages to agents
+3. Orchestrator auto-discovers and spawns all MCPs via stdio (Guardian, Telegram, Memory, Filer, 1Password, Searcher, Gmail, Browser, CodeExec)
+4. Orchestrator spawns Thinker agent(s) via AgentManager (or connects to single Thinker at `THINKER_URL`)
+5. If `CHANNEL_POLLING_ENABLED=true`, Orchestrator polls Telegram and dispatches messages to agents
 
 ### 4. Run Orchestrator manually (alternative)
 
@@ -906,15 +902,79 @@ Returns `{ "success": true, "message": "Agent \"hexa-puffs\" resumed" }` on succ
 
 ## External MCP System
 
-Third-party MCP servers (e.g. PostHog, Vercel) can be integrated without modifying the core codebase. They are declared in `external-mcps.json` in the project root and loaded alongside internal MCPs at startup.
+Third-party MCP servers (e.g. PostHog, Vercel, GitHub) can be integrated without modifying the core codebase. They are declared in `external-mcps.json` in the project root and loaded alongside internal MCPs at startup.
 
-- Config file: `external-mcps.json` — JSON map of `name → { command, args, env }`
+- Config file: `external-mcps.json` — JSON map of `name → config`
+- Supports two transport types: **stdio** (spawns a process) and **http** (connects to a remote URL)
 - Loaded via `Shared/Discovery/external-loader.ts`
 - Hot-reloaded via `ExternalMCPWatcher` — editing the config file applies changes without restart
+- Per-entry validation — one invalid entry does not block others from loading
 - Never `required` — a failed external MCP does not block startup
 - Not scanned by Guardian by default
+- Telegram notification on startup/hot-reload includes connection error details for failed MCPs
 
-See `.documentation/external-mcp.md` for the full integration guide.
+### Stdio MCPs (default)
+
+Stdio MCPs spawn a child process that communicates over stdin/stdout. This is the most common type for `npx`-based MCPs.
+
+```json
+{
+  "posthog": {
+    "command": "npx",
+    "args": ["-y", "mcp-remote@latest", "https://mcp.posthog.com/sse"],
+    "description": "PostHog API (page analytics, feature flags)"
+  }
+}
+```
+
+The `type` field defaults to `"stdio"` and can be omitted.
+
+### HTTP MCPs
+
+HTTP MCPs connect to a remote MCP server over Streamable HTTP transport. Use this for services that expose an MCP endpoint directly (e.g., GitHub Copilot MCP).
+
+```json
+{
+  "github": {
+    "type": "http",
+    "url": "https://api.githubcopilot.com/mcp/",
+    "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" },
+    "description": "GitHub API (repos, issues, PRs)"
+  }
+}
+```
+
+#### Authentication Tokens
+
+Many HTTP MCP servers require an authorization header. If you omit the `headers` field or provide an empty/invalid token, the connection will fail with an error like `missing required Authorization header`. The Orchestrator will send a Telegram notification with the error details.
+
+For **GitHub MCP**, you need a [fine-grained personal access token](https://github.com/settings/tokens?type=beta):
+
+1. Go to GitHub → Settings → Developer settings → Fine-grained personal access tokens
+2. Create a token with the repository and organization permissions you need
+3. Add `GITHUB_TOKEN=ghp_...` to `Orchestrator/.env`
+4. Reference it in `external-mcps.json` as `${GITHUB_TOKEN}`
+
+### Environment Variable Resolution
+
+Both `env` values (stdio) and `headers`/`url` values (HTTP) support `${ENV_VAR}` syntax. Variables are resolved from `process.env` at load time, which includes values from `Orchestrator/.env` (loaded via dotenv).
+
+### Config Fields
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `type` | `"stdio"` \| `"http"` | No | Transport type (default: `"stdio"`) |
+| `command` | string | Stdio only | Command to spawn (e.g., `"npx"`) |
+| `args` | string[] | No | Arguments for the command |
+| `env` | Record | No | Extra environment variables for the process |
+| `url` | string | HTTP only | URL of the remote MCP server |
+| `headers` | Record | No | HTTP headers (e.g., auth tokens) |
+| `description` | string | No | Human-readable description |
+| `timeout` | number | No | Timeout in ms |
+| `sensitive` | boolean | No | Wrap with Guardian for security scanning |
+| `metadata` | object | No | Tool policy overrides (`allowDestructiveTools`, etc.) |
+
+See `docs/external-mcp.md` for the full integration guide.
 
 ## Future Enhancements
 

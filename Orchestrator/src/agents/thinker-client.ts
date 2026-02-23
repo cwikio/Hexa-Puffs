@@ -6,7 +6,7 @@
  */
 
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
-import type { IncomingAgentMessage, ProcessingResponse } from './agent-types.js';
+import type { IncomingAgentMessage, ProcessingResponse } from '@mcp/shared/Types/agent-contract.js';
 
 export class ThinkerClient {
   private baseUrl: string;

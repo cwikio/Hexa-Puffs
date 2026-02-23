@@ -15,6 +15,10 @@ export class ExternalMCPWatcher {
       removed: string[],
     ) => Promise<void>,
     initialExternals: Record<string, ExternalMCPEntry>,
+    private onValidationErrors?: (
+      fileError: string | undefined,
+      entryErrors: Array<{ name: string; message: string }>,
+    ) => void,
   ) {
     this.currentExternals = new Map(Object.entries(initialExternals));
   }
@@ -45,7 +49,14 @@ export class ExternalMCPWatcher {
   }
 
   private async handleChange(): Promise<void> {
-    const freshEntries = loadExternalMCPs(this.configPath);
+    const loadResult = loadExternalMCPs(this.configPath);
+
+    // Report validation errors
+    if (loadResult.fileError || loadResult.errors.length > 0) {
+      this.onValidationErrors?.(loadResult.fileError, loadResult.errors);
+    }
+
+    const freshEntries = loadResult.entries;
     const freshNames = new Set(Object.keys(freshEntries));
     const currentNames = new Set(this.currentExternals.keys());
 

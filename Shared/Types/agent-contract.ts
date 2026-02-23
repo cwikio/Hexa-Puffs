@@ -1,5 +1,7 @@
 /**
- * Shared types for Orchestrator ↔ Thinker communication.
+ * Shared contract types for Orchestrator ↔ Thinker HTTP communication.
+ *
+ * Single source of truth — both sides import from here to prevent schema drift.
  */
 
 import { z } from 'zod';

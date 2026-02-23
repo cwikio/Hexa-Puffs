@@ -10,7 +10,7 @@
 import type { IMCPClient, MCPToolDefinition, ToolCallResult } from '../mcp-clients/types.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 import { normalizeSkillInput, validateCronExpression } from '../utils/skill-normalizer.js';
-import type { MCPMetadata } from '../config/schema.js';
+import type { MCPMetadata } from '@mcp/shared/Discovery/types.js';
 
 export interface RoutedTool {
   name: string; // The name exposed to Claude (may be prefixed)
@@ -51,6 +51,9 @@ export class ToolRouter {
   private config: ToolRouterConfig;
   private blockedTools: string[] = [];
 
+  // Cross-reference: Thinker has its own TOOL_GROUPS for message-based selection
+  // at Thinker/src/agent/tool-selector.ts. Different purposes (description tagging
+  // vs. keyword routing) but overlapping tool lists — keep in sync when adding tools.
   private static readonly DEFAULT_TOOL_GROUPS: ToolGroup[] = [
     {
       label: 'Communication',

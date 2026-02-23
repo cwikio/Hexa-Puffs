@@ -245,6 +245,42 @@ export interface UpdateProjectData {
 }
 
 // ============================================================================
+// Project Sources Tool Response Types
+// ============================================================================
+
+export interface LinkProjectSourceData {
+  project_source_id: number;
+  linked_at: string;
+  already_existed?: boolean;
+}
+
+export interface UnlinkProjectSourceData {
+  unlinked_project: string;
+  unlinked_mcp: string;
+}
+
+export interface ListProjectSourcesData {
+  sources: Array<{
+    id: number;
+    project_id: number;
+    project_name: string;
+    mcp_name: string;
+    external_project_id: string | null;
+    external_project_name: string | null;
+    source_type: string;
+    last_status: string;
+    last_checked_at: string | null;
+    created_at: string;
+    updated_at: string;
+  }>;
+  total_count: number;
+}
+
+export interface UpdateProjectSourceStatusData {
+  updated_fields: string[];
+}
+
+// ============================================================================
 // Timeline Tool Response Types
 // ============================================================================
 

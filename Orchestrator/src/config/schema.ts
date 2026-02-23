@@ -11,9 +11,16 @@ export const MCPMetadataSchema = z.object({
     output: z.boolean().optional(),
   }).optional(),
   allowDestructiveTools: z.boolean().optional(),
+  projectDiscovery: z.object({
+    listTool: z.string(),
+    listToolArgs: z.record(z.unknown()).optional(),
+    projectIdField: z.string(),
+    projectNameField: z.string(),
+  }).optional(),
 });
 
-export type MCPMetadata = z.infer<typeof MCPMetadataSchema>;
+// The MCPMetadata type lives in @mcp/shared/Discovery/types.js (single source of truth).
+// The Zod schema above is kept for runtime validation only.
 
 // Stdio-based MCP server config (spawns process)
 export const StdioMCPServerConfigSchema = z.object({
@@ -30,6 +37,18 @@ export const StdioMCPServerConfigSchema = z.object({
 
 export type StdioMCPServerConfig = z.infer<typeof StdioMCPServerConfigSchema>;
 
+// HTTP-based MCP server config (connects to remote Streamable HTTP MCP)
+export const HttpMCPServerConfigSchema = z.object({
+  url: z.string().url(),
+  headers: z.record(z.string()).optional(),
+  timeout: z.number().positive().default(30000),
+  required: z.boolean().default(false),
+  sensitive: z.boolean().default(false),
+  description: z.string().optional(),
+  metadata: MCPMetadataSchema.optional(),
+});
+
+export type HttpMCPServerConfig = z.infer<typeof HttpMCPServerConfigSchema>;
 
 export const SecurityConfigSchema = z.object({
   scanAllInputs: z.boolean().default(true),
@@ -74,10 +93,13 @@ export const ConfigSchema = z.object({
   // Connection mode for downstream MCPs (always stdio)
   mcpConnectionMode: z.literal('stdio').default('stdio'),
 
-  // Stdio-based MCP server configs (used when mcpConnectionMode = 'stdio')
-  // Dynamic: keys are auto-discovered from sibling MCP directories
+  // Stdio-based MCP server configs (spawns processes)
+  // Dynamic: keys are auto-discovered from sibling MCP directories + external-mcps.json
   mcpServersStdio: z.record(z.string(), StdioMCPServerConfigSchema).optional(),
 
+  // HTTP-based MCP server configs (connects to remote Streamable HTTP MCPs)
+  // Populated from external-mcps.json entries with type: "http"
+  mcpServersHttp: z.record(z.string(), HttpMCPServerConfigSchema).optional(),
 
   security: SecurityConfigSchema,
 

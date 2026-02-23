@@ -22,7 +22,7 @@ Boot is driven by `start-all.sh`, which launches services in a specific order. T
 
 ### Phase 3: Documentation Sync (instant)
 
-7. **Documentation** — Copies `.documentation/*.md` → `~/.hexa-puffs/documentation/`. Always overwrites (repo is source of truth).
+7. **Documentation** — Copies `docs/*.md` → `~/.hexa-puffs/documentation/`. Always overwrites (repo is source of truth).
 
 ### Phase 4: Inngest (3-5 seconds)
 

@@ -26,6 +26,7 @@ export class StdioMCPClient implements IMCPClient {
   private client: Client | null = null;
   private transport: StdioClientTransport | null = null;
   private available: boolean = false;
+  private _initError: string | undefined;
   protected logger: Logger;
 
   constructor(
@@ -45,6 +46,10 @@ export class StdioMCPClient implements IMCPClient {
 
   get isSensitive(): boolean {
     return this.config.sensitive ?? false;
+  }
+
+  get initError(): string | undefined {
+    return this._initError;
   }
 
   /**
@@ -107,6 +112,7 @@ export class StdioMCPClient implements IMCPClient {
       this.logger.info(`MCP server ${this.name} connected via stdio`);
     } catch (error) {
       this.available = false;
+      this._initError = error instanceof Error ? error.message : String(error);
       this.logger.error(`Failed to initialize MCP server ${this.name}`, { error });
 
       if (this.isRequired) {

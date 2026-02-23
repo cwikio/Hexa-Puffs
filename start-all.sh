@@ -123,7 +123,7 @@ echo ""
 echo -e "${BOLD}${CYAN}=== Syncing Documentation ===${RESET}"
 
 DOCS_DIR="$HOME/.hexa-puffs/documentation"
-DOC_SRC="$SCRIPT_DIR/.documentation"
+DOC_SRC="$SCRIPT_DIR/docs"
 mkdir -p "$DOCS_DIR"
 
 if [ -d "$DOC_SRC" ]; then
@@ -321,6 +321,34 @@ echo -e "  $(printf '%-14s' "Inngest:") ~/.hexa-puffs/logs/inngest.log"
 echo -e "\n${BOLD}Process IDs:${RESET}"
 echo -e "  $(printf '%-14s' "Orchestrator:") $ORCHESTRATOR_PID (MCPs + Thinker agent(s) are child processes)"
 echo -e "  $(printf '%-14s' "Inngest:") $INNGEST_PID"
+
+# ─── External MCPs ──────────────────────────────────────────────────────────
+EXTERNAL_MCPS_FILE="$SCRIPT_DIR/external-mcps.json"
+if [ -f "$EXTERNAL_MCPS_FILE" ]; then
+  EXT_NAMES=$(node -e "
+    const fs = require('fs');
+    try {
+      const data = JSON.parse(fs.readFileSync('$EXTERNAL_MCPS_FILE', 'utf8'));
+      for (const [name, cfg] of Object.entries(data)) {
+        const type = cfg.type || 'stdio';
+        const desc = cfg.description || '';
+        console.log(name + '|' + type + '|' + desc);
+      }
+    } catch {}
+  " 2>/dev/null)
+  if [ -n "$EXT_NAMES" ]; then
+    EXT_COUNT=$(echo "$EXT_NAMES" | wc -l | tr -d ' ')
+    echo -e "\n${BOLD}External MCPs ($EXT_COUNT):${RESET}"
+    while IFS='|' read -r ext_name ext_type ext_desc; do
+      [ -z "$ext_name" ] && continue
+      if [ -n "$ext_desc" ]; then
+        echo -e "  $(printf '%-14s' "$ext_name:") $ext_type — $ext_desc"
+      else
+        echo -e "  $(printf '%-14s' "$ext_name:") $ext_type"
+      fi
+    done <<< "$EXT_NAMES"
+  fi
+fi
 
 echo -e "\n${YELLOW}Tip: Use 'tail -f ~/.hexa-puffs/logs/*.log' to monitor all services${RESET}"
 echo -e "${YELLOW}Tip: Use './restart.sh' to stop, rebuild, and restart all services${RESET}"

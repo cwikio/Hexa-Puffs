@@ -10,6 +10,7 @@ import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { resolvePath } from "../utils/paths.js";
 import { checkPermission } from "../db/grants.js";
 import { writeAuditEntry, createAuditEntry } from "../logging/audit.js";
+import { GrantError, WorkspaceError } from "../utils/errors.js";
 
 export const listFilesSchema = z.object({
   path: z
@@ -88,18 +89,18 @@ export async function handleListFiles(
           error: permission.reason,
         })
       );
-      throw new Error(permission.reason);
+      throw new GrantError(permission.reason ?? "Access denied");
     }
   }
 
   // Check if directory exists
   if (!existsSync(resolved.fullPath)) {
-    throw new Error(`Directory not found: ${resolved.fullPath}`);
+    throw new WorkspaceError(`Directory not found: ${resolved.fullPath}`);
   }
 
   const stats = await stat(resolved.fullPath);
   if (!stats.isDirectory()) {
-    throw new Error(`Path is not a directory: ${resolved.fullPath}`);
+    throw new WorkspaceError(`Path is not a directory: ${resolved.fullPath}`);
   }
 
   const files = await listDirectory(resolved.fullPath, input.recursive);

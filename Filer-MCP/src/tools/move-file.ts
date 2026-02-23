@@ -9,6 +9,7 @@ import { dirname } from "node:path";
 import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { resolvePath } from "../utils/paths.js";
 import { writeAuditEntry, createAuditEntry } from "../logging/audit.js";
+import { WorkspaceError } from "../utils/errors.js";
 
 export const moveFileSchema = z.object({
   source: z.string().describe("Source path (relative within workspace)"),
@@ -36,7 +37,7 @@ export async function handleMoveFile(
     input.destination.startsWith("/") ||
     input.destination.startsWith("~")
   ) {
-    throw new Error(
+    throw new WorkspaceError(
       "move_file only works with workspace paths. Use relative paths."
     );
   }
@@ -48,25 +49,25 @@ export async function handleMoveFile(
     sourceResolved.domain !== "workspace" ||
     destResolved.domain !== "workspace"
   ) {
-    throw new Error("move_file only works with workspace paths");
+    throw new WorkspaceError("move_file only works with workspace paths");
   }
 
   // Check if source exists
   if (!existsSync(sourceResolved.fullPath)) {
-    throw new Error(`Source file not found: ${sourceResolved.fullPath}`);
+    throw new WorkspaceError(`Source file not found: ${sourceResolved.fullPath}`);
   }
 
   // Check source is a file
   const stats = await stat(sourceResolved.fullPath);
   if (stats.isDirectory()) {
-    throw new Error(
+    throw new WorkspaceError(
       `Cannot move directories. Source is a directory: ${sourceResolved.fullPath}`
     );
   }
 
   // Check destination doesn't exist
   if (existsSync(destResolved.fullPath)) {
-    throw new Error(
+    throw new WorkspaceError(
       `Destination already exists: ${destResolved.fullPath}. Delete it first or choose a different name.`
     );
   }
