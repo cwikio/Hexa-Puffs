@@ -9,6 +9,7 @@ import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { resolvePath } from "../utils/paths.js";
 import { checkPermission } from "../db/grants.js";
 import { writeAuditEntry, createAuditEntry } from "../logging/audit.js";
+import { GrantError, WorkspaceError } from "../utils/errors.js";
 
 export const readFileSchema = z.object({
   path: z
@@ -41,20 +42,20 @@ export async function handleReadFile(
           error: permission.reason,
         })
       );
-      throw new Error(permission.reason);
+      throw new GrantError(permission.reason ?? "Access denied");
     }
   }
 
   // Check if file exists
   if (!existsSync(resolved.fullPath)) {
-    throw new Error(`File not found: ${resolved.fullPath}`);
+    throw new WorkspaceError(`File not found: ${resolved.fullPath}`);
   }
 
   // Get file stats
   const stats = await stat(resolved.fullPath);
 
   if (stats.isDirectory()) {
-    throw new Error(
+    throw new WorkspaceError(
       `Path is a directory, not a file: ${resolved.fullPath}. Use list_files instead.`
     );
   }
@@ -62,7 +63,7 @@ export async function handleReadFile(
   // Check file size (limit to 10MB for binary, 50MB for text)
   const maxSize = 50 * 1024 * 1024; // 50MB
   if (stats.size > maxSize) {
-    throw new Error(
+    throw new WorkspaceError(
       `File too large: ${stats.size} bytes. Maximum is ${maxSize} bytes.`
     );
   }

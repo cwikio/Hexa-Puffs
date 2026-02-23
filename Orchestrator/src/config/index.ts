@@ -171,7 +171,6 @@ export {
   type HttpMCPServerConfig,
   type SecurityConfig,
   type ChannelPollingConfig,
-  type MCPMetadata,
 } from './schema.js';
 
 export {

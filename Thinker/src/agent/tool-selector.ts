@@ -1,12 +1,16 @@
 import type { CoreTool } from 'ai';
 import { Logger } from '@mcp/shared/Utils/logger.js';
-import type { MCPMetadata } from '../orchestrator/types.js';
+import type { MCPMetadata } from '@mcp/shared/Discovery/types.js';
 
 const logger = new Logger('thinker:tool-selector');
 
 /**
  * Tool groups — core is always included.
  * Glob patterns (e.g. "memory_*") are expanded against the full tool map at runtime.
+ *
+ * Cross-reference: Orchestrator has DEFAULT_TOOL_GROUPS for description tagging
+ * at Orchestrator/src/routing/tool-router.ts. Different purposes (keyword routing
+ * vs. description tagging) but overlapping tool lists — keep in sync when adding tools.
  */
 export const TOOL_GROUPS: Record<string, string[]> = {
   core: ['send_telegram', 'store_fact', 'search_memories', 'get_status', 'spawn_subagent'],

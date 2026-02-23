@@ -8,7 +8,7 @@
 
 import { logger, type Logger } from '@mcp/shared/Utils/logger.js';
 import type { ToolRouter } from '../../routing/tool-router.js';
-import type { IncomingAgentMessage } from '../../agents/agent-types.js';
+import type { IncomingAgentMessage } from '@mcp/shared/Types/agent-contract.js';
 import type { ChannelAdapter, ChannelAdapterConfig } from '../channel-adapter.js';
 
 /** Shape of a message returned by a channel MCP's get_messages tool. */

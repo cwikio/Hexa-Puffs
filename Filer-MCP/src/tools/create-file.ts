@@ -9,6 +9,7 @@ import { dirname } from "node:path";
 import type { StandardResponse } from "@mcp/shared/Types/StandardResponse.js";
 import { resolvePath, validateForCreation } from "../utils/paths.js";
 import { writeAuditEntry, createAuditEntry } from "../logging/audit.js";
+import { WorkspaceError } from "../utils/errors.js";
 
 export const createFileSchema = z.object({
   path: z
@@ -36,7 +37,7 @@ export async function handleCreateFile(
 ): Promise<CreateFileData> {
   // Validate it's a relative path (workspace only for create)
   if (input.path.startsWith("/") || input.path.startsWith("~")) {
-    throw new Error(
+    throw new WorkspaceError(
       "create_file only works with workspace paths. Use relative paths."
     );
   }
@@ -47,12 +48,12 @@ export async function handleCreateFile(
   const { fullPath, domain } = resolvePath(input.path);
 
   if (domain !== "workspace") {
-    throw new Error("create_file only works with workspace paths");
+    throw new WorkspaceError("create_file only works with workspace paths");
   }
 
   // Check if file exists and overwrite is false
   if (existsSync(fullPath) && !input.overwrite) {
-    throw new Error(
+    throw new WorkspaceError(
       `File already exists: ${fullPath}. Set overwrite=true to replace.`
     );
   }

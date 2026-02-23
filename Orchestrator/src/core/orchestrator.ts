@@ -1,4 +1,6 @@
-import { getConfig, type Config, type AgentDefinition, type ChannelBinding, type MCPMetadata, getDefaultAgent, loadAgentsFromFile } from '../config/index.js';
+import { getConfig, type Config, type AgentDefinition, type ChannelBinding, getDefaultAgent, loadAgentsFromFile } from '../config/index.js';
+import type { MCPMetadata } from '@mcp/shared/Discovery/types.js';
+import { MEMORY_STORE_CONVERSATION } from '@mcp/shared/Types/tool-names.js';
 import { guardianConfig } from '../config/guardian.js';
 import { StdioGuardianClient } from '../mcp-clients/stdio-guardian.js';
 import { GuardedMCPClient } from '../mcp-clients/guarded-client.js';
@@ -17,7 +19,8 @@ import { HaltManager, getHaltManager } from './halt-manager.js';
 import { loadSnapshot, saveSnapshot, computeDiff, type MCPSnapshot, type MCPDiff, type MCPSnapshotEntry } from './startup-diff.js';
 import { ExternalMCPWatcher } from './external-watcher.js';
 import { loadExternalMCPs, type ExternalMCPEntry } from '@mcp/shared/Discovery/external-loader.js';
-import type { IncomingAgentMessage } from '../agents/agent-types.js';
+import type { IncomingAgentMessage } from '@mcp/shared/Types/agent-contract.js';
+import { NotificationService } from './notification-service.js';
 import { logger, Logger } from '@mcp/shared/Utils/logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,6 +78,7 @@ export class Orchestrator {
   // External MCP tracking (mutable — updated by hot-reload)
   private externalMCPNames: Set<string> = new Set();
   private externalWatcher: ExternalMCPWatcher | null = null;
+  private notificationService: NotificationService;
 
   constructor() {
     this.config = getConfig();
@@ -84,6 +88,10 @@ export class Orchestrator {
     this.toolRouter = new ToolRouter({ alwaysPrefix: true, separator: '_' });
     this.haltManager = getHaltManager();
     this.slashCommands = new SlashCommandHandler(this.toolRouter, this);
+    this.notificationService = new NotificationService({
+      toolRouter: this.toolRouter,
+      getAgentDefinition: (id) => this.getAgentDefinition(id),
+    });
 
     // Initialize external MCP name tracking from config
     for (const name of this.config.externalMCPNames ?? []) {
@@ -188,7 +196,12 @@ export class Orchestrator {
 
     // Compute startup diff and send notification (best-effort, non-blocking)
     const diff = this.computeStartupDiff();
-    this.sendStartupNotification(diff).catch((err) =>
+    this.notificationService.sendStartupNotification(diff, {
+      stdioClients: this.stdioClients,
+      httpClients: this.httpClients,
+      externalMCPNames: this.externalMCPNames,
+      config: this.config,
+    }).catch((err) =>
       this.logger.warn('Startup notification failed', { error: err }),
     );
 
@@ -517,12 +530,21 @@ export class Orchestrator {
       // Send response back to the originating channel
       await this.sendToChannel(msg.channel, msg.chatId, result.response);
 
-      // Store conversation in memory
-      await this.toolRouter.routeToolCall('memory_store_conversation', {
-        agent_id: msg.agentId,
-        user_message: msg.text,
-        agent_response: result.response,
-      });
+      // Store conversation in memory (retry up to 2 times on failure — data is lost permanently otherwise)
+      const storeArgs = { agent_id: msg.agentId, user_message: msg.text, agent_response: result.response };
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await this.toolRouter.routeToolCall(MEMORY_STORE_CONVERSATION, storeArgs);
+          break;
+        } catch (err) {
+          if (attempt < 2) {
+            this.logger.warn(`Failed to store conversation (attempt ${attempt + 1}/3), retrying...`, { error: err });
+            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          } else {
+            this.logger.error('Failed to store conversation after 3 attempts — conversation data lost', { error: err, chatId: msg.chatId });
+          }
+        }
+      }
 
       this.logger.info(
         `Response delivered: chat=${msg.chatId}, steps=${result.totalSteps}, tools=${result.toolsUsed.join(', ') || 'none'}`
@@ -788,94 +810,6 @@ export class Orchestrator {
     return diff;
   }
 
-  // ─── Startup Notification ────────────────────────────────────────
-
-  /**
-   * Send a Telegram notification summarizing the startup state.
-   */
-  private async sendStartupNotification(diff: MCPDiff): Promise<void> {
-    const agentDef = this.getAgentDefinition('hexa-puffs');
-    const chatId = agentDef?.costControls?.notifyChatId || process.env.NOTIFY_CHAT_ID;
-    if (!chatId) {
-      this.logger.debug('No chat ID for startup notification — skipping');
-      return;
-    }
-
-    const internalCount = [...this.stdioClients.keys()].filter(
-      (n) => !this.externalMCPNames.has(n),
-    ).length;
-    const externalCount = this.externalMCPNames.size;
-    const total = this.stdioClients.size + this.httpClients.size;
-
-    // Build tool names per MCP
-    const toolsByMCP = new Map<string, string[]>();
-    for (const route of this.toolRouter.getAllRoutes()) {
-      const list = toolsByMCP.get(route.mcpName) ?? [];
-      list.push(route.originalName);
-      toolsByMCP.set(route.mcpName, list);
-    }
-
-    const lines: string[] = [
-      'Orchestrator started',
-      `MCPs: ${total} total (${internalCount} internal, ${externalCount} external)`,
-    ];
-
-    if (externalCount > 0) {
-      lines.push('', 'External:');
-      for (const name of this.externalMCPNames) {
-        const tools = toolsByMCP.get(name) ?? [];
-        const transport = this.httpClients.has(name) ? 'http' : 'stdio';
-        const desc = this.config.mcpServersStdio?.[name]?.description
-          ?? this.config.mcpServersHttp?.[name]?.description;
-        lines.push(desc
-          ? `  ${name} (${transport}): ${tools.length} tools — ${desc}`
-          : `  ${name} (${transport}): ${tools.length} tools`);
-        for (const tool of tools) {
-          lines.push(`    • ${tool}`);
-        }
-      }
-    }
-
-    if (diff.added.length > 0 || diff.removed.length > 0) {
-      lines.push('', 'Changes since last boot:');
-      for (const name of diff.added) lines.push(`  + ${name}`);
-      for (const name of diff.removed) lines.push(`  - ${name}`);
-    }
-
-    const failedEntries: Array<{ name: string; error?: string }> = [
-      ...[...this.stdioClients.entries()]
-        .filter(([, c]) => !c.isAvailable)
-        .map(([n, c]) => ({ name: n, error: c.initError })),
-      ...[...this.httpClients.entries()]
-        .filter(([, c]) => !c.isAvailable)
-        .map(([n, c]) => ({ name: n, error: c.initError })),
-    ];
-    if (failedEntries.length > 0) {
-      lines.push('', 'Failed:');
-      for (const { name, error } of failedEntries) {
-        lines.push(error ? `  ${name}: ${error}` : `  ${name}`);
-      }
-    }
-
-    const blocked = this.toolRouter.getBlockedTools();
-    if (blocked.length > 0) {
-      lines.push('', '⚠️  Safety: The following destructive tools were blocked by default:');
-      for (const tool of blocked) lines.push(`  - ${tool}`);
-      lines.push('', 'To enable them, add "allowDestructiveTools": true to the MCP metadata in external-mcps.json');
-    }
-
-    const message = lines.join('\n');
-
-    try {
-      await this.toolRouter.routeToolCall('telegram_send_message', {
-        chat_id: chatId,
-        message,
-      });
-    } catch (err) {
-      this.logger.warn('Failed to send startup notification via Telegram', { error: err });
-    }
-  }
-
   // ─── External MCP Hot-Reload ─────────────────────────────────────
 
   /**
@@ -922,7 +856,7 @@ export class Orchestrator {
       },
       initialExternals,
       (fileError, entryErrors) => {
-        this.sendValidationErrorNotification(fileError, entryErrors).catch((err) =>
+        this.notificationService.sendValidationErrorNotification(fileError, entryErrors).catch((err) =>
           this.logger.warn('Validation error notification failed', { error: err }),
         );
       },
@@ -1042,7 +976,7 @@ export class Orchestrator {
       });
 
       // Notify via Telegram (best-effort)
-      this.sendHotReloadNotification(added, removed, failed).catch((err: unknown) =>
+      this.notificationService.sendHotReloadNotification(added, removed, failed).catch((err: unknown) =>
         this.logger.warn('Hot-reload notification failed', { error: err }),
       );
 
@@ -1055,73 +989,6 @@ export class Orchestrator {
         );
       }
     }
-  }
-
-  /**
-   * Send Telegram notification about hot-reload changes.
-   */
-  private async sendHotReloadNotification(
-    added: Map<string, ExternalMCPEntry>,
-    removed: string[],
-    failed: Array<{ name: string; error: string }>,
-  ): Promise<void> {
-    const agentDef = this.getAgentDefinition('hexa-puffs');
-    const chatId = agentDef?.costControls?.notifyChatId || process.env.NOTIFY_CHAT_ID;
-    if (!chatId) return;
-
-    const lines: string[] = ['External MCPs changed:'];
-
-    const failedNames = new Set(failed.map((f) => f.name));
-    for (const [name, entry] of added) {
-      if (failedNames.has(name)) continue; // shown separately below
-      const tools = this.toolRouter.getAllRoutes().filter((r) => r.mcpName === name);
-      lines.push(entry.description
-        ? `  + ${name} (${entry.type}): ${tools.length} tools — ${entry.description}`
-        : `  + ${name} (${entry.type}): ${tools.length} tools`);
-      for (const tool of tools) {
-        lines.push(`    • ${tool.originalName}`);
-      }
-    }
-    for (const name of removed) {
-      lines.push(`  - ${name}`);
-    }
-    if (failed.length > 0) {
-      lines.push('', 'Failed to connect:');
-      for (const { name, error } of failed) {
-        lines.push(`  ${name}: ${error}`);
-      }
-    }
-
-    await this.toolRouter.routeToolCall('telegram_send_message', {
-      chat_id: chatId,
-      message: lines.join('\n'),
-    });
-  }
-
-  /**
-   * Send Telegram notification about external MCP validation errors.
-   */
-  private async sendValidationErrorNotification(
-    fileError: string | undefined,
-    entryErrors: Array<{ name: string; message: string }>,
-  ): Promise<void> {
-    const agentDef = this.getAgentDefinition('hexa-puffs');
-    const chatId = agentDef?.costControls?.notifyChatId || process.env.NOTIFY_CHAT_ID;
-    if (!chatId) return;
-
-    const lines: string[] = ['External MCPs validation error:'];
-    if (fileError) {
-      lines.push(`  File: ${fileError}`);
-    }
-    for (const err of entryErrors) {
-      lines.push(`  "${err.name}": ${err.message}`);
-    }
-    lines.push('', 'Valid entries were still loaded. Fix the errors above and save the file.');
-
-    await this.toolRouter.routeToolCall('telegram_send_message', {
-      chat_id: chatId,
-      message: lines.join('\n'),
-    });
   }
 
   // ─── Project Recognition ──────────────────────────────────────────

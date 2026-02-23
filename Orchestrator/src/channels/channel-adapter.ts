@@ -14,7 +14,7 @@
  *     subscribe_chat  — subscription-based chat filtering
  */
 
-import type { IncomingAgentMessage } from '../agents/agent-types.js';
+import type { IncomingAgentMessage } from '@mcp/shared/Types/agent-contract.js';
 
 export interface ChannelAdapterConfig {
   /** String prefixes that indicate bot-generated messages (prevents feedback loops). */

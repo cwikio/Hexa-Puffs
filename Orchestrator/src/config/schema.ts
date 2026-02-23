@@ -19,7 +19,8 @@ export const MCPMetadataSchema = z.object({
   }).optional(),
 });
 
-export type MCPMetadata = z.infer<typeof MCPMetadataSchema>;
+// The MCPMetadata type lives in @mcp/shared/Discovery/types.js (single source of truth).
+// The Zod schema above is kept for runtime validation only.
 
 // Stdio-based MCP server config (spawns process)
 export const StdioMCPServerConfigSchema = z.object({

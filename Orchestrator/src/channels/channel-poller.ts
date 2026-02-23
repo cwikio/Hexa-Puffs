@@ -8,7 +8,7 @@
  */
 
 import { logger, type Logger } from '@mcp/shared/Utils/logger.js';
-import type { IncomingAgentMessage } from '../agents/agent-types.js';
+import type { IncomingAgentMessage } from '@mcp/shared/Types/agent-contract.js';
 import type { ChannelAdapter } from './channel-adapter.js';
 
 export interface ChannelManagerConfig {
