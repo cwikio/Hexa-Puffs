@@ -43,6 +43,7 @@ This test plan tracks test coverage across all packages in the Hexa Puffs MCP mo
 | `graduated-backoff.test.ts` | Graduated backoff strategy |
 | `guarded-client.test.ts` | Guardian-wrapped MCP client |
 | `guardian-overrides.test.ts` | Guardian override rules |
+| `halt-manager.test.ts` | Halt/resume state machine, disk persistence, error resilience |
 | `health-check.test.ts` | Health check endpoint |
 | `http-client.test.ts` | HTTP MCP client |
 | `message-router.test.ts` | Message routing logic |
@@ -97,6 +98,7 @@ This test plan tracks test coverage across all packages in the Hexa Puffs MCP mo
 | Test File | Covers |
 |-----------|--------|
 | `circuit-breaker.test.ts` | Circuit breaker state machine (closed/open/half-open) |
+| `context-builder.test.ts` | Context building: prompt assembly, history selection, playbooks |
 | `embedding-integration.test.ts` | Embedding integration |
 | `embedding-tool-selector.test.ts` | Embedding-based tool selection |
 | `fact-extractor.test.ts` | Fact extraction from conversations |
@@ -105,10 +107,12 @@ This test plan tracks test coverage across all packages in the Hexa Puffs MCP mo
 | `history-repair.test.ts` | Conversation history repair |
 | `playbook-classifier.test.ts` | Playbook classification |
 | `playbook-seed.test.ts` | Playbook seeding |
-| `recover-tool-call.test.ts` | Tool call recovery |
+| `recover-tool-call.test.ts` | Tool call recovery (pure functions) |
+| `response-generator.test.ts` | Response generation: two-phase search, leak recovery, guards |
 | `skill-loader.test.ts` | Skill loader |
 | `skill-loader-schedule.test.ts` | Skill loader scheduling |
 | `tool-normalization.test.ts` | Tool name normalization |
+| `tool-recovery-class.test.ts` | ToolRecovery class: leaked tool call handling |
 | `tool-selection.test.ts` | Tool selection logic |
 
 **Integration (3 files):**
@@ -130,10 +134,11 @@ This test plan tracks test coverage across all packages in the Hexa Puffs MCP mo
 | `tool-selection.test.ts` | Tool selection (duplicate of unit?) |
 | `tool-selector.test.ts` | Tool selector |
 
-### Filer-MCP (2 test files)
+### Filer-MCP (3 test files)
 
 | Test File | Type | Covers |
 |-----------|------|--------|
+| `config.test.ts` | Unit | Config singleton, resetConfig(), loadConfig defaults |
 | `filer.test.ts` | Integration | File operations |
 | `filer-lifecycle.test.ts` | Integration | File lifecycle |
 
@@ -211,27 +216,22 @@ These components were extracted during the medium-priority architecture improvem
 | HallucinationGuard (patterns) | `Thinker/src/agent/components/hallucination-guard.ts` | `Thinker/tests/unit/hallucination-guard.test.ts` | Covered | 54 |
 | HallucinationGuard (retry) | `Thinker/src/agent/components/hallucination-guard.ts` | `Thinker/tests/unit/hallucination-guard-retry.test.ts` | Covered | 9 |
 | NotificationService | `Orchestrator/src/core/notification-service.ts` | `Orchestrator/tests/unit/notification-service.test.ts` | Covered | 15 |
-| ContextBuilder | `Thinker/src/agent/components/context-builder.ts` | -- | Not covered | 0 |
-| Filer resetConfig() | `Filer-MCP/src/utils/config.ts` | -- | Not covered | 0 |
+| ContextBuilder | `Thinker/src/agent/components/context-builder.ts` | `Thinker/tests/unit/context-builder.test.ts` | Covered | 16 |
+| ToolRecovery | `Thinker/src/agent/components/tool-recovery.ts` | `Thinker/tests/unit/tool-recovery-class.test.ts` | Covered | 7 |
+| ResponseGenerator | `Thinker/src/agent/components/response-generator.ts` | `Thinker/tests/unit/response-generator.test.ts` | Covered | 12 |
+| HaltManager | `Orchestrator/src/core/halt-manager.ts` | `Orchestrator/tests/unit/halt-manager.test.ts` | Covered | 21 |
+| Filer resetConfig() | `Filer-MCP/src/utils/config.ts` | `Filer-MCP/tests/unit/config.test.ts` | Covered | 4 |
 
-**Total new tests: 116 across 5 test files.**
+**Total new tests: 176 across 10 test files.**
 
 ---
 
-## Coverage Gaps
+## Remaining Coverage Gaps
 
-### P1 - High Priority (untested new components)
-
-| Gap | Package | Notes |
-|-----|---------|-------|
-| ContextBuilder | Thinker | Complex dependency graph (orchestrator client, embedding selector, playbook cache, session store). Requires significant mocking. |
-
-### P2 - Medium Priority (existing gaps)
+### P2 - Medium Priority
 
 | Gap | Package | Notes |
 |-----|---------|-------|
-| Guardian-MCP | Guardian-MCP | Zero test files. Prompt injection scanning is security-critical. |
-| Filer `resetConfig()` | Filer-MCP | Trivial singleton reset, low risk. Could add a quick unit test. |
 | Orchestrator `orchestrator.ts` God Object | Orchestrator | Integration tests exist but no focused unit tests for the main class. |
 | Thinker `loop.ts` | Thinker | Integration tests exist via `thinker.test.ts` but no focused unit tests for the main loop logic after extraction. |
 
@@ -239,9 +239,6 @@ These components were extracted during the medium-priority architecture improvem
 
 | Gap | Package | Notes |
 |-----|---------|-------|
-| `tool-recovery.ts` | Thinker | Existing component, no dedicated test. |
-| `response-generator.ts` | Thinker | Existing component, no dedicated test. |
-| `halt-manager.ts` | Orchestrator | Halt/resume logic, no dedicated test. |
 | `http-handlers.ts` | Orchestrator | HTTP handlers, covered indirectly by integration tests. |
 | Root-level duplicate tests | Thinker | `tests/history-repair.test.ts` and `tests/tool-selection.test.ts` may duplicate unit tests — audit and consolidate. |
 
@@ -252,14 +249,13 @@ These components were extracted during the medium-priority architecture improvem
 | Package | Unit | Integration | Lifecycle | Total |
 |---------|------|-------------|-----------|-------|
 | Shared | 15 | 0 | 0 | 15 |
-| Orchestrator | 26 | 22 | 0 | 48 |
-| Thinker | 14 | 5 | 0 | 19+ |
-| Filer-MCP | 0 | 2 | 0 | 2 |
+| Orchestrator | 28 | 22 | 0 | 50 |
+| Thinker | 17 | 5 | 0 | 22+ |
+| Filer-MCP | 1 | 2 | 0 | 3 |
 | Memorizer-MCP | 9 | 12 | 5 | 26 |
 | Onepassword-MCP | 2 | 0 | 0 | 2 |
 | Searcher-MCP | 1 | 1 | 0 | 2 |
-| Guardian-MCP | 0 | 0 | 0 | 0 |
-| **Total** | **67** | **42** | **5** | **114+** |
+| **Total** | **73** | **42** | **5** | **120+** |
 
 ---
 

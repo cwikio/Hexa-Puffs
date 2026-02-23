@@ -38,7 +38,7 @@ function makeStartupContext(overrides: Partial<StartupContext> = {}): StartupCon
   };
 }
 
-const emptyDiff: MCPDiff = { added: [], removed: [], unchanged: [] };
+const emptyDiff: MCPDiff = { added: [], removed: [] };
 
 describe('NotificationService', () => {
   let deps: NotificationDeps;
@@ -74,7 +74,6 @@ describe('NotificationService', () => {
       const diff: MCPDiff = {
         added: ['new-mcp'],
         removed: ['old-mcp'],
-        unchanged: ['guardian'],
       };
 
       await service.sendStartupNotification(diff, makeStartupContext());
@@ -148,7 +147,14 @@ describe('NotificationService', () => {
   describe('sendHotReloadNotification', () => {
     it('sends notification with added and removed MCPs', async () => {
       const added = new Map([
-        ['new-mcp', { name: 'new-mcp', type: 'stdio' as const, command: 'node', args: [] }],
+        ['new-mcp', {
+          type: 'stdio' as const,
+          command: 'node',
+          args: [],
+          timeout: 30000,
+          required: false as const,
+          sensitive: false,
+        }],
       ]);
 
       await service.sendHotReloadNotification(added, ['old-mcp'], []);
