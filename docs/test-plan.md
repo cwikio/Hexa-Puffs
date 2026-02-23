@@ -134,13 +134,27 @@ This test plan tracks test coverage across all packages in the Hexa Puffs MCP mo
 | `tool-selection.test.ts` | Tool selection (duplicate of unit?) |
 | `tool-selector.test.ts` | Tool selector |
 
-### Filer-MCP (3 test files)
+### Filer-MCP (10 test files)
 
-| Test File | Type | Covers |
-|-----------|------|--------|
-| `config.test.ts` | Unit | Config singleton, resetConfig(), loadConfig defaults |
-| `filer.test.ts` | Integration | File operations |
-| `filer-lifecycle.test.ts` | Integration | File lifecycle |
+**Unit (7 files):**
+
+| Test File | Covers |
+|-----------|--------|
+| `config.test.ts` | Config singleton, resetConfig(), loadConfig defaults |
+| `paths.test.ts` | Path security: forbidden paths, traversal, extensions, symlinks, resolvePath |
+| `audit.test.ts` | Audit entries: createAuditEntry, writeAuditEntry, readAuditLog with filters |
+| `grants.test.ts` | Grant CRUD: find, create, list, revoke, checkPermission, systemGrants |
+| `cleanup.test.ts` | Temp cleanup: age-based deletion, directory skipping, audit integration |
+| `workspace.test.ts` | Workspace init, getWorkspaceStats, temp file counting |
+| `db-index.test.ts` | JSON storage: loadGrants, saveGrants, caching, corrupt file resilience |
+
+**Integration (3 files):**
+
+| Test File | Covers |
+|-----------|--------|
+| `filer.test.ts` | All 14 tools, security edge cases, audit logging |
+| `filer-lifecycle.test.ts` | Full operational cycle: init, CRUD, search, security, audit, edge cases |
+| `grant-lifecycle.test.ts` | Grant journey: check denied, request, verify, permission boundary, audit |
 
 ### Memorizer-MCP (26 test files)
 
@@ -232,7 +246,7 @@ These components were extracted during the medium-priority architecture improvem
 
 | Gap | Package | Notes |
 |-----|---------|-------|
-| Orchestrator `orchestrator.ts` God Object | Orchestrator | Integration tests exist but no focused unit tests for the main class. |
+| Orchestrator `orchestrator.ts` | Orchestrator | Integration tests exist but no focused unit tests for the main class (NotificationService was extracted; MCP lifecycle, routing, hot-reload remain). |
 | Thinker `loop.ts` | Thinker | Integration tests exist via `thinker.test.ts` but no focused unit tests for the main loop logic after extraction. |
 
 ### P3 - Low Priority (nice to have)
@@ -251,11 +265,25 @@ These components were extracted during the medium-priority architecture improvem
 | Shared | 15 | 0 | 0 | 15 |
 | Orchestrator | 28 | 22 | 0 | 50 |
 | Thinker | 17 | 5 | 0 | 22+ |
-| Filer-MCP | 1 | 2 | 0 | 3 |
+| Filer-MCP | 7 | 3 | 0 | 10 |
 | Memorizer-MCP | 9 | 12 | 5 | 26 |
 | Onepassword-MCP | 2 | 0 | 0 | 2 |
 | Searcher-MCP | 1 | 1 | 0 | 2 |
-| **Total** | **73** | **42** | **5** | **120+** |
+| **Total** | **79** | **43** | **5** | **127+** |
+
+---
+
+## E2E Tests (Planned)
+
+Full-stack tests that exercise the entire Hexa Puffs stack (Orchestrator + MCPs + Thinker). These require all services running and are documented for future implementation.
+
+| E2E Test | What it would verify |
+|----------|---------------------|
+| Filer via Orchestrator | Orchestrator routes `file_read`/`file_write` to Filer MCP, verifies response |
+| Grant enforcement via Orchestrator | External path request routed through Orchestrator, Filer checks grants |
+| Audit trail after Thinker workflow | After Thinker uses Filer tools via Orchestrator, audit log has entries |
+| Temp cleanup after scheduled job | Scheduler triggers cleanup, old temp files removed |
+| Memory + Filer cross-MCP | Thinker stores fact via Memorizer, retrieves file via Filer in same conversation |
 
 ---
 
