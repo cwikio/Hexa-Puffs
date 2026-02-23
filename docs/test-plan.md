@@ -206,12 +206,25 @@ This test plan tracks test coverage across all packages in the Hexa Puffs MCP mo
 | `server.test.ts` | Unit | MCP server |
 | `tools.test.ts` | Unit | Tool operations |
 
-### Searcher-MCP (2 test files)
+### Searcher-MCP (8 test files)
 
-| Test File | Type | Covers |
-|-----------|------|--------|
-| `web-fetch.test.ts` | Unit | Web fetch tool |
-| `searcher.test.ts` | Integration | Searcher operations |
+**Unit (6 files):**
+
+| Test File | Covers |
+|-----------|--------|
+| `config.test.ts` | Config singleton, loadConfig defaults, BRAVE_API_KEY validation |
+| `brave.test.ts` | Brave API client: URL construction, auth header, freshness mapping, rate limiting, error handling |
+| `web-search.test.ts` | webSearchSchema freshness normalization, handleWebSearch result mapping, infobox, age fallback |
+| `news-search.test.ts` | newsSearchSchema year rejection, freshness normalization, handleNewsSearch source/thumbnail/breaking |
+| `image-search.test.ts` | imageSearchSchema count clamping, safesearch enum, handleImageSearch result mapping |
+| `web-fetch.test.ts` | Web fetch schema, Readability extraction, markdown conversion, truncation, error handling |
+
+**Integration (2 files):**
+
+| Test File | Covers |
+|-----------|--------|
+| `searcher.test.ts` | All 4 tools via HTTP, rate limiting, error handling |
+| `workflow-searcher-e2e.test.ts` (Orchestrator) | Full E2E: Orchestrator → Searcher → Brave API, response contracts, truncation, error propagation |
 
 ### Guardian-MCP (0 test files)
 
@@ -263,19 +276,27 @@ These components were extracted during the medium-priority architecture improvem
 | Package | Unit | Integration | Lifecycle | Total |
 |---------|------|-------------|-----------|-------|
 | Shared | 15 | 0 | 0 | 15 |
-| Orchestrator | 28 | 22 | 0 | 50 |
+| Orchestrator | 28 | 23 | 0 | 51 |
 | Thinker | 17 | 5 | 0 | 22+ |
 | Filer-MCP | 7 | 3 | 0 | 10 |
 | Memorizer-MCP | 9 | 12 | 5 | 26 |
 | Onepassword-MCP | 2 | 0 | 0 | 2 |
-| Searcher-MCP | 1 | 1 | 0 | 2 |
-| **Total** | **79** | **43** | **5** | **127+** |
+| Searcher-MCP | 6 | 1 | 0 | 7 |
+| **Total** | **84** | **44** | **5** | **133+** |
 
 ---
 
-## E2E Tests (Planned)
+## E2E Tests
 
-Full-stack tests that exercise the entire Hexa Puffs stack (Orchestrator + MCPs + Thinker). These require all services running and are documented for future implementation.
+Full-stack tests that exercise the entire Hexa Puffs stack (Orchestrator + MCPs + Thinker). These require all services running (`./start-all.sh`).
+
+### Implemented
+
+| E2E Test | File | What it verifies |
+|----------|------|-----------------|
+| Searcher via Orchestrator | `Orchestrator/tests/integration/workflow-searcher-e2e.test.ts` | Full path: Orchestrator → Searcher → Brave API. Response contracts for all 4 tools (web_search, news_search, image_search, web_fetch), truncation forwarding, error propagation, rate limit resilience. |
+
+### Planned
 
 | E2E Test | What it would verify |
 |----------|---------------------|
