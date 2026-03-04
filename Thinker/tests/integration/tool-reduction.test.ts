@@ -152,9 +152,9 @@ describe('Tool Reduction Integration', () => {
   beforeAll(async () => {
     const provider = new MockEmbeddingProvider();
     embeddingSelector = new EmbeddingToolSelector(provider, {
-      similarityThreshold: 0.4,
-      topK: 8,
-      minTools: 5,
+      similarityThreshold: 0.5,
+      topK: 9,
+      minTools: 6,
     });
     await embeddingSelector.initialize(allTools);
 
@@ -172,7 +172,7 @@ describe('Tool Reduction Integration', () => {
       );
 
       const names = Object.keys(result);
-      expect(names.length).toBeLessThanOrEqual(25);
+      expect(names.length).toBeLessThanOrEqual(20);
 
       for (const coreTool of CORE_TOOL_NAMES) {
         if (allTools[coreTool]) {
@@ -183,7 +183,7 @@ describe('Tool Reduction Integration', () => {
 
     it('reduced options: result has ≤15 tools, only 2 core tools from reduced set', async () => {
       const reducedOptions: ToolSelectionOptions = {
-        maxTools: 15,
+        maxContextualTools: 9,
         coreToolNames: REDUCED_CORE_TOOL_NAMES,
       };
 
@@ -196,7 +196,8 @@ describe('Tool Reduction Integration', () => {
       );
 
       const names = Object.keys(result);
-      expect(names.length).toBeLessThanOrEqual(15);
+      // 2 reduced core + 9 max contextual = 11
+      expect(names.length).toBeLessThanOrEqual(11);
 
       // Reduced core set should be present
       for (const coreTool of REDUCED_CORE_TOOL_NAMES) {
@@ -208,7 +209,7 @@ describe('Tool Reduction Integration', () => {
 
     it('reduced mode drops store_fact, search_memories, get_status, spawn_subagent from core', async () => {
       const reducedOptions: ToolSelectionOptions = {
-        maxTools: 15,
+        maxContextualTools: 9,
         coreToolNames: REDUCED_CORE_TOOL_NAMES,
       };
 
@@ -233,7 +234,7 @@ describe('Tool Reduction Integration', () => {
 
     it('contextual embedding/regex tools preserved in reduced mode', async () => {
       const reducedOptions: ToolSelectionOptions = {
-        maxTools: 15,
+        maxContextualTools: 9,
         coreToolNames: REDUCED_CORE_TOOL_NAMES,
       };
 
@@ -254,7 +255,7 @@ describe('Tool Reduction Integration', () => {
 
     it('sticky tools still injected after cap in reduced mode', async () => {
       const reducedOptions: ToolSelectionOptions = {
-        maxTools: 15,
+        maxContextualTools: 9,
         coreToolNames: REDUCED_CORE_TOOL_NAMES,
       };
 
@@ -293,7 +294,7 @@ describe('Tool Reduction Integration', () => {
         );
         const reducedResult = await selectToolsWithFallback(
           msg, allTools, embeddingSelector, undefined,
-          { maxTools: 15, coreToolNames: REDUCED_CORE_TOOL_NAMES },
+          { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES },
         );
 
         const defaultCount = Object.keys(defaultResult).length;
@@ -316,7 +317,7 @@ describe('Tool Reduction Integration', () => {
 
     it('ToolSelector threads options correctly to selectToolsWithFallback', async () => {
       const reducedOptions: ToolSelectionOptions = {
-        maxTools: 15,
+        maxContextualTools: 9,
         coreToolNames: REDUCED_CORE_TOOL_NAMES,
       };
 
@@ -328,10 +329,8 @@ describe('Tool Reduction Integration', () => {
       );
 
       const names = Object.keys(result);
-      // Cap should be respected (sticky/playbook may add a few on top, but base should be ≤15)
-      // The total can exceed 15 due to sticky/playbook injection, but the base set from
-      // selectToolsWithFallback should have been capped at 15
-      expect(names.length).toBeLessThanOrEqual(25); // generous upper bound with sticky
+      // Base: 2 core + 9 contextual = 11, sticky/playbook may add more on top
+      expect(names.length).toBeLessThanOrEqual(20); // generous upper bound with sticky
     });
   });
 
@@ -357,9 +356,9 @@ describe('Tool Reduction Integration', () => {
 
       const cachePath = join(homedir(), '.hexa-puffs/data/embedding-cache.json');
       realEmbeddingSelector = new EmbeddingToolSelector(realProvider, {
-        similarityThreshold: 0.4,
-        topK: 8,
-        minTools: 5,
+        similarityThreshold: 0.5,
+        topK: 9,
+        minTools: 6,
         cachePath,
         providerName: 'ollama',
         modelName: 'nomic-embed-text',
@@ -393,7 +392,7 @@ describe('Tool Reduction Integration', () => {
           'search for AI news',
           [],
           [],
-          llmPick ? { maxTools: 15, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+          llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
         );
         if (llmPick && !reducedResult[llmPick.toolName] && allTools[llmPick.toolName]) {
           reducedResult[llmPick.toolName] = allTools[llmPick.toolName];
@@ -422,8 +421,8 @@ describe('Tool Reduction Integration', () => {
           const presentInReduced = droppedCore.filter(t => reducedNames.includes(t));
           const presentInDefault = droppedCore.filter(t => defaultNames.includes(t));
           expect(presentInReduced.length).toBeLessThanOrEqual(presentInDefault.length);
-          // Reduced cap (15) is tighter than default cap (25)
-          expect(reducedNames.length).toBeLessThanOrEqual(15 + 3); // +3 for LLM pick + siblings
+          // 2 reduced core + 9 contextual + 1 LLM pick = 12 max
+          expect(reducedNames.length).toBeLessThanOrEqual(12);
         }
       },
       60_000,
@@ -438,7 +437,7 @@ describe('Tool Reduction Integration', () => {
           'hello how are you',
           [],
           [],
-          llmPick ? { maxTools: 15, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+          llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
         );
 
         const names = Object.keys(result);
@@ -467,7 +466,7 @@ describe('Tool Reduction Integration', () => {
           'send an email to bob about the meeting',
           [],
           [],
-          llmPick ? { maxTools: 15, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+          llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
         );
         if (llmPick && !result[llmPick.toolName] && allTools[llmPick.toolName]) {
           result[llmPick.toolName] = allTools[llmPick.toolName];
@@ -497,7 +496,7 @@ describe('Tool Reduction Integration', () => {
           'search for AI news',
           [],
           [],
-          firstPick ? { maxTools: 15, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+          firstPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
         );
         if (firstPick && !firstResult[firstPick.toolName] && allTools[firstPick.toolName]) {
           firstResult[firstPick.toolName] = allTools[firstPick.toolName];
@@ -513,7 +512,7 @@ describe('Tool Reduction Integration', () => {
           'what about yesterday',
           [],
           recentToolsByTurn,
-          secondPick ? { maxTools: 15, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+          secondPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
         );
 
         const secondNames = Object.keys(secondResult);
@@ -561,7 +560,7 @@ describe('Tool Reduction Integration', () => {
           // Reduced pipeline (only when LLM picks)
           const reducedResult = await realToolSelector.selectTools(
             msg, [], [],
-            llmPick ? { maxTools: 15, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+            llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
           );
           if (llmPick && !reducedResult[llmPick.toolName] && allTools[llmPick.toolName]) {
             reducedResult[llmPick.toolName] = allTools[llmPick.toolName];

@@ -40,9 +40,9 @@ interface CacheData {
 }
 
 const DEFAULT_CONFIG: EmbeddingToolSelectorConfig = {
-  similarityThreshold: 0.4,
-  topK: 8,
-  minTools: 5,
+  similarityThreshold: 0.5,
+  topK: 9,
+  minTools: 6,
 };
 
 function embeddingToBase64(emb: Float32Array): string {

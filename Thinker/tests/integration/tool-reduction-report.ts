@@ -139,9 +139,9 @@ async function main() {
 
   const cachePath = join(homedir(), '.hexa-puffs/data/embedding-cache.json');
   const embeddingSelector = new EmbeddingToolSelector(provider, {
-    similarityThreshold: 0.4,
-    topK: 8,
-    minTools: 5,
+    similarityThreshold: 0.5,
+    topK: 9,
+    minTools: 6,
     cachePath,
     providerName: 'ollama',
     modelName: 'nomic-embed-text',
@@ -197,7 +197,7 @@ async function main() {
     // Reduced pipeline (when LLM picks)
     const reducedResult = await toolSelector.selectTools(
       msg, [], [],
-      llmPick ? { maxTools: 15, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+      llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
     );
     // Capture scores right after selection (before they get overwritten by next call)
     const scores = embeddingSelector.getLastScores();

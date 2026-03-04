@@ -278,9 +278,9 @@ export class Agent {
       if (provider) {
         const cacheDir = (this.config.embeddingCacheDir ?? '~/.hexa-puffs/data').replace(/^~/, homedir());
         this.embeddingSelector = new EmbeddingToolSelector(provider, {
-          similarityThreshold: Number(process.env.TOOL_SELECTOR_THRESHOLD) || 0.4,
-          topK: Number(process.env.TOOL_SELECTOR_TOP_K) || 8,
-          minTools: Number(process.env.TOOL_SELECTOR_MIN_TOOLS) || 5,
+          similarityThreshold: Number(process.env.TOOL_SELECTOR_THRESHOLD) || 0.5,
+          topK: Number(process.env.TOOL_SELECTOR_TOP_K) || 9,
+          minTools: Number(process.env.TOOL_SELECTOR_MIN_TOOLS) || 6,
           cachePath: join(cacheDir, 'embedding-cache.json'),
           providerName: process.env.EMBEDDING_PROVIDER || 'ollama',
           modelName: process.env.OLLAMA_EMBEDDING_MODEL || 'nomic-embed-text',
@@ -513,7 +513,7 @@ export class Agent {
         message.text,
         context.playbookRequiredTools,
         state.recentToolsByTurn,
-        llmPick ? { maxTools: 15, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+        llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
       );
 
       // Inject LLM's pick into the selected tool set (ensures Groq can use it)
