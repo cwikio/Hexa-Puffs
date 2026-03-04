@@ -17,7 +17,7 @@ import { SessionStore } from '../session/index.js';
 import type { IncomingMessage, ProcessingResult, AgentState } from './types.js';
 import { PlaybookCache } from './playbook-cache.js';
 import { seedPlaybooks } from './playbook-seed.js';
-import { selectToolsWithFallback, CORE_TOOL_NAMES } from './tool-selection.js';
+import { selectToolsWithFallback, CORE_TOOL_NAMES, REDUCED_CORE_TOOL_NAMES } from './tool-selection.js';
 import { EmbeddingToolSelector } from './embedding-tool-selector.js';
 import { createEmbeddingProviderFromEnv } from './embedding-config.js';
 import { extractFactsFromConversation, loadExtractionPromptTemplate } from './fact-extractor.js';
@@ -33,6 +33,7 @@ import {
   detectToolRefusal,
 } from './components/hallucination-guard.js';
 import { CircuitBreaker } from './circuit-breaker.js';
+import { LlmToolSelector, type LlmToolSelectionOutcome } from './components/llm-tool-selector.js';
 import { createErrorFromException } from '@mcp/shared/Types/StandardResponse.js';
 
 const logger = new Logger('thinker:agent');
@@ -145,6 +146,9 @@ export class Agent {
 
   // Embedding-based tool selector (null = disabled, use regex fallback)
   private embeddingSelector: EmbeddingToolSelector | null = null;
+
+  // LLM-based tool selector (local Qwen3.5-4B via Ollama)
+  private llmToolSelector: LlmToolSelector | null = null;
 
   // Post-conversation fact extraction idle timers (per chatId)
   private extractionTimers: Map<string, NodeJS.Timeout> = new Map();
@@ -274,9 +278,9 @@ export class Agent {
       if (provider) {
         const cacheDir = (this.config.embeddingCacheDir ?? '~/.hexa-puffs/data').replace(/^~/, homedir());
         this.embeddingSelector = new EmbeddingToolSelector(provider, {
-          similarityThreshold: Number(process.env.TOOL_SELECTOR_THRESHOLD) || 0.3,
-          topK: Number(process.env.TOOL_SELECTOR_TOP_K) || 15,
-          minTools: Number(process.env.TOOL_SELECTOR_MIN_TOOLS) || 5,
+          similarityThreshold: Number(process.env.TOOL_SELECTOR_THRESHOLD) || 0.5,
+          topK: Number(process.env.TOOL_SELECTOR_TOP_K) || 9,
+          minTools: Number(process.env.TOOL_SELECTOR_MIN_TOOLS) || 6,
           cachePath: join(cacheDir, 'embedding-cache.json'),
           providerName: process.env.EMBEDDING_PROVIDER || 'ollama',
           modelName: process.env.OLLAMA_EMBEDDING_MODEL || 'nomic-embed-text',
@@ -286,6 +290,21 @@ export class Agent {
     } catch (error) {
       logger.warn('Failed to initialize embedding tool selector (non-fatal):', error);
       this.embeddingSelector = null;
+    }
+
+    // Initialize LLM-based tool selector (non-blocking — auto-pulls model if missing)
+    try {
+      this.llmToolSelector = new LlmToolSelector({
+        host: this.config.ollamaBaseUrl,
+        model: this.config.toolSelectorLlm.model,
+        timeoutMs: this.config.toolSelectorLlm.timeoutMs,
+        enabled: this.config.toolSelectorLlm.enabled,
+      });
+      await this.llmToolSelector.initialize();
+      this.llmToolSelector.updateToolSchemas(this.tools);
+    } catch (error) {
+      logger.warn('Failed to initialize LLM tool selector (non-fatal):', error);
+      this.llmToolSelector = null;
     }
 
     // Seed default playbooks (idempotent) and initialize cache
@@ -368,6 +387,9 @@ export class Agent {
         this.tools,
         this.orchestrator.getMCPMetadata()
       );
+
+      // Update LLM tool selector schemas
+      this.llmToolSelector?.updateToolSchemas(this.tools);
     } catch (error) {
       logger.warn('refreshToolsIfNeeded failed (non-fatal):', error);
     }
@@ -477,21 +499,48 @@ export class Agent {
       // 90s timeout leaves buffer within ThinkerClient's 120s limit
       const agentAbort = AbortSignal.timeout(90_000);
 
-      // Select tools using the extracted component
-      const selectedTools = await this.toolSelector.selectTools(
-        message.text,
-        context.playbookRequiredTools,
-        state.recentToolsByTurn
-      );
+      // ── LLM-based tool selection (local 4B model) ─────────────────
+      // Try the local LLM first — it sees ALL tools and picks the best one.
+      // Returns a discriminated union:
+      //   tool_selected  → reduce pipeline + inject pick
+      //   no_tool_needed → core-only (skip embedding/regex entirely)
+      //   null           → ambiguous/error → full pipeline fallback
+      const llmOutcome: LlmToolSelectionOutcome | null = this.llmToolSelector?.isAvailable()
+        ? await this.llmToolSelector.selectFirstTool(message.text, this.tools)
+        : null;
+
+      let selectedTools: Record<string, CoreTool>;
+
+      if (llmOutcome?.kind === 'no_tool_needed') {
+        // 4B explicitly says no tools needed — send only reduced core tools
+        selectedTools = {};
+        for (const name of REDUCED_CORE_TOOL_NAMES) {
+          if (this.tools[name]) selectedTools[name] = this.tools[name];
+        }
+        logger.info(`[llm-selector] No tool needed — core-only (${Object.keys(selectedTools).length} tools)`);
+      } else {
+        // tool_selected → reduce pipeline; null → full pipeline fallback
+        const llmPick = llmOutcome?.kind === 'tool_selected' ? llmOutcome : null;
+        selectedTools = await this.toolSelector.selectTools(
+          message.text,
+          context.playbookRequiredTools,
+          state.recentToolsByTurn,
+          llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+        );
+
+        // Inject LLM's pick into the selected tool set (ensures Groq can use it)
+        if (llmPick && this.tools[llmPick.toolName] && !selectedTools[llmPick.toolName]) {
+          selectedTools[llmPick.toolName] = this.tools[llmPick.toolName];
+          logger.info(`[llm-selector] Injected LLM pick '${llmPick.toolName}' into tool set`);
+        }
+      }
 
       let result;
       let usedTextOnlyFallback = false;
 
-      // Lower temperature when tool selector strongly matches — improves tool calling reliability
+      // Lower temperature when LLM selector matched or embedding strongly matched
       const selectionStats = this.embeddingSelector?.getLastSelectionStats();
-      // Temperature logic moved to component or kept here?
-      // Keeping simple configuration here for now
-      const effectiveTemperature = (selectionStats?.topScore ?? 0) > 0.6
+      const effectiveTemperature = llmOutcome || (selectionStats?.topScore ?? 0) > 0.6
         ? Math.min(this.config.temperature, 0.3)
         : this.config.temperature;
 

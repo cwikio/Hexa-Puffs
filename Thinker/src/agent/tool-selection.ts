@@ -6,7 +6,7 @@ import type { MCPMetadata } from '@mcp/shared/Discovery/types.js';
 
 const logger = new Logger('thinker:tool-selection');
 
-const MAX_TOOLS = parseInt(process.env.TOOL_SELECTOR_MAX_TOOLS ?? '25', 10);
+const MAX_TOOLS = parseInt(process.env.TOOL_SELECTOR_MAX_TOOLS ?? '20', 10);
 
 /** Core tools that are always included regardless of selection method */
 export const CORE_TOOL_NAMES = [
@@ -18,21 +18,29 @@ export const CORE_TOOL_NAMES = [
   'searcher_web_search', // Always include web search for weather, news, real-time data
 ];
 
+/** Minimal core tools when the LLM 4B already picked the primary tool */
+export const REDUCED_CORE_TOOL_NAMES = [
+  'send_telegram',
+  'searcher_web_search',
+];
+
 /**
  * Applies a hard cap on the number of tools using tiered priority:
  *  Tier 1: Core tools (always kept)
  *  Tier 2: Tools with embedding scores, sorted descending
  *  Tier 3: Regex-only tools (no score), alphabetical
+ *
+ * When `maxContextual` is set, caps non-core tools at that limit
+ * (the total cap still applies on top as a safety net).
  */
 function applyToolCap(
   tools: Record<string, CoreTool>,
   coreNames: string[],
   scores: Map<string, number> | null,
   cap: number,
+  maxContextual?: number,
 ): Record<string, CoreTool> {
   const names = Object.keys(tools);
-  if (names.length <= cap) return tools;
-
   const coreSet = new Set(coreNames);
   const kept: string[] = [];
 
@@ -52,7 +60,9 @@ function applyToolCap(
     return a.localeCompare(b);
   });
 
-  const slotsLeft = cap - kept.length;
+  // Cap non-core tools: use maxContextual if set, otherwise derive from total cap
+  const contextualCap = maxContextual ?? (cap - kept.length);
+  const slotsLeft = Math.max(0, Math.min(contextualCap, cap - kept.length));
   const dropped = remaining.slice(slotsLeft);
   kept.push(...remaining.slice(0, slotsLeft));
 
@@ -76,15 +86,28 @@ function applyToolCap(
  * @param mcpMetadata - Optional MCP metadata for dynamic group/keyword generation
  * @returns Filtered tool map
  */
+export interface ToolSelectionOptions {
+  /** Override the max tools cap (default: MAX_TOOLS env or 20) */
+  maxTools?: number;
+  /** Cap non-core (contextual) tools separately (e.g. 9 in reduced mode) */
+  maxContextualTools?: number;
+  /** Override which core tools are always included (default: CORE_TOOL_NAMES) */
+  coreToolNames?: string[];
+}
+
 export async function selectToolsWithFallback(
   message: string,
   allTools: Record<string, CoreTool>,
   embeddingSelector: EmbeddingToolSelector | null,
   mcpMetadata?: Record<string, MCPMetadata>,
+  options?: ToolSelectionOptions,
 ): Promise<Record<string, CoreTool>> {
+  const coreNames = options?.coreToolNames ?? CORE_TOOL_NAMES;
+  const maxTools = options?.maxTools ?? MAX_TOOLS;
+
   if (embeddingSelector?.isInitialized()) {
     try {
-      const embeddingResult = await embeddingSelector.selectTools(message, allTools, CORE_TOOL_NAMES);
+      const embeddingResult = await embeddingSelector.selectTools(message, allTools, coreNames);
 
       // Always merge regex keyword-matched tools — they encode curated domain
       // knowledge (e.g. image requests need both search AND telegram groups)
@@ -102,11 +125,11 @@ export async function selectToolsWithFallback(
       const stats = embeddingSelector.getLastSelectionStats();
       if (stats) {
         logger.info(
-          `Tool selection: method=embedding+regex, embedding=${stats.selectedCount}, regex added=${regexAdded}, total=${Object.keys(merged).length}/${stats.totalTools}, topScore=${stats.topScore.toFixed(3)}`
+          `Tool selection: method=embedding+regex, embedding=${stats.selectedCount}, regex added=${regexAdded}, total=${Object.keys(merged).length}/${stats.totalTools}, topScore=${stats.topScore.toFixed(3)}, cap=${maxTools}`
         );
       }
 
-      return applyToolCap(merged, CORE_TOOL_NAMES, embeddingSelector.getLastScores(), MAX_TOOLS);
+      return applyToolCap(merged, coreNames, embeddingSelector.getLastScores(), maxTools, options?.maxContextualTools);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logger.warn(`Embedding tool selection failed, falling back to regex: ${msg}`);
@@ -115,5 +138,5 @@ export async function selectToolsWithFallback(
 
   // Fallback: existing regex-based selector
   logger.info('Tool selection: method=regex (embedding unavailable)');
-  return applyToolCap(selectToolsForMessage(message, allTools, mcpMetadata), CORE_TOOL_NAMES, null, MAX_TOOLS);
+  return applyToolCap(selectToolsForMessage(message, allTools, mcpMetadata), coreNames, null, maxTools, options?.maxContextualTools);
 }

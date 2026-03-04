@@ -10,6 +10,7 @@ This document describes how tools are registered, discovered, selected, executed
 2. [Tool Registration and Discovery](#tool-registration-and-discovery)
 3. [Tool Naming and Prefixing](#tool-naming-and-prefixing)
 4. [Tool Selection](#tool-selection)
+   - [LLM Pre-Selection (4B Model)](#llm-pre-selection-4b-model)
    - [Regex-Based Selection](#regex-based-selection)
    - [Embedding-Based Selection](#embedding-based-selection)
    - [Selection Merge Logic](#selection-merge-logic)
@@ -140,7 +141,7 @@ The Orchestrator also enhances tool descriptions with service/group tags:
 
 ## Tool Selection
 
-When a message arrives at the Thinker, it doesn't send all 70+ tools to the LLM. Instead, it selects a relevant subset. There are three selection methods, used in different contexts:
+When a message arrives at the Thinker, it doesn't send all 144+ tools to the LLM. Instead, it selects a relevant subset through a multi-layer pipeline. The first layer is a **local 4B model** (Qwen3.5-4B via Ollama) that pre-screens the message against all tools:
 
 ```
                     ┌─────────────────────────┐
@@ -154,17 +155,56 @@ When a message arrives at the Thinker, it doesn't send all 70+ tools to the LLM.
                         Yes  │       │  No
                              ▼       ▼
               ┌──────────────┐   ┌──────────────────┐
-              │ Direct       │   │ Is embedding      │
-              │ resolution   │   │ selector ready?   │
-              │ (3-5 tools)  │   └──────┬─────┬──────┘
-              └──────────────┘      Yes │     │ No
-                                       ▼     ▼
-                            ┌──────────┐ ┌──────────┐
-                            │ Embedding│ │ Regex    │
-                            │ + Regex  │ │ only     │
-                            │ merge    │ │(fallback)│
-                            └──────────┘ └──────────┘
+              │ Direct       │   │ LLM pre-selector  │
+              │ resolution   │   │ (4B model, local)  │
+              │ (3-5 tools)  │   └──┬─────┬──────┬───┘
+              └──────────────┘      │     │      │
+                         tool_selected  no_tool  null
+                              │    needed │      │
+                              ▼       ▼       ▼
+                     ┌──────────┐ ┌─────┐ ┌──────────────────┐
+                     │ Reduced  │ │Core │ │ Full pipeline     │
+                     │ pipeline │ │only │ │ (embedding+regex) │
+                     │ +inject  │ │(2)  │ │ (fallback)        │
+                     └──────────┘ └─────┘ └──────────────────┘
 ```
+
+### LLM Pre-Selection (4B Model)
+
+```
+Thinker/src/agent/components/llm-tool-selector.ts
+```
+
+A local Qwen3.5-4B model running via Ollama sees **all** tool schemas and makes one decision per message. It returns a discriminated union with three possible outcomes:
+
+| Outcome | Meaning | Action |
+| ------- | ------- | ------ |
+| `{ kind: 'tool_selected', toolName }` | Identified the primary tool | Run reduced pipeline (2 core + 9 contextual), inject the pick |
+| `{ kind: 'no_tool_needed' }` | Explicitly chose `_No_Tool_Needed` | Skip pipeline, send only 2 core tools (send_telegram, searcher_web_search) |
+| `null` | Ambiguous, error, or unavailable | Full pipeline fallback (unchanged behavior) |
+
+**The `_No_Tool_Needed` pseudo-tool** is appended to the schema list for each call. Its description explicitly excludes actions and real-time data:
+
+> Use when the user's message does not require any tool action — e.g., greetings, thanks, goodbyes, opinions, general knowledge questions, or casual conversation. Do NOT use this if the user is requesting an action (send, create, read, save, delete, navigate, run, check, remind, etc.) or asking for real-time data (weather, news, scores, current events — use a search tool instead).
+
+**Why a pseudo-tool instead of checking `finish_reason`?** With `tool_choice: 'auto'`, the 4B model returns no tool call for both "intentionally no tool" and "confused/couldn't decide". The pseudo-tool forces an explicit choice — the model must actively call `_No_Tool_Needed` rather than passively not calling anything.
+
+**Circuit breaker:** 3 consecutive failures trip the breaker → 5-minute cooldown → automatic recovery. When the breaker is open, the pre-selector returns `null` and the full pipeline runs.
+
+**Performance:** ~100ms per call (local inference), zero API cost. The model auto-pulls on first startup if missing.
+
+**Benchmarks (20 test messages, 144 tools):**
+
+| Metric | Without pre-selector | With pre-selector |
+| ------ | -------------------- | ----------------- |
+| Pre-selection layer | None | Qwen3.5-4B via Ollama |
+| Tool pick rate | N/A | 90% (18/20 messages) |
+| No-tool-needed rate | N/A | 5% (1/20 messages) |
+| Avg tools sent to Groq | 17.9 | 11.2 |
+| Reduction vs baseline | — | 37% |
+| Greeting ("hello") | 20 tools | 2 tools |
+
+See `Thinker/tool-reduction-report.md` for detailed per-message results and [ADR-006](adr/006-llm-tool-pre-selection.md) for the architectural decision.
 
 ### Regex-Based Selection
 
@@ -176,7 +216,7 @@ Tools are organized into **groups**:
 
 | Group | Tools | Pattern |
 |-------|-------|---------|
-| `core` | `send_telegram`, `store_fact`, `search_memories`, `get_status`, `spawn_subagent` | Always included |
+| `core` | `send_telegram`, `store_fact`, `search_memories`, `get_status`, `spawn_subagent`, `searcher_web_search` | Always included |
 | `search` | `searcher_web_search`, `searcher_news_search`, `searcher_image_search`, `searcher_web_fetch` | Explicit list |
 | `memory` | All `memory_*` tools | Glob |
 | `email` | 20 Gmail email tools | Explicit list |
@@ -204,9 +244,9 @@ When **no keywords match**, the default groups `['search', 'memory']` are activa
 
 Glob patterns (e.g., `memory_*`) are expanded against the full tool map at runtime by converting to regex (`memory_.*`).
 
-After selection (both regex-only and embedding+regex paths), a **hard cap** is applied (default 25, configurable via `TOOL_SELECTOR_MAX_TOOLS`). If the merged result exceeds the cap, tools are dropped using tiered priority:
+After selection (both regex-only and embedding+regex paths), a **hard cap** is applied (default 20, configurable via `TOOL_SELECTOR_MAX_TOOLS`). When the 4B pre-selector picks a tool, a tighter cap applies: 2 reduced core tools + max 9 contextual tools. If the merged result exceeds the cap, tools are dropped using tiered priority:
 
-1. **Tier 1** (always kept): Core tools — `send_telegram`, `store_fact`, `search_memories`, `get_status`, `spawn_subagent`
+1. **Tier 1** (always kept): Core tools — 6 in default mode (`send_telegram`, `store_fact`, `search_memories`, `get_status`, `spawn_subagent`, `searcher_web_search`), or 2 in reduced mode (`send_telegram`, `searcher_web_search`)
 2. **Tier 2** (kept by score): Tools with embedding scores, sorted descending
 3. **Tier 3** (kept last): Regex-only tools (no embedding score), alphabetical
 
@@ -229,14 +269,14 @@ Uses semantic similarity to find relevant tools:
 2. Compute cosine similarity between message embedding and each tool embedding
 3. Sort tools by similarity descending
 4. Build selected set:
-   - Always include core tools (5 tools)
-   - Include top `minTools` (default 5) regardless of threshold
-   - Include up to `topK` (default 15) tools above `similarityThreshold` (default 0.3)
+   - Always include core tools (6 tools)
+   - Include top `minTools` (default 6) regardless of threshold
+   - Include up to `topK` (default 9) tools above `similarityThreshold` (default 0.5)
 
 **Configuration** (environment variables):
-- `TOOL_SELECTOR_THRESHOLD` — similarity threshold (default 0.3)
-- `TOOL_SELECTOR_TOP_K` — max tools to select (default 15)
-- `TOOL_SELECTOR_MIN_TOOLS` — min tools to include (default 5)
+- `TOOL_SELECTOR_THRESHOLD` — similarity threshold (default 0.5)
+- `TOOL_SELECTOR_TOP_K` — max tools to select (default 9)
+- `TOOL_SELECTOR_MIN_TOOLS` — min tools to include (default 6)
 - `EMBEDDING_PROVIDER` — `ollama` or `lmstudio`
 
 ### Selection Merge Logic
@@ -251,7 +291,7 @@ When embedding selection is available, both methods run and results are merged:
 ┌───────────────────┐     ┌───────────────────┐
 │ Embedding selector│     │  Regex selector    │
 │ (semantic)        │     │  (keyword)         │
-│ ~15 tools         │     │  ~10-25 tools      │
+│ ~9-15 tools       │     │  ~10-25 tools      │
 └────────┬──────────┘     └────────┬───────────┘
          │                         │
          └──────────┬──────────────┘
@@ -259,18 +299,18 @@ When embedding selection is available, both methods run and results are merged:
          ┌──────────────────┐
          │  Merged result   │
          │  Union of both   │
-         │  ~15-30 tools    │
+         │  ~12-25 tools    │
          └──────────────────┘
 ```
 
 Rationale: Regex encodes curated domain knowledge that pure semantic similarity can miss. For example, image requests need both `search` (to find images) AND `telegram` (to send them) — a semantic model might only catch the search aspect.
 
-The merge is additive — embedding results take priority, regex results fill gaps. After merging, the tool cap is applied if the total exceeds `MAX_TOOLS` (default 25).
+The merge is additive — embedding results take priority, regex results fill gaps. After merging, the tool cap is applied if the total exceeds `MAX_TOOLS` (default 20).
 
 **Logging:**
 ```
-Tool selection: method=embedding+regex, embedding=15, regex added=8, total=23/72, topScore=0.682
-Tool cap: kept 25/35, dropped 10: extra_tool_1, extra_tool_2, ...
+Tool selection: method=embedding+regex, embedding=12, regex added=5, total=17/144, topScore=0.682
+Tool cap: kept 20/28, dropped 8: extra_tool_1, extra_tool_2, ...
 ```
 
 ### Sticky Tools (Sliding Window)
@@ -657,9 +697,13 @@ Every LLM call includes several components, each consuming tokens:
 │  │ Tool Definitions                      ~500-3750 tk │      │
 │  │  - JSON schemas for each selected tool             │      │
 │  │  - ~100-200 tokens per tool                        │      │
-│  │  - Hard cap: 25 tools max (TOOL_SELECTOR_MAX_TOOLS)│      │
+│  │  - Hard cap: 20 tools max (TOOL_SELECTOR_MAX_TOOLS)│      │
+│  │  - Reduced: 2 core + 9 contextual when 4B picks   │      │
+│  │  - Core-only: 2 tools when _No_Tool_Needed        │      │
 │  │                                                    │      │
-│  │  Interactive (capped at 25):        ~2500-3750 tk  │      │
+│  │  Interactive (default, capped at 20):  ~2000-3000 tk│      │
+│  │  Interactive (4B reduced):             ~1100-1500 tk│      │
+│  │  Interactive (no-tool-needed):          ~200-300 tk │      │
 │  │  Skill with required_tools (3-5):    ~300-600 tk   │      │
 │  └────────────────────────────────────────────────────┘      │
 │                                                              │
@@ -723,9 +767,9 @@ History pipeline:
 |-----------|-------------|----------------------------|
 | System prompt | Full persona + injections | Persona + task header |
 | History | Last 50 messages (old results truncated) | None (instructions only) |
-| Tool selection | Embedding + regex (capped at 25) | Direct resolution |
-| Tools passed | ~15-25 | ~3-5 |
-| Tool tokens | ~1,500-3,750 | ~300-600 |
+| Tool selection | 4B pre-select → embedding + regex (capped at 20) | Direct resolution |
+| Tools passed | ~2-20 (avg 11.2 with 4B) | ~3-5 |
+| Tool tokens | ~200-3,000 | ~300-600 |
 | History tokens | ~1,000-5,000 (truncated) | N/A |
 | Total input | ~4,000-8,000 | ~1,500-3,000 |
 
@@ -843,6 +887,8 @@ The Thinker detects new or removed tools without requiring a restart:
 | HTTP Tool Endpoints | `Orchestrator/src/core/http-handlers.ts` | `/tools/list`, `/tools/call` |
 | Thinker Message Endpoint | `Thinker/src/index.ts` | `/process-message`, `/execute-skill` |
 | Agent Loop | `Thinker/src/agent/loop.ts` | `processMessage()`, `processProactiveTask()`, `buildContext()`, `refreshToolsIfNeeded()` |
+| LLM Pre-Selector (4B) | `Thinker/src/agent/components/llm-tool-selector.ts` | `selectFirstTool()`, `_No_Tool_Needed` pseudo-tool, circuit breaker |
+| Ollama Tool Client | `Thinker/src/llm/ollama-tool-client.ts` | Raw Ollama API calls, model management, health checks |
 | Embedding Tool Selector | `Thinker/src/agent/embedding-tool-selector.ts` | Initialization, selection, caching, `getLastScores()` |
 | Tool Selection Merge | `Thinker/src/agent/tool-selection.ts` | `selectToolsWithFallback()`, `applyToolCap()` |
 | Regex Tool Selector | `Thinker/src/agent/tool-selector.ts` | Groups, keyword routes, `selectToolsForMessage()` |
