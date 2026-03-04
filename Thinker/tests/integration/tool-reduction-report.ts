@@ -8,11 +8,12 @@
  */
 
 import { readFileSync, writeFileSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, join } from 'path';
+import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import type { CoreTool } from 'ai';
 import { jsonSchema } from 'ai';
-import type { EmbeddingProvider } from '@mcp/shared/Embeddings/provider.js';
+import { EmbeddingConfigSchema, createEmbeddingProvider } from '@mcp/shared/Embeddings/index.js';
 import { EmbeddingToolSelector } from '../../src/agent/embedding-tool-selector.js';
 import { ToolSelector } from '../../src/agent/components/tool-selector.js';
 import { CORE_TOOL_NAMES, REDUCED_CORE_TOOL_NAMES } from '../../src/agent/tool-selection.js';
@@ -71,33 +72,6 @@ function buildToolMap(): Record<string, CoreTool> {
   return map;
 }
 
-// ── Mock Embedding Provider ─────────────────────────────────────
-
-const EMBEDDING_DIM = 64;
-
-function keywordEmbedding(text: string): Float32Array {
-  const vec = new Float32Array(EMBEDDING_DIM);
-  const words = text.toLowerCase().replace(/[^a-z0-9_]/g, ' ').split(/\s+/).filter(Boolean);
-  for (const word of words) {
-    let hash = 0;
-    for (let i = 0; i < word.length; i++) {
-      hash = ((hash << 5) - hash + word.charCodeAt(i)) | 0;
-    }
-    const idx = ((hash % EMBEDDING_DIM) + EMBEDDING_DIM) % EMBEDDING_DIM;
-    vec[idx] += 1;
-  }
-  let norm = 0;
-  for (let i = 0; i < EMBEDDING_DIM; i++) norm += vec[i] * vec[i];
-  norm = Math.sqrt(norm) || 1;
-  for (let i = 0; i < EMBEDDING_DIM; i++) vec[i] /= norm;
-  return vec;
-}
-
-class MockEmbeddingProvider implements EmbeddingProvider {
-  async embed(text: string): Promise<Float32Array> { return keywordEmbedding(text); }
-  async embedBatch(texts: string[]): Promise<Float32Array[]> { return texts.map(keywordEmbedding); }
-}
-
 // ── Helpers ─────────────────────────────────────────────────────
 
 interface CategorizedTool {
@@ -152,13 +126,27 @@ async function main() {
   const allTools = buildToolMap();
   console.log(`Loaded ${Object.keys(allTools).length} tools`);
 
-  // Initialize embedding selector
-  const provider = new MockEmbeddingProvider();
-  const embeddingSelector = new EmbeddingToolSelector(provider, {
-    similarityThreshold: 0.3,
-    topK: 15,
-    minTools: 5,
+  // Initialize real Ollama embedding provider (nomic-embed-text)
+  const embeddingConfig = EmbeddingConfigSchema.parse({
+    provider: 'ollama',
+    ollamaBaseUrl: OLLAMA_HOST,
   });
+  const provider = createEmbeddingProvider(embeddingConfig);
+  if (!provider) {
+    console.error('Failed to create embedding provider');
+    process.exit(1);
+  }
+
+  const cachePath = join(homedir(), '.hexa-puffs/data/embedding-cache.json');
+  const embeddingSelector = new EmbeddingToolSelector(provider, {
+    similarityThreshold: 0.4,
+    topK: 8,
+    minTools: 5,
+    cachePath,
+    providerName: 'ollama',
+    modelName: 'nomic-embed-text',
+  });
+  console.log('Initializing embeddings (cached after first run)...');
   await embeddingSelector.initialize(allTools);
 
   const toolSelector = new ToolSelector(embeddingSelector, allTools, undefined);
@@ -188,6 +176,7 @@ async function main() {
   interface Result {
     message: string;
     llmPick: string | null;
+    llmPickConfirmed: boolean; // true if embedding+regex independently selected the LLM pick
     defaultTools: string[];
     reducedTools: string[];
     scores: Map<string, number> | null; // embedding similarity scores from the reduced run
@@ -212,6 +201,8 @@ async function main() {
     );
     // Capture scores right after selection (before they get overwritten by next call)
     const scores = embeddingSelector.getLastScores();
+    // Check if LLM pick was independently confirmed by embedding+regex
+    const llmPickConfirmed = llmPick ? llmPick.toolName in reducedResult : false;
     // Inject LLM pick (like loop.ts does)
     if (llmPick && !reducedResult[llmPick.toolName] && allTools[llmPick.toolName]) {
       reducedResult[llmPick.toolName] = allTools[llmPick.toolName];
@@ -221,6 +212,7 @@ async function main() {
     results.push({
       message: msg,
       llmPick: llmPick?.toolName ?? null,
+      llmPickConfirmed,
       defaultTools: defaultNames.sort(),
       reducedTools: reducedNames.sort(),
       scores: scores ? new Map(scores) : null, // clone since it gets overwritten
@@ -243,8 +235,8 @@ async function main() {
   // Summary table
   lines.push('## Summary');
   lines.push('');
-  lines.push('| # | Message | LLM Pick | Default | Reduced | Saved |');
-  lines.push('|---|---------|----------|---------|---------|-------|');
+  lines.push('| # | Message | LLM Pick | Confirmed | Default | Reduced | Saved |');
+  lines.push('|---|---------|----------|-----------|---------|---------|-------|');
 
   let totalDefault = 0;
   let totalReduced = 0;
@@ -257,7 +249,8 @@ async function main() {
     if (r.llmPick) picksCount++;
     totalDefault += r.defaultTools.length;
     totalReduced += r.reducedTools.length;
-    lines.push(`| ${i + 1} | ${r.message} | ${pick} | ${r.defaultTools.length} | ${r.reducedTools.length} | ${saved > 0 ? `-${saved}` : '0'} |`);
+    const confirmed = r.llmPick ? (r.llmPickConfirmed ? 'yes' : 'no') : '-';
+    lines.push(`| ${i + 1} | ${r.message} | ${pick} | ${confirmed} | ${r.defaultTools.length} | ${r.reducedTools.length} | ${saved > 0 ? `-${saved}` : '0'} |`);
   }
 
   const avgDefault = totalDefault / results.length;
@@ -276,7 +269,7 @@ async function main() {
   lines.push('>');
   lines.push('> **Regex + Embedding tools** = contextual tools selected by keyword regex matching and vector embedding similarity, sorted by embedding similarity score (highest first)');
   lines.push('>');
-  lines.push('> Score in parentheses = cosine similarity to the user message (mock keyword-hash embeddings)');
+  lines.push('> Score in parentheses = cosine similarity to the user message (nomic-embed-text via Ollama)');
   lines.push('');
 
   for (let i = 0; i < results.length; i++) {
@@ -285,14 +278,12 @@ async function main() {
 
     lines.push(`### ${i + 1}. "${r.message}"`);
     lines.push('');
-    lines.push(`- **LLM Pick (4B):** ${r.llmPick ? `\`${r.llmPick}\`` : '_null (no reduction applied)_'}`);
+    const pickLabel = r.llmPick
+      ? `\`${r.llmPick}\` — ${r.llmPickConfirmed ? 'confirmed by embeddings' : 'NOT in embedding results (injected)'}`
+      : '_null (no reduction applied)_';
+    lines.push(`- **LLM Pick (4B):** ${pickLabel}`);
     lines.push(`- **Total tools sent to Groq:** ${r.reducedTools.length}`);
     lines.push('');
-
-    if (cats.llmPick.length > 0) {
-      lines.push(`**LLM Pick (4B):** ${cats.llmPick.map(formatToolWithScore).join(', ')}`);
-      lines.push('');
-    }
 
     if (cats.core.length > 0) {
       lines.push(`**Core tools (${cats.core.length}):** ${cats.core.map(t => `\`${t.name}\``).join(', ')}`);

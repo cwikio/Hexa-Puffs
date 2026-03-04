@@ -278,8 +278,8 @@ export class Agent {
       if (provider) {
         const cacheDir = (this.config.embeddingCacheDir ?? '~/.hexa-puffs/data').replace(/^~/, homedir());
         this.embeddingSelector = new EmbeddingToolSelector(provider, {
-          similarityThreshold: Number(process.env.TOOL_SELECTOR_THRESHOLD) || 0.3,
-          topK: Number(process.env.TOOL_SELECTOR_TOP_K) || 15,
+          similarityThreshold: Number(process.env.TOOL_SELECTOR_THRESHOLD) || 0.4,
+          topK: Number(process.env.TOOL_SELECTOR_TOP_K) || 8,
           minTools: Number(process.env.TOOL_SELECTOR_MIN_TOOLS) || 5,
           cachePath: join(cacheDir, 'embedding-cache.json'),
           providerName: process.env.EMBEDDING_PROVIDER || 'ollama',

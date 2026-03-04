@@ -40,8 +40,8 @@ interface CacheData {
 }
 
 const DEFAULT_CONFIG: EmbeddingToolSelectorConfig = {
-  similarityThreshold: 0.3,
-  topK: 15,
+  similarityThreshold: 0.4,
+  topK: 8,
   minTools: 5,
 };
 
