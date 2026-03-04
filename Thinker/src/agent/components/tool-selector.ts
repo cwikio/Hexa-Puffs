@@ -1,5 +1,5 @@
 import { Logger } from '@mcp/shared/Utils/logger.js';
-import { CORE_TOOL_NAMES, selectToolsWithFallback } from '../tool-selection.js';
+import { CORE_TOOL_NAMES, selectToolsWithFallback, type ToolSelectionOptions } from '../tool-selection.js';
 import { TOOL_GROUPS } from '../tool-selector.js';
 import { CoreTool } from 'ai';
 
@@ -24,14 +24,16 @@ export class ToolSelector {
   async selectTools(
     text: string,
     playbookRequiredTools: string[],
-    recentToolsByTurn: { tools: string[] }[]
+    recentToolsByTurn: { tools: string[] }[],
+    options?: ToolSelectionOptions,
   ): Promise<Record<string, CoreTool>> {
     // 1. Base selection via Embeddings/Keywords
     const selectedTools = await selectToolsWithFallback(
       text,
       this.tools,
       this.embeddingSelector,
-      this.orchestratorMetadata
+      this.orchestratorMetadata,
+      options,
     );
 
     // 2. Playbook Requirements

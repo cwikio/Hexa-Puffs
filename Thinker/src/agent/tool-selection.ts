@@ -18,6 +18,12 @@ export const CORE_TOOL_NAMES = [
   'searcher_web_search', // Always include web search for weather, news, real-time data
 ];
 
+/** Minimal core tools when the LLM 4B already picked the primary tool */
+export const REDUCED_CORE_TOOL_NAMES = [
+  'send_telegram',
+  'searcher_web_search',
+];
+
 /**
  * Applies a hard cap on the number of tools using tiered priority:
  *  Tier 1: Core tools (always kept)
@@ -76,15 +82,26 @@ function applyToolCap(
  * @param mcpMetadata - Optional MCP metadata for dynamic group/keyword generation
  * @returns Filtered tool map
  */
+export interface ToolSelectionOptions {
+  /** Override the max tools cap (default: MAX_TOOLS env or 25) */
+  maxTools?: number;
+  /** Override which core tools are always included (default: CORE_TOOL_NAMES) */
+  coreToolNames?: string[];
+}
+
 export async function selectToolsWithFallback(
   message: string,
   allTools: Record<string, CoreTool>,
   embeddingSelector: EmbeddingToolSelector | null,
   mcpMetadata?: Record<string, MCPMetadata>,
+  options?: ToolSelectionOptions,
 ): Promise<Record<string, CoreTool>> {
+  const coreNames = options?.coreToolNames ?? CORE_TOOL_NAMES;
+  const maxTools = options?.maxTools ?? MAX_TOOLS;
+
   if (embeddingSelector?.isInitialized()) {
     try {
-      const embeddingResult = await embeddingSelector.selectTools(message, allTools, CORE_TOOL_NAMES);
+      const embeddingResult = await embeddingSelector.selectTools(message, allTools, coreNames);
 
       // Always merge regex keyword-matched tools — they encode curated domain
       // knowledge (e.g. image requests need both search AND telegram groups)
@@ -102,11 +119,11 @@ export async function selectToolsWithFallback(
       const stats = embeddingSelector.getLastSelectionStats();
       if (stats) {
         logger.info(
-          `Tool selection: method=embedding+regex, embedding=${stats.selectedCount}, regex added=${regexAdded}, total=${Object.keys(merged).length}/${stats.totalTools}, topScore=${stats.topScore.toFixed(3)}`
+          `Tool selection: method=embedding+regex, embedding=${stats.selectedCount}, regex added=${regexAdded}, total=${Object.keys(merged).length}/${stats.totalTools}, topScore=${stats.topScore.toFixed(3)}, cap=${maxTools}`
         );
       }
 
-      return applyToolCap(merged, CORE_TOOL_NAMES, embeddingSelector.getLastScores(), MAX_TOOLS);
+      return applyToolCap(merged, coreNames, embeddingSelector.getLastScores(), maxTools);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logger.warn(`Embedding tool selection failed, falling back to regex: ${msg}`);
@@ -115,5 +132,5 @@ export async function selectToolsWithFallback(
 
   // Fallback: existing regex-based selector
   logger.info('Tool selection: method=regex (embedding unavailable)');
-  return applyToolCap(selectToolsForMessage(message, allTools, mcpMetadata), CORE_TOOL_NAMES, null, MAX_TOOLS);
+  return applyToolCap(selectToolsForMessage(message, allTools, mcpMetadata), coreNames, null, maxTools);
 }

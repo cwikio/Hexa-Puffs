@@ -17,7 +17,7 @@ import { SessionStore } from '../session/index.js';
 import type { IncomingMessage, ProcessingResult, AgentState } from './types.js';
 import { PlaybookCache } from './playbook-cache.js';
 import { seedPlaybooks } from './playbook-seed.js';
-import { selectToolsWithFallback, CORE_TOOL_NAMES } from './tool-selection.js';
+import { selectToolsWithFallback, CORE_TOOL_NAMES, REDUCED_CORE_TOOL_NAMES } from './tool-selection.js';
 import { EmbeddingToolSelector } from './embedding-tool-selector.js';
 import { createEmbeddingProviderFromEnv } from './embedding-config.js';
 import { extractFactsFromConversation, loadExtractionPromptTemplate } from './fact-extractor.js';
@@ -508,11 +508,12 @@ export class Agent {
         ? await this.llmToolSelector.selectFirstTool(message.text, this.tools)
         : null;
 
-      // Select tools using the existing embedding/regex component
+      // Select tools — reduce core tools and cap when the 4B already identified the primary tool
       const selectedTools = await this.toolSelector.selectTools(
         message.text,
         context.playbookRequiredTools,
-        state.recentToolsByTurn
+        state.recentToolsByTurn,
+        llmPick ? { maxTools: 15, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
       );
 
       // Inject LLM's pick into the selected tool set (ensures Groq can use it)
