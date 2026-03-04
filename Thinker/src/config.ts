@@ -29,6 +29,15 @@ export const LogLevelSchema = z.enum(['debug', 'info', 'warn', 'error']);
 export type LogLevel = z.infer<typeof LogLevelSchema>;
 
 /**
+ * LLM-based tool selector configuration schema (local Qwen3.5-4B via Ollama)
+ */
+export const ToolSelectorLlmConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  model: z.string().default('qwen3.5:4b-q4_K_M'),
+  timeoutMs: z.number().int().min(1000).max(30_000).default(5000),
+});
+
+/**
  * Post-conversation fact extraction configuration schema
  */
 export const FactExtractionConfigSchema = z.object({
@@ -135,6 +144,9 @@ export const ConfigSchema = z.object({
   // Embedding cache directory (for persisting tool embeddings across restarts)
   embeddingCacheDir: z.string().default(paths.getDataDir()),
 
+  // LLM-based tool selector (local Qwen3.5-4B via Ollama)
+  toolSelectorLlm: ToolSelectorLlmConfigSchema.default({}),
+
   // Cost controls (optional, configured via Orchestrator env vars)
   costControl: CostControlSchema.optional(),
 });
@@ -201,6 +213,13 @@ export function loadConfig(): Config {
 
     // Embedding cache directory
     embeddingCacheDir: getEnvString('EMBEDDING_CACHE_DIR', paths.getDataDir()),
+
+    // LLM-based tool selector (local Qwen3.5-4B via Ollama)
+    toolSelectorLlm: {
+      enabled: getEnvBoolean('TOOL_SELECTOR_LLM_ENABLED', true),
+      model: getEnvString('TOOL_SELECTOR_MODEL', 'qwen3.5:4b-q4_K_M'),
+      timeoutMs: getEnvNumber('TOOL_SELECTOR_TIMEOUT_MS', 5000),
+    },
 
     // Cost controls — only built when explicitly enabled via env var
     ...(getEnvBoolean('THINKER_COST_CONTROL_ENABLED', false) ? {

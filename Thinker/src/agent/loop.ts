@@ -33,6 +33,7 @@ import {
   detectToolRefusal,
 } from './components/hallucination-guard.js';
 import { CircuitBreaker } from './circuit-breaker.js';
+import { LlmToolSelector } from './components/llm-tool-selector.js';
 import { createErrorFromException } from '@mcp/shared/Types/StandardResponse.js';
 
 const logger = new Logger('thinker:agent');
@@ -145,6 +146,9 @@ export class Agent {
 
   // Embedding-based tool selector (null = disabled, use regex fallback)
   private embeddingSelector: EmbeddingToolSelector | null = null;
+
+  // LLM-based tool selector (local Qwen3.5-4B via Ollama)
+  private llmToolSelector: LlmToolSelector | null = null;
 
   // Post-conversation fact extraction idle timers (per chatId)
   private extractionTimers: Map<string, NodeJS.Timeout> = new Map();
@@ -288,6 +292,21 @@ export class Agent {
       this.embeddingSelector = null;
     }
 
+    // Initialize LLM-based tool selector (non-blocking — auto-pulls model if missing)
+    try {
+      this.llmToolSelector = new LlmToolSelector({
+        host: this.config.ollamaBaseUrl,
+        model: this.config.toolSelectorLlm.model,
+        timeoutMs: this.config.toolSelectorLlm.timeoutMs,
+        enabled: this.config.toolSelectorLlm.enabled,
+      });
+      await this.llmToolSelector.initialize();
+      this.llmToolSelector.updateToolSchemas(this.tools);
+    } catch (error) {
+      logger.warn('Failed to initialize LLM tool selector (non-fatal):', error);
+      this.llmToolSelector = null;
+    }
+
     // Seed default playbooks (idempotent) and initialize cache
     try {
       await seedPlaybooks(this.orchestrator, this.config.thinkerAgentId);
@@ -368,6 +387,9 @@ export class Agent {
         this.tools,
         this.orchestrator.getMCPMetadata()
       );
+
+      // Update LLM tool selector schemas
+      this.llmToolSelector?.updateToolSchemas(this.tools);
     } catch (error) {
       logger.warn('refreshToolsIfNeeded failed (non-fatal):', error);
     }
@@ -477,21 +499,34 @@ export class Agent {
       // 90s timeout leaves buffer within ThinkerClient's 120s limit
       const agentAbort = AbortSignal.timeout(90_000);
 
-      // Select tools using the extracted component
+      // ── LLM-based tool selection (local 4B model) ─────────────────
+      // Try the local LLM first — it sees ALL tools and picks the best one.
+      // If it picks a tool, we still run the regex/embedding pipeline so Groq
+      // has a working tool set for follow-up steps, but we ensure the LLM's
+      // pick is included.
+      const llmPick = this.llmToolSelector?.isAvailable()
+        ? await this.llmToolSelector.selectFirstTool(message.text, this.tools)
+        : null;
+
+      // Select tools using the existing embedding/regex component
       const selectedTools = await this.toolSelector.selectTools(
         message.text,
         context.playbookRequiredTools,
         state.recentToolsByTurn
       );
 
+      // Inject LLM's pick into the selected tool set (ensures Groq can use it)
+      if (llmPick && this.tools[llmPick.toolName] && !selectedTools[llmPick.toolName]) {
+        selectedTools[llmPick.toolName] = this.tools[llmPick.toolName];
+        logger.info(`[llm-selector] Injected LLM pick '${llmPick.toolName}' into tool set`);
+      }
+
       let result;
       let usedTextOnlyFallback = false;
 
-      // Lower temperature when tool selector strongly matches — improves tool calling reliability
+      // Lower temperature when LLM selector matched or embedding strongly matched
       const selectionStats = this.embeddingSelector?.getLastSelectionStats();
-      // Temperature logic moved to component or kept here?
-      // Keeping simple configuration here for now
-      const effectiveTemperature = (selectionStats?.topScore ?? 0) > 0.6
+      const effectiveTemperature = llmPick || (selectionStats?.topScore ?? 0) > 0.6
         ? Math.min(this.config.temperature, 0.3)
         : this.config.temperature;
 
