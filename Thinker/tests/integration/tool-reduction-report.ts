@@ -176,6 +176,7 @@ async function main() {
   interface Result {
     message: string;
     llmPick: string | null;
+    llmOutcomeKind: 'tool_selected' | 'no_tool_needed' | 'null';
     llmPickConfirmed: boolean; // true if embedding+regex independently selected the LLM pick
     defaultTools: string[];
     reducedTools: string[];
@@ -188,37 +189,48 @@ async function main() {
     const msg = MESSAGES[i];
     process.stdout.write(`[${i + 1}/${MESSAGES.length}] "${msg}"...`);
 
-    const llmPick = await llmSelector.selectFirstTool(msg, allTools);
+    const outcome = await llmSelector.selectFirstTool(msg, allTools);
+    const toolName = outcome?.kind === 'tool_selected' ? outcome.toolName : null;
+    const outcomeKind = outcome?.kind ?? 'null';
 
     // Default pipeline (no reduction)
     const defaultResult = await toolSelector.selectTools(msg, [], [], undefined);
     const defaultNames = Object.keys(defaultResult);
 
-    // Reduced pipeline (when LLM picks)
-    const reducedResult = await toolSelector.selectTools(
-      msg, [], [],
-      llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
-    );
-    // Capture scores right after selection (before they get overwritten by next call)
-    const scores = embeddingSelector.getLastScores();
-    // Check if LLM pick was independently confirmed by embedding+regex
-    const llmPickConfirmed = llmPick ? llmPick.toolName in reducedResult : false;
-    // Inject LLM pick (like loop.ts does)
-    if (llmPick && !reducedResult[llmPick.toolName] && allTools[llmPick.toolName]) {
-      reducedResult[llmPick.toolName] = allTools[llmPick.toolName];
+    let reducedNames: string[];
+    let scores: Map<string, number> | null = null;
+    let llmPickConfirmed = false;
+
+    if (outcome?.kind === 'no_tool_needed') {
+      // Core-only path — no embedding/regex pipeline
+      reducedNames = REDUCED_CORE_TOOL_NAMES.filter(n => allTools[n]).sort();
+    } else {
+      // Reduced pipeline (when LLM picks a tool) or full pipeline (null)
+      const opts = toolName ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined;
+      const reducedResult = await toolSelector.selectTools(msg, [], [], opts);
+      // Capture scores right after selection (before they get overwritten by next call)
+      scores = embeddingSelector.getLastScores();
+      // Check if LLM pick was independently confirmed by embedding+regex
+      llmPickConfirmed = toolName ? toolName in reducedResult : false;
+      // Inject LLM pick (like loop.ts does)
+      if (toolName && !reducedResult[toolName] && allTools[toolName]) {
+        reducedResult[toolName] = allTools[toolName];
+      }
+      reducedNames = Object.keys(reducedResult).sort();
     }
-    const reducedNames = Object.keys(reducedResult);
 
     results.push({
       message: msg,
-      llmPick: llmPick?.toolName ?? null,
+      llmPick: toolName,
+      llmOutcomeKind: outcomeKind as Result['llmOutcomeKind'],
       llmPickConfirmed,
       defaultTools: defaultNames.sort(),
-      reducedTools: reducedNames.sort(),
-      scores: scores ? new Map(scores) : null, // clone since it gets overwritten
+      reducedTools: reducedNames,
+      scores: scores ? new Map(scores) : null,
     });
 
-    console.log(` pick=${llmPick?.toolName ?? 'null'}, default=${defaultNames.length}, reduced=${reducedNames.length}`);
+    const label = outcome?.kind === 'no_tool_needed' ? '_No_Tool_Needed' : (toolName ?? 'null');
+    console.log(` pick=${label}, default=${defaultNames.length}, reduced=${reducedNames.length}`);
   }
 
   // ── Generate Markdown ─────────────────────────────────────────
@@ -242,11 +254,21 @@ async function main() {
   let totalReduced = 0;
   let picksCount = 0;
 
+  let noToolCount = 0;
+
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     const saved = r.defaultTools.length - r.reducedTools.length;
-    const pick = r.llmPick ? `\`${r.llmPick}\`` : '_null_';
-    if (r.llmPick) picksCount++;
+    let pick: string;
+    if (r.llmOutcomeKind === 'no_tool_needed') {
+      pick = '_No_Tool_Needed_';
+      noToolCount++;
+    } else if (r.llmPick) {
+      pick = `\`${r.llmPick}\``;
+      picksCount++;
+    } else {
+      pick = '_null_';
+    }
     totalDefault += r.defaultTools.length;
     totalReduced += r.reducedTools.length;
     const confirmed = r.llmPick ? (r.llmPickConfirmed ? 'yes' : 'no') : '-';
@@ -258,7 +280,7 @@ async function main() {
   const reduction = ((avgDefault - avgReduced) / avgDefault) * 100;
 
   lines.push('');
-  lines.push(`**LLM picks:** ${picksCount}/${results.length} (${((picksCount / results.length) * 100).toFixed(0)}%)`);
+  lines.push(`**Tool picks:** ${picksCount}/${results.length} (${((picksCount / results.length) * 100).toFixed(0)}%), **No-tool-needed:** ${noToolCount}/${results.length} (${((noToolCount / results.length) * 100).toFixed(0)}%), **Null (fallback):** ${results.length - picksCount - noToolCount}/${results.length}`);
   lines.push(`**Average tools — default:** ${avgDefault.toFixed(1)}, **reduced:** ${avgReduced.toFixed(1)}, **reduction:** ${reduction.toFixed(1)}%`);
   lines.push('');
 
@@ -278,9 +300,14 @@ async function main() {
 
     lines.push(`### ${i + 1}. "${r.message}"`);
     lines.push('');
-    const pickLabel = r.llmPick
-      ? `\`${r.llmPick}\` — ${r.llmPickConfirmed ? 'confirmed by embeddings' : 'NOT in embedding results (injected)'}`
-      : '_null (no reduction applied)_';
+    let pickLabel: string;
+    if (r.llmOutcomeKind === 'no_tool_needed') {
+      pickLabel = '`_No_Tool_Needed` — core-only mode (skipped embedding/regex pipeline)';
+    } else if (r.llmPick) {
+      pickLabel = `\`${r.llmPick}\` — ${r.llmPickConfirmed ? 'confirmed by embeddings' : 'NOT in embedding results (injected)'}`;
+    } else {
+      pickLabel = '_null (full pipeline fallback)_';
+    }
     lines.push(`- **LLM Pick (4B):** ${pickLabel}`);
     lines.push(`- **Total tools sent to Groq:** ${r.reducedTools.length}`);
     lines.push('');

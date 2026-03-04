@@ -21,7 +21,6 @@ const SYSTEM_PROMPT = [
   'You are a tool-calling assistant with access to many tools.',
   'When the user asks something that requires action (searching, sending, reading files, storing info, etc.), call the most appropriate tool.',
   'You do NOT have access to real-time information. For weather, news, current events, scores, or any time-sensitive data, ALWAYS use a search tool.',
-  'When the user is just chatting (greetings, thanks, jokes, general knowledge questions), respond directly without calling any tool.',
   'Pick exactly ONE tool — the most specific match. Do not call multiple tools.',
 ].join(' ');
 
@@ -32,10 +31,29 @@ export interface LlmToolSelectorConfig {
   enabled: boolean;
 }
 
-export interface LlmToolSelectionResult {
-  toolName: string;
-  args: Record<string, unknown>;
-}
+/** Discriminated union for LLM tool selection outcomes */
+export type LlmToolSelectionOutcome =
+  | { kind: 'tool_selected'; toolName: string; args: Record<string, unknown> }
+  | { kind: 'no_tool_needed' }
+
+/** Name of the pseudo-tool the 4B can call to signal "no tool action required" */
+export const NO_TOOL_NEEDED = '_No_Tool_Needed' as const;
+
+const NO_TOOL_NEEDED_SCHEMA: OllamaToolSchema = {
+  type: 'function',
+  function: {
+    name: NO_TOOL_NEEDED,
+    description: [
+      'Use when the user\'s message does not require any tool action —',
+      'e.g., greetings (hello, hi, hey), thanks, goodbyes, opinions,',
+      'general knowledge questions, or casual conversation.',
+      'Do NOT use this if the user is requesting an action (send, create, read, save, delete,',
+      'navigate, run, check, remind, etc.) or asking for real-time data',
+      '(weather, news, scores, current events — use a search tool instead).',
+    ].join(' '),
+    parameters: { type: 'object', properties: {} },
+  },
+};
 
 export class LlmToolSelector {
   private client: OllamaToolClient;
@@ -104,17 +122,16 @@ export class LlmToolSelector {
 
   /**
    * Select the first tool for a message using the local LLM.
-   * Returns null if:
-   * - Selector is unavailable
-   * - Circuit breaker is open
-   * - LLM chose not to call any tool
-   * - LLM returned an invalid tool name
-   * - Request timed out or errored
+   *
+   * Returns a discriminated union:
+   * - `{ kind: 'tool_selected', toolName, args }` — LLM picked a real tool
+   * - `{ kind: 'no_tool_needed' }` — LLM explicitly chose _No_Tool_Needed
+   * - `null` — unavailable, error, ambiguous (no tool call at all), or invalid tool name
    */
   async selectFirstTool(
     message: string,
     allTools: Record<string, CoreTool>,
-  ): Promise<LlmToolSelectionResult | null> {
+  ): Promise<LlmToolSelectionOutcome | null> {
     if (!this.isAvailable()) {
       return null;
     }
@@ -123,14 +140,24 @@ export class LlmToolSelector {
       this.updateToolSchemas(allTools);
     }
 
+    // Append _No_Tool_Needed so the 4B can explicitly signal "no action required"
+    const schemasWithNoTool = [...this.cachedSchemas, NO_TOOL_NEEDED_SCHEMA];
+
     try {
-      const result = await this.client.selectTool(message, this.cachedSchemas, SYSTEM_PROMPT);
+      const result = await this.client.selectTool(message, schemasWithNoTool, SYSTEM_PROMPT);
 
       if (!result) {
-        // LLM chose no tool — not a failure, just no action needed
+        // LLM made no tool call at all — ambiguous, let full pipeline handle it
         this.circuitBreaker.recordSuccess();
-        logger.info('LLM selector: no tool needed');
+        logger.info('LLM selector: no tool call (ambiguous)');
         return null;
+      }
+
+      // Check for explicit "no tool needed" signal
+      if (result.toolName === NO_TOOL_NEEDED) {
+        this.circuitBreaker.recordSuccess();
+        logger.info('LLM selector: _No_Tool_Needed (core-only)');
+        return { kind: 'no_tool_needed' };
       }
 
       // Validate tool name exists
@@ -142,7 +169,7 @@ export class LlmToolSelector {
 
       this.circuitBreaker.recordSuccess();
       logger.info(`LLM selector: ${result.toolName}`);
-      return { toolName: result.toolName, args: result.args };
+      return { kind: 'tool_selected', toolName: result.toolName, args: result.args };
     } catch (error) {
       this.circuitBreaker.recordFailure();
       logger.warn('LLM selector failed, falling back:', error);

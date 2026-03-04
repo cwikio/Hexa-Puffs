@@ -33,7 +33,7 @@ import {
   detectToolRefusal,
 } from './components/hallucination-guard.js';
 import { CircuitBreaker } from './circuit-breaker.js';
-import { LlmToolSelector } from './components/llm-tool-selector.js';
+import { LlmToolSelector, type LlmToolSelectionOutcome } from './components/llm-tool-selector.js';
 import { createErrorFromException } from '@mcp/shared/Types/StandardResponse.js';
 
 const logger = new Logger('thinker:agent');
@@ -501,25 +501,38 @@ export class Agent {
 
       // ── LLM-based tool selection (local 4B model) ─────────────────
       // Try the local LLM first — it sees ALL tools and picks the best one.
-      // If it picks a tool, we still run the regex/embedding pipeline so Groq
-      // has a working tool set for follow-up steps, but we ensure the LLM's
-      // pick is included.
-      const llmPick = this.llmToolSelector?.isAvailable()
+      // Returns a discriminated union:
+      //   tool_selected  → reduce pipeline + inject pick
+      //   no_tool_needed → core-only (skip embedding/regex entirely)
+      //   null           → ambiguous/error → full pipeline fallback
+      const llmOutcome: LlmToolSelectionOutcome | null = this.llmToolSelector?.isAvailable()
         ? await this.llmToolSelector.selectFirstTool(message.text, this.tools)
         : null;
 
-      // Select tools — reduce core tools and cap when the 4B already identified the primary tool
-      const selectedTools = await this.toolSelector.selectTools(
-        message.text,
-        context.playbookRequiredTools,
-        state.recentToolsByTurn,
-        llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
-      );
+      let selectedTools: Record<string, CoreTool>;
 
-      // Inject LLM's pick into the selected tool set (ensures Groq can use it)
-      if (llmPick && this.tools[llmPick.toolName] && !selectedTools[llmPick.toolName]) {
-        selectedTools[llmPick.toolName] = this.tools[llmPick.toolName];
-        logger.info(`[llm-selector] Injected LLM pick '${llmPick.toolName}' into tool set`);
+      if (llmOutcome?.kind === 'no_tool_needed') {
+        // 4B explicitly says no tools needed — send only reduced core tools
+        selectedTools = {};
+        for (const name of REDUCED_CORE_TOOL_NAMES) {
+          if (this.tools[name]) selectedTools[name] = this.tools[name];
+        }
+        logger.info(`[llm-selector] No tool needed — core-only (${Object.keys(selectedTools).length} tools)`);
+      } else {
+        // tool_selected → reduce pipeline; null → full pipeline fallback
+        const llmPick = llmOutcome?.kind === 'tool_selected' ? llmOutcome : null;
+        selectedTools = await this.toolSelector.selectTools(
+          message.text,
+          context.playbookRequiredTools,
+          state.recentToolsByTurn,
+          llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+        );
+
+        // Inject LLM's pick into the selected tool set (ensures Groq can use it)
+        if (llmPick && this.tools[llmPick.toolName] && !selectedTools[llmPick.toolName]) {
+          selectedTools[llmPick.toolName] = this.tools[llmPick.toolName];
+          logger.info(`[llm-selector] Injected LLM pick '${llmPick.toolName}' into tool set`);
+        }
       }
 
       let result;
@@ -527,7 +540,7 @@ export class Agent {
 
       // Lower temperature when LLM selector matched or embedding strongly matched
       const selectionStats = this.embeddingSelector?.getLastSelectionStats();
-      const effectiveTemperature = llmPick || (selectionStats?.topScore ?? 0) > 0.6
+      const effectiveTemperature = llmOutcome || (selectionStats?.topScore ?? 0) > 0.6
         ? Math.min(this.config.temperature, 0.3)
         : this.config.temperature;
 

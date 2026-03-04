@@ -382,46 +382,52 @@ describe('Tool Reduction Integration', () => {
       }
     }, 120_000);
 
+    /** Helper: extract tool name from the discriminated union outcome */
+    function pickToolName(outcome: Awaited<ReturnType<typeof llmSelector.selectFirstTool>>): string | null {
+      if (!outcome) return null;
+      return outcome.kind === 'tool_selected' ? outcome.toolName : null;
+    }
+
+    /** Helper: get reduced options when a tool was selected */
+    function reduceOpts(outcome: Awaited<ReturnType<typeof llmSelector.selectFirstTool>>) {
+      if (outcome?.kind === 'tool_selected') {
+        return { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES };
+      }
+      return undefined;
+    }
+
     it.skipIf(skipOllama)(
       'LLM picks tool → reduced set is smaller',
       async () => {
-        const llmPick = await llmSelector.selectFirstTool('search for AI news', allTools);
+        const outcome = await llmSelector.selectFirstTool('search for AI news', allTools);
+        const toolName = pickToolName(outcome);
 
         // With pick: reduced options
         const reducedResult = await realToolSelector.selectTools(
-          'search for AI news',
-          [],
-          [],
-          llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+          'search for AI news', [], [], reduceOpts(outcome),
         );
-        if (llmPick && !reducedResult[llmPick.toolName] && allTools[llmPick.toolName]) {
-          reducedResult[llmPick.toolName] = allTools[llmPick.toolName];
+        if (toolName && !reducedResult[toolName] && allTools[toolName]) {
+          reducedResult[toolName] = allTools[toolName];
         }
 
         // Without pick: default options
         const defaultResult = await realToolSelector.selectTools(
-          'search for AI news',
-          [],
-          [],
-          undefined,
+          'search for AI news', [], [], undefined,
         );
 
         const reducedNames = Object.keys(reducedResult);
         const defaultNames = Object.keys(defaultResult);
 
-        console.log(`  LLM pick: ${llmPick?.toolName ?? 'null'}`);
+        console.log(`  LLM pick: ${toolName ?? 'null'}`);
         console.log(`  With pick (reduced): ${reducedNames.length} tools`);
         console.log(`  Without pick (default): ${defaultNames.length} tools`);
 
-        if (llmPick) {
-          // LLM pick must be in the reduced set
-          expect(reducedNames).toContain(llmPick.toolName);
-          // Reduced set uses only 2 core tools vs 6 — verify the 4 dropped ones are mostly absent
+        if (toolName) {
+          expect(reducedNames).toContain(toolName);
           const droppedCore = ['store_fact', 'search_memories', 'get_status', 'spawn_subagent'];
           const presentInReduced = droppedCore.filter(t => reducedNames.includes(t));
           const presentInDefault = droppedCore.filter(t => defaultNames.includes(t));
           expect(presentInReduced.length).toBeLessThanOrEqual(presentInDefault.length);
-          // 2 reduced core + 9 contextual + 1 LLM pick = 12 max
           expect(reducedNames.length).toBeLessThanOrEqual(12);
         }
       },
@@ -429,28 +435,33 @@ describe('Tool Reduction Integration', () => {
     );
 
     it.skipIf(skipOllama)(
-      'LLM returns null (greeting) → full set used',
+      'greeting → _No_Tool_Needed → core-only tools',
       async () => {
-        const llmPick = await llmSelector.selectFirstTool('hello how are you', allTools);
+        const outcome = await llmSelector.selectFirstTool('hello how are you', allTools);
 
-        const result = await realToolSelector.selectTools(
-          'hello how are you',
-          [],
-          [],
-          llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
-        );
+        console.log(`  LLM outcome: ${outcome?.kind ?? 'null'}`);
 
-        const names = Object.keys(result);
+        if (outcome?.kind === 'no_tool_needed') {
+          // Core-only path: only reduced core tools
+          const coreOnly: Record<string, unknown> = {};
+          for (const name of REDUCED_CORE_TOOL_NAMES) {
+            if (allTools[name]) coreOnly[name] = allTools[name];
+          }
+          const names = Object.keys(coreOnly);
+          console.log(`  Core-only tools (${names.length}): ${names.join(', ')}`);
 
-        console.log(`  LLM pick: ${llmPick?.toolName ?? 'null'}`);
-        console.log(`  Tool count: ${names.length}`);
+          expect(names.length).toBe(REDUCED_CORE_TOOL_NAMES.filter(n => allTools[n]).length);
+          for (const name of REDUCED_CORE_TOOL_NAMES) {
+            if (allTools[name]) expect(names).toContain(name);
+          }
+        } else if (outcome === null) {
+          // Fallback: full pipeline (acceptable — 4B may not have picked _No_Tool_Needed)
+          const result = await realToolSelector.selectTools('hello how are you', [], [], undefined);
+          const names = Object.keys(result);
+          console.log(`  Fallback: full pipeline (${names.length} tools)`);
 
-        // For greetings, 4B should return null → full pipeline
-        if (!llmPick) {
           for (const coreTool of CORE_TOOL_NAMES) {
-            if (allTools[coreTool]) {
-              expect(names).toContain(coreTool);
-            }
+            if (allTools[coreTool]) expect(names).toContain(coreTool);
           }
         }
       },
@@ -460,27 +471,24 @@ describe('Tool Reduction Integration', () => {
     it.skipIf(skipOllama)(
       'email message → LLM picks gmail tool → reduced + email siblings',
       async () => {
-        const llmPick = await llmSelector.selectFirstTool('send an email to bob about the meeting', allTools);
+        const outcome = await llmSelector.selectFirstTool('send an email to bob about the meeting', allTools);
+        const toolName = pickToolName(outcome);
 
         const result = await realToolSelector.selectTools(
-          'send an email to bob about the meeting',
-          [],
-          [],
-          llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+          'send an email to bob about the meeting', [], [], reduceOpts(outcome),
         );
-        if (llmPick && !result[llmPick.toolName] && allTools[llmPick.toolName]) {
-          result[llmPick.toolName] = allTools[llmPick.toolName];
+        if (toolName && !result[toolName] && allTools[toolName]) {
+          result[toolName] = allTools[toolName];
         }
 
         const names = Object.keys(result);
 
-        console.log(`  LLM pick: ${llmPick?.toolName ?? 'null'}`);
+        console.log(`  LLM pick: ${toolName ?? 'null'}`);
         console.log(`  Tool count: ${names.length}`);
         console.log(`  Gmail tools: ${names.filter(n => n.startsWith('gmail_')).join(', ')}`);
 
-        if (llmPick) {
-          expect(names).toContain(llmPick.toolName);
-          // Email regex group should still provide gmail tools
+        if (toolName) {
+          expect(names).toContain(toolName);
           expect(names.some(n => n.startsWith('gmail_'))).toBe(true);
         }
       },
@@ -491,15 +499,13 @@ describe('Tool Reduction Integration', () => {
       'sticky tools preserved across calls with reduction',
       async () => {
         // First call — pick a tool
-        const firstPick = await llmSelector.selectFirstTool('search for AI news', allTools);
+        const firstOutcome = await llmSelector.selectFirstTool('search for AI news', allTools);
+        const firstName = pickToolName(firstOutcome);
         const firstResult = await realToolSelector.selectTools(
-          'search for AI news',
-          [],
-          [],
-          firstPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+          'search for AI news', [], [], reduceOpts(firstOutcome),
         );
-        if (firstPick && !firstResult[firstPick.toolName] && allTools[firstPick.toolName]) {
-          firstResult[firstPick.toolName] = allTools[firstPick.toolName];
+        if (firstName && !firstResult[firstName] && allTools[firstName]) {
+          firstResult[firstName] = allTools[firstName];
         }
 
         // Simulate sticky tools from first call
@@ -507,21 +513,17 @@ describe('Tool Reduction Integration', () => {
         const recentToolsByTurn = [{ tools: firstTools.slice(0, 3) }];
 
         // Second call — follow-up with sticky context
-        const secondPick = await llmSelector.selectFirstTool('what about yesterday', allTools);
+        const secondOutcome = await llmSelector.selectFirstTool('what about yesterday', allTools);
         const secondResult = await realToolSelector.selectTools(
-          'what about yesterday',
-          [],
-          recentToolsByTurn,
-          secondPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
+          'what about yesterday', [], recentToolsByTurn, reduceOpts(secondOutcome),
         );
 
         const secondNames = Object.keys(secondResult);
 
-        console.log(`  First pick: ${firstPick?.toolName ?? 'null'}, first tools: ${firstTools.length}`);
+        console.log(`  First pick: ${firstName ?? 'null'}, first tools: ${firstTools.length}`);
         console.log(`  Sticky tools: ${recentToolsByTurn[0].tools.join(', ')}`);
-        console.log(`  Second pick: ${secondPick?.toolName ?? 'null'}, second tools: ${secondNames.length}`);
+        console.log(`  Second pick: ${pickToolName(secondOutcome) ?? 'null'}, second tools: ${secondNames.length}`);
 
-        // At least some sticky tools should be present in the second call
         const stickyPresent = recentToolsByTurn[0].tools.filter(t => secondNames.includes(t));
         console.log(`  Sticky tools present in second call: ${stickyPresent.length}/${recentToolsByTurn[0].tools.length}`);
         expect(stickyPresent.length).toBeGreaterThan(0);
@@ -548,28 +550,37 @@ describe('Tool Reduction Integration', () => {
         let defaultTotal = 0;
         let reducedTotal = 0;
         let picksCount = 0;
+        let noToolCount = 0;
 
         for (const msg of messages) {
-          const llmPick = await llmSelector.selectFirstTool(msg, allTools);
-          if (llmPick) picksCount++;
+          const outcome = await llmSelector.selectFirstTool(msg, allTools);
+          const toolName = pickToolName(outcome);
+          if (toolName) picksCount++;
+          if (outcome?.kind === 'no_tool_needed') noToolCount++;
 
           // Default pipeline
           const defaultResult = await realToolSelector.selectTools(msg, [], [], undefined);
           const defaultCount = Object.keys(defaultResult).length;
 
-          // Reduced pipeline (only when LLM picks)
-          const reducedResult = await realToolSelector.selectTools(
-            msg, [], [],
-            llmPick ? { maxContextualTools: 9, coreToolNames: REDUCED_CORE_TOOL_NAMES } : undefined,
-          );
-          if (llmPick && !reducedResult[llmPick.toolName] && allTools[llmPick.toolName]) {
-            reducedResult[llmPick.toolName] = allTools[llmPick.toolName];
+          // Reduced pipeline — mirrors loop.ts logic
+          let reducedCount: number;
+          if (outcome?.kind === 'no_tool_needed') {
+            reducedCount = REDUCED_CORE_TOOL_NAMES.filter(n => allTools[n]).length;
+          } else {
+            const reducedResult = await realToolSelector.selectTools(
+              msg, [], [], reduceOpts(outcome),
+            );
+            if (toolName && !reducedResult[toolName] && allTools[toolName]) {
+              reducedResult[toolName] = allTools[toolName];
+            }
+            reducedCount = Object.keys(reducedResult).length;
           }
-          const reducedCount = Object.keys(reducedResult).length;
 
+          const label = outcome?.kind === 'no_tool_needed'
+            ? '_No_Tool_Needed'
+            : (toolName ?? 'null');
           console.log(
-            `  "${msg}": pick=${llmPick?.toolName ?? 'null'}, ` +
-            `default=${defaultCount}, reduced=${reducedCount}`,
+            `  "${msg}": pick=${label}, default=${defaultCount}, reduced=${reducedCount}`,
           );
 
           defaultTotal += defaultCount;
@@ -581,17 +592,17 @@ describe('Tool Reduction Integration', () => {
         const reduction = ((avgDefault - avgReduced) / avgDefault) * 100;
 
         console.log(`\n  Summary:`);
-        console.log(`    LLM picks: ${picksCount}/${messages.length}`);
+        console.log(`    Tool picks: ${picksCount}/${messages.length}`);
+        console.log(`    No-tool-needed: ${noToolCount}/${messages.length}`);
         console.log(`    Avg default: ${avgDefault.toFixed(1)} tools`);
         console.log(`    Avg reduced: ${avgReduced.toFixed(1)} tools`);
         console.log(`    Reduction: ${reduction.toFixed(1)}%`);
 
-        // With ~90% pick rate, we should see meaningful reduction
-        if (picksCount > 0) {
+        if (picksCount > 0 || noToolCount > 0) {
           expect(avgReduced).toBeLessThan(avgDefault);
         }
       },
-      300_000, // 10 messages × 2 calls each × 30s timeout
+      300_000,
     );
   });
 });

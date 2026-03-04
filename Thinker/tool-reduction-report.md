@@ -1,6 +1,6 @@
 # Tool Reduction Report
 
-Generated: 2026-03-04T17:18:43.765Z
+Generated: 2026-03-04T17:40:31.415Z
 Model: qwen3.5:4b-q4_K_M
 Total tools in catalog: 144
 
@@ -19,18 +19,18 @@ Total tools in catalog: 144
 | 9 | navigate to google.com and take a screenshot | `web_browser_navigate` | yes | 16 | 11 | -5 |
 | 10 | run the python script | `codexec_list_scripts` | yes | 19 | 11 | -8 |
 | 11 | delete the spam email from my inbox | `gmail_list_emails` | yes | 20 | 11 | -9 |
-| 12 | create a new calendar event for Friday at 3pm | `gmail_quick_add_event` | yes | 14 | 11 | -3 |
+| 12 | create a new calendar event for Friday at 3pm | `searcher_web_search` | yes | 14 | 11 | -3 |
 | 13 | send a message to the family group on telegram | `telegram_list_chats` | no | 20 | 12 | -8 |
 | 14 | what is the weather in Warsaw | `searcher_web_search` | yes | 14 | 11 | -3 |
 | 15 | save this note to my workspace | _null_ | - | 20 | 20 | 0 |
-| 16 | hello how are you | _null_ | - | 20 | 20 | 0 |
+| 16 | hello how are you | _No_Tool_Needed_ | - | 20 | 2 | -18 |
 | 17 | remind me every morning to check email | `memory_store_skill` | no | 20 | 12 | -8 |
 | 18 | find a picture of sunset and send it to the group | `searcher_image_search` | yes | 20 | 11 | -9 |
-| 19 | who is the president of France | _null_ | - | 13 | 13 | 0 |
+| 19 | who is the president of France | `searcher_web_search` | yes | 13 | 11 | -2 |
 | 20 | browse to amazon.com and search for headphones | `web_browser_navigate` | yes | 20 | 11 | -9 |
 
-**LLM picks:** 17/20 (85%)
-**Average tools — default:** 17.9, **reduced:** 12.2, **reduction:** 31.8%
+**Tool picks:** 18/20 (90%), **No-tool-needed:** 1/20 (5%), **Null (fallback):** 1/20
+**Average tools — default:** 17.9, **reduced:** 11.2, **reduction:** 37.4%
 
 ## Detailed Tool Lists (Reduced Pipeline → sent to Groq)
 
@@ -269,12 +269,13 @@ Total tools in catalog: 144
 
 ### 12. "create a new calendar event for Friday at 3pm"
 
-- **LLM Pick (4B):** `gmail_quick_add_event` — confirmed by embeddings
+- **LLM Pick (4B):** `searcher_web_search` — confirmed by embeddings
 - **Total tools sent to Groq:** 11
 
-**Core tools (3):** `search_memories`, `searcher_web_search`, `send_telegram`
+**Core tools (2):** `search_memories`, `send_telegram`
 
-**Regex + Embedding tools (7):**
+**Regex + Embedding tools (8):**
+- `gmail_quick_add_event` (0.779)
 - `gmail_create_event` (0.753)
 - `gmail_update_event` (0.703)
 - `gmail_list_events` (0.691)
@@ -332,7 +333,7 @@ Total tools in catalog: 144
 
 ### 15. "save this note to my workspace"
 
-- **LLM Pick (4B):** _null (no reduction applied)_
+- **LLM Pick (4B):** _null (full pipeline fallback)_
 - **Total tools sent to Groq:** 20
 
 **Core tools (6):** `get_status`, `search_memories`, `searcher_web_search`, `send_telegram`, `spawn_subagent`, `store_fact`
@@ -357,26 +358,12 @@ Total tools in catalog: 144
 
 ### 16. "hello how are you"
 
-- **LLM Pick (4B):** _null (no reduction applied)_
-- **Total tools sent to Groq:** 20
+- **LLM Pick (4B):** `_No_Tool_Needed` — core-only mode (skipped embedding/regex pipeline)
+- **Total tools sent to Groq:** 2
 
-**Core tools (6):** `get_status`, `search_memories`, `searcher_web_search`, `send_telegram`, `spawn_subagent`, `store_fact`
+**Core tools (2):** `searcher_web_search`, `send_telegram`
 
-**Regex + Embedding tools (14):**
-- `telegram_add_contact` (0.528)
-- `telegram_get_me` (0.514)
-- `telegram_get_chat` (0.498)
-- `codexec_list_sessions` (0.498)
-- `telegram_subscribe_chat` (0.494)
-- `memory_create_contact` (0.487)
-- `memory_query_timeline` (0.468)
-- `searcher_news_search` (0.466)
-- `memory_store_conversation` (0.460)
-- `memory_update_contact` (0.459)
-- `memory_list_projects` (0.456)
-- `memory_list_contacts` (0.452)
-- `memory_get_profile` (0.451)
-- `memory_create_project` (0.450)
+**Dropped vs default (18):** ~~`codexec_list_sessions`~~, ~~`get_status`~~, ~~`memory_create_contact`~~, ~~`memory_create_project`~~, ~~`memory_get_profile`~~, ~~`memory_list_contacts`~~, ~~`memory_list_projects`~~, ~~`memory_query_timeline`~~, ~~`memory_store_conversation`~~, ~~`memory_update_contact`~~, ~~`search_memories`~~, ~~`searcher_news_search`~~, ~~`spawn_subagent`~~, ~~`store_fact`~~, ~~`telegram_add_contact`~~, ~~`telegram_get_chat`~~, ~~`telegram_get_me`~~, ~~`telegram_subscribe_chat`~~
 
 ---
 
@@ -425,19 +412,22 @@ Total tools in catalog: 144
 
 ### 19. "who is the president of France"
 
-- **LLM Pick (4B):** _null (no reduction applied)_
-- **Total tools sent to Groq:** 13
+- **LLM Pick (4B):** `searcher_web_search` — confirmed by embeddings
+- **Total tools sent to Groq:** 11
 
-**Core tools (6):** `get_status`, `search_memories`, `searcher_web_search`, `send_telegram`, `spawn_subagent`, `store_fact`
+**Core tools (2):** `get_status`, `send_telegram`
 
-**Regex + Embedding tools (7):**
+**Regex + Embedding tools (8):**
 - `searcher_news_search` (0.624)
 - `telegram_search_users` (0.593)
 - `filer_search_files` (0.572)
 - `gmail_get_event` (0.563)
 - `searcher_image_search` (0.561)
 - `telegram_add_contact` (0.557)
+- `telegram_get_me` (0.554)
 - `searcher_web_fetch` (0.495)
+
+**Dropped vs default (3):** ~~`search_memories`~~, ~~`spawn_subagent`~~, ~~`store_fact`~~
 
 ---
 
