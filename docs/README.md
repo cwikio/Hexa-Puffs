@@ -49,6 +49,7 @@ Located in [`adr/`](adr/):
 - [ADR-003](adr/003-inngest-for-job-scheduling.md) — Inngest for scheduled task execution
 - [ADR-004](adr/004-sqlite-for-memorizer.md) — SQLite (better-sqlite3 + sqlite-vec) for Memorizer
 - [ADR-005](adr/005-vercel-ai-sdk-for-thinker.md) — Vercel AI SDK for Thinker agent loop
+- [ADR-006](adr/006-llm-tool-pre-selection.md) — LLM-based tool pre-selection with local 4B model
 
 ## Other Guides
 
